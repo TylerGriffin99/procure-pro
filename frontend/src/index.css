@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* ── Typography ── */
+  --font-display: "Instrument Serif", "Times New Roman", serif;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  /* ── Surfaces — warm off-white paper ── */
+  --color-paper: oklch(0.984 0.004 85);
+  --color-paper-2: oklch(0.968 0.005 85);
+  --color-paper-3: oklch(0.948 0.006 85);
+  --color-surface: #ffffff;
+  --color-surface-hi: oklch(0.995 0.002 85);
+
+  /* ── Ink — near-black with cool cast ── */
+  --color-ink: oklch(0.18 0.022 255);
+  --color-ink-2: oklch(0.32 0.018 255);
+  --color-ink-3: oklch(0.50 0.012 255);
+  --color-ink-4: oklch(0.66 0.010 255);
+  --color-ink-5: oklch(0.80 0.006 255);
+
+  /* ── Lines — hairlines ── */
+  --color-line: oklch(0.90 0.008 255);
+  --color-line-2: oklch(0.82 0.010 255);
+  --color-line-strong: oklch(0.65 0.020 255);
+
+  /* ── Brand palette (from #01519f, oklch-tuned) ── */
+  --color-brand: oklch(0.42 0.14 255);
+  --color-brand-2: oklch(0.35 0.13 255);
+  --color-brand-3: oklch(0.28 0.11 255);
+  --color-brand-tint: oklch(0.94 0.028 255);
+  --color-brand-tint-2: oklch(0.88 0.045 255);
+  --color-brand-fg: #ffffff;
+
+  /* ── Brand shade ramp (backward compat) ── */
+  --color-brand-50: oklch(0.96 0.02 255);
+  --color-brand-100: oklch(0.92 0.04 255);
+  --color-brand-200: oklch(0.83 0.08 255);
+  --color-brand-300: oklch(0.72 0.12 255);
+  --color-brand-400: oklch(0.56 0.14 255);
+  --color-brand-500: oklch(0.42 0.14 255);
+  --color-brand-600: oklch(0.35 0.13 255);
+  --color-brand-700: oklch(0.28 0.11 255);
+  --color-brand-800: oklch(0.22 0.08 255);
+  --color-brand-900: oklch(0.18 0.06 255);
+  --color-brand-950: oklch(0.14 0.04 255);
+
+  /* ── Semantics ── */
+  --color-ok: oklch(0.52 0.13 155);
+  --color-ok-tint: oklch(0.94 0.04 155);
+  --color-warn: oklch(0.70 0.15 75);
+  --color-warn-tint: oklch(0.96 0.06 75);
+  --color-err: oklch(0.55 0.18 27);
+  --color-err-tint: oklch(0.95 0.04 27);
+
+  /* ── Semantic mappings (shadcn compat) ── */
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-ink);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-ink);
+
+  --color-primary: var(--color-brand);
+  --color-primary-foreground: var(--color-brand-fg);
+  --color-primary-hover: var(--color-brand-2);
+
+  --color-secondary: var(--color-paper-2);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-paper-2);
+  --color-muted-foreground: var(--color-ink-3);
+  --color-accent: var(--color-brand-tint);
+  --color-accent-foreground: var(--color-brand-2);
+
+  --color-destructive: var(--color-err);
+  --color-destructive-foreground: #ffffff;
+  --color-destructive-hover: oklch(0.48 0.18 27);
+
+  --color-success: var(--color-ok);
+  --color-success-foreground: #ffffff;
+  --color-success-hover: oklch(0.46 0.13 155);
+
+  --color-warning: var(--color-warn);
+  --color-warning-foreground: oklch(0.25 0.05 75);
+  --color-warning-hover: oklch(0.65 0.15 75);
+
+  --color-info: var(--color-brand-400);
+  --color-info-foreground: #ffffff;
+  --color-info-hover: var(--color-brand);
+
+  --color-border: var(--color-line);
+  --color-input: var(--color-line-2);
+  --color-ring: var(--color-brand);
+
+  /* Charts */
+  --color-chart-1: var(--color-brand);
+  --color-chart-2: var(--color-ok);
+  --color-chart-3: var(--color-warn);
+  --color-chart-4: var(--color-err);
+  --color-chart-5: var(--color-brand-300);
+
+  /* ── Radii — restrained ── */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+
+  /* ── Shadows — barely there ── */
+  --shadow-1: 0 1px 0 rgba(8, 22, 48, 0.04), 0 1px 2px rgba(8, 22, 48, 0.04);
+  --shadow-2: 0 2px 6px rgba(8, 22, 48, 0.06), 0 1px 2px rgba(8, 22, 48, 0.04);
+}
+
+/* ─── Reset & Base ─── */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "ss01", "cv11";
+    font-variant-numeric: tabular-nums;
+  }
+  h1, h2, h3, h4 {
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  ::selection {
+    background: var(--color-brand-tint-2);
+    color: var(--color-ink);
+  }
+}
+
+/* ─── Utility classes ─── */
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+.font-mono-nums {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
+  font-weight: 500;
+}
+
+/* ─── Scrollbar polish ─── */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--color-line-2); border-radius: 10px; border: 2px solid var(--color-paper); }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ─── Animations ─── */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@keyframes slideRight { from { transform: translateX(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes harnessSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes harnessFadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@keyframes harnessShimmer { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+.harness-fade { animation: harnessFadeIn 280ms ease-out both; }
+.harness-log-line { animation: harnessFadeIn 220ms ease-out both; }

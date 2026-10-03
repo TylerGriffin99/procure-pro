@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    @page { size: A4 portrait; margin: 12mm 10mm 10mm 10mm; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #333; line-height: 1.3; }
+    h1 { font-size: 13pt; color: #1a2744; margin: 0 0 3px 0; font-weight: bold; font-style: italic; }
+    .banner { background: #1a2744; color: white; padding: 4px 10px; font-size: 8.5pt; font-weight: bold; text-align: center; margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #1a2744; color: white; padding: 2px 3px; text-align: left; font-size: 6pt; }
+    th.num { text-align: right; }
+    td { padding: 2px 3px; font-size: 6.5pt; }
+    td.num { text-align: right; white-space: nowrap; }
+    td.desc { white-space: normal; min-width: 80px; }
+    .total-row { font-weight: bold; background: #edf2f7; }
+    .total-row td { border-top: 1.5px solid #1a2744; border-bottom: 1.5px solid #1a2744; }
+    .section-header { font-weight: bold; background: #f7fafc; }
+    .page-break { page-break-before: always; }
+    .negative { color: #e53e3e; }
+
+    /* Letter page */
+    .letter-wrap { max-width: 100%; }
+    .issue-date { text-align: right; font-size: 8pt; color: #555; }
+    .address-block { margin: 10px 0; line-height: 1.4; font-size: 8.5pt; }
+    .address-block strong { display: block; }
+    .letter-body { margin: 8px 0; line-height: 1.4; }
+    .cumulative-table { width: 75%; margin: 10px auto; }
+    .cumulative-table td { padding: 3px 10px; font-size: 8.5pt; }
+    .cumulative-table .amount { text-align: right; min-width: 100px; }
+    .cumulative-table .total-label { font-weight: bold; }
+    .cumulative-table .total-amount { font-weight: bold; text-align: right; border-top: 1px solid #333; }
+    .ll-op-table { width: 50%; margin: 8px 0 8px 30px; }
+    .ll-op-table td { padding: 2px 10px; font-size: 8.5pt; }
+    .ll-op-table .ll-op-label { font-weight: bold; min-width: 100px; }
+    .ll-op-table .ll-op-amount { font-weight: bold; text-align: right; }
+    .signatures { margin-top: 25px; }
+    .signatures table { width: 100%; }
+    .signatures td { width: 50%; vertical-align: top; padding: 0 15px 0 0; }
+    .sig-label { font-weight: bold; text-decoration: underline; margin-bottom: 40px; font-size: 8.5pt; }
+    .sig-line { border-bottom: 1px solid #333; width: 180px; margin-top: 35px; margin-bottom: 4px; }
+
+    /* Summary page */
+    .info-grid { margin: 6px 0; }
+    .info-grid td { padding: 3px 6px; font-size: 8pt; vertical-align: top; }
+    .info-grid .field-label { font-weight: bold; width: 22%; }
+    .info-grid .field-value { width: 22%; }
+    .info-grid .date-label { font-weight: bold; width: 24%; }
+    .info-grid .date-value { width: 16%; text-align: right; }
+    .cca-note { font-size: 7pt; font-style: italic; margin: 6px 0 10px 0; }
+    .financial-table { width: 100%; margin-top: 5px; }
+    .financial-table td { padding: 2px 6px; font-size: 7.5pt; }
+    .financial-table .f-label { width: 65%; }
+    .financial-table .f-amount { width: 35%; text-align: right; }
+    .retention-detail { padding-left: 25px !important; font-style: italic; font-size: 7pt !important; color: #555; }
+    .disclaimer { margin-top: 10px; font-size: 6.5pt; color: #555; line-height: 1.3; border-top: 1px solid #ccc; padding-top: 6px; }
+    .draft-label { color: #e53e3e; font-weight: bold; font-size: 10pt; }
+</style>
+</head>
+<body>
+
+<!-- ======================== PAGE 1: LETTER ======================== -->
+<div class="letter-wrap">
+<h1>{{ project_name | upper }}</h1>
+<table style="width:100%; margin-bottom:3px;">
+<tr>
+    <td style="font-size:8.5pt;">Payment Recommendation No. {{ pr_number }} Rev No. {{ revision }}{% if is_draft %} <span class="draft-label">— DRAFT</span>{% endif %}</td>
+    <td class="issue-date">Issue Date: {{ issue_date }}</td>
+</tr>
+</table>
+
+<div class="banner">PAYMENT RECOMMENDATION - LETTER{% if is_draft %} (DRAFT){% endif %}</div>
+
+<div class="address-block">
+{% for line in end_client_address_lines %}
+{% if loop.first %}<strong>{{ line }}</strong>{% else %}{{ line }}<br>{% endif %}
+{% endfor %}
+</div>
+
+<p>Dear {{ end_client_representative_first_name }},</p>
+
+<p class="letter-body">
+<strong>{{ project_name }}<br>
+Project Number {{ project_number }}<br>
+Payment Recommendation No. {{ pr_number }} Rev No. {{ revision }}{% if is_draft %} — DRAFT{% endif %}</strong>
+</p>
+
+<p>Please find enclosed our recommendation for Progress Payment No. {{ pr_number }} for the above project.</p>
+
+<p>This interim recommendation for payment is based on the cumulative value of work done, and is <strong>only for payment on account</strong>. <strong>This is not binding nor conclusive of acceptance of the work.</strong></p>
+
+<p><u><strong>Cumulative Value:</strong></u></p>
+
+<table class="cumulative-table">
+<tr>
+    <td style="padding-left:30px;">1. Net Monthly Value of Work Complete</td>
+    <td class="amount">${{ "{:,.2f}".format(recommended_this_period) }}</td>
+</tr>
+<tr>
+    <td style="padding-left:30px;">2. GST @ {{ "{:.0%}".format(gst_rate) }}</td>
+    <td class="amount" style="border-bottom: 1px solid #333;">${{ "{:,.2f}".format(gst_amount) }}</td>
+</tr>
+<tr>
+    <td style="padding-left:30px;" class="total-label">3. Recommended Progress Payment</td>
+    <td style="text-align:right; padding-left:15px;"><strong>Total</strong></td>
+</tr>
+<tr>
+    <td></td>
+    <td class="total-amount" style="border-bottom: 3px double #333;">${{ "{:,.2f}".format(total_including_gst) }}</td>
+</tr>
+</table>
+
+{% if landlord_split_pct and operator_split_pct %}
+<p><u>The split for LL and OP is as follows: (excluding Goods and Services Tax)</u></p>
+
+<table class="ll-op-table">
+<tr>
+    <td class="ll-op-label">Landlord :</td>
+    <td class="ll-op-amount">{{ "{:,.2f}".format(landlord_amount) }}</td>
+</tr>
+<tr>
+    <td class="ll-op-label">Operator :</td>
+    <td class="ll-op-amount">{{ "{:,.2f}".format(operator_amount) }}</td>
+</tr>
+</table>
+<hr>
+{% endif %}
+
+<p>We trust this satisfies your current requirements but please contact us if you would like to discuss any of the contents in further detail.</p>
+
+<div class="signatures">
+<table>
+<tr>
+    <td>
+        <p class="sig-label">PREPARED BY:</p>
+        <div class="sig-line"></div>
+    </td>
+    <td>
+        <p class="sig-label">APPROVED BY:</p>
+        <div class="sig-line"></div>
+    </td>
+</tr>
+</table>
+</div>
+</div>
+
+<!-- ======================== PAGE 2: SUMMARY ======================== -->
+<div class="page-break"></div>
+<h1>{{ project_name | upper }}</h1>
+<table style="width:100%; margin-bottom:3px;">
+<tr>
+    <td style="font-size:8.5pt;">Payment Recommendation No. {{ pr_number }} Rev No. {{ revision }}</td>
+    <td class="issue-date">Issue Date: {{ issue_date }}</td>
+</tr>
+</table>
+
+<div class="banner">PAYMENT RECOMMENDATION - SUMMARY</div>
+
+<table class="info-grid">
+<tr>
+    <td class="field-label">Principal:</td>
+    <td class="field-value">{{ end_client_name }}</td>
+    <td class="date-label">Claim Received:</td>
+    <td class="date-value">{{ claim_received }}</td>
+</tr>
+<tr>
+    <td class="field-label">Engineer to the Contract:</td>
+    <td class="field-value">{{ engineer }}</td>
+    <td class="date-label">Provisional Payment<br>Schedule Due:</td>
+    <td class="date-value">{{ provisional_payment_schedule_due }}</td>
+</tr>
+<tr>
+    <td class="field-label">Principal / Main Contractor:</td>
+    <td class="field-value">{{ contractor }}</td>
+    <td class="date-label">Payment Schedule Due:</td>
+    <td class="date-value">{{ payment_schedule_due }}</td>
+</tr>
+<tr>
+    <td class="field-label">Payment Claim / Schedule:</td>
+    <td class="field-value">{{ claim_number }}</td>
+    <td class="date-label">Payment Due:</td>
+    <td class="date-value">{{ payment_due }}</td>
+</tr>
+</table>
+
+<p class="cca-note">(In accordance with the Construction Contracts Act 2002)</p>
+
+<table class="financial-table">
+<tr class="total-row"><td class="f-label label">Contract Sum:</td><td class="f-amount">{{ "{:,.2f}".format(contract_sum) }}</td></tr>
+<tr><td class="f-label">Adjustment to Provisional Sums:</td><td class="f-amount">{{ "{:,.2f}".format(adjustment_to_provisional_sums) }}</td></tr>
+<tr><td class="f-label">Approved Variation Orders:</td><td class="f-amount">{{ "{:,.2f}".format(approved_variation_orders) }}</td></tr>
+<tr class="total-row"><td class="f-label label">Adjusted Contract Sum:</td><td class="f-amount">{{ "{:,.2f}".format(adjusted_contract_sum) }}</td></tr>
+<tr><td class="f-label">Value of Works Claimed to date</td><td class="f-amount">{{ "{:,.2f}".format(value_claimed) }}</td></tr>
+<tr><td class="f-label">Adjustments</td><td class="f-amount {% if adjustments < 0 %}negative{% endif %}">{{ "({:,.2f})".format(-adjustments) if adjustments < 0 else "{:,.2f}".format(adjustments) }}</td></tr>
+<tr class="total-row"><td class="f-label label">Total Value of Works Recommended for Payment</td><td class="f-amount">{{ "{:,.2f}".format(total_recommended) }}</td></tr>
+<tr><td class="f-label">Less Retentions :</td><td></td></tr>
+{% for ret in retention_details %}
+<tr><td class="retention-detail">{{ ret.percentage }}&nbsp;&nbsp;&nbsp;of total works recommended</td><td class="f-amount" style="font-style:italic; font-size:7pt;">{% if ret.amount > 0 %}({{ "{:,.2f}".format(ret.base) }})&nbsp;&nbsp;&nbsp;&nbsp;({{ "{:,.2f}".format(ret.amount) }}){% else %}{{ "{:,.2f}".format(ret.base) }}&nbsp;&nbsp;&nbsp;&nbsp;{{ "{:,.2f}".format(ret.amount) }}{% endif %}</td></tr>
+{% endfor %}
+<tr class="total-row"><td class="f-label label">Total Payment to Date</td><td class="f-amount">{{ "{:,.2f}".format(total_payment_to_date) }}</td></tr>
+<tr><td class="f-label">Less Previously Certified</td><td class="f-amount">{{ "({:,.2f})".format(previously_certified) if previously_certified > 0 else "{:,.2f}".format(previously_certified) }}</td></tr>
+<tr class="total-row"><td class="f-label label">Recommended Payment to Contractor (Excluding GST)</td><td class="f-amount">{{ "{:,.2f}".format(recommended_this_period) }}</td></tr>
+<tr><td class="f-label">GST&nbsp;&nbsp;&nbsp;&nbsp;{{ "{:.0%}".format(gst_rate) }}</td><td class="f-amount">{{ "{:,.2f}".format(gst_amount) }}</td></tr>
+<tr class="total-row"><td class="f-label label">Total (Including GST)</td><td class="f-amount">{{ "{:,.2f}".format(total_including_gst) }}</td></tr>
+</table>
+
+<div class="disclaimer">
+<p>This Recommendation for Progress Payment is prepared solely to effect payment due under the Conditions of Contract and should not be used or relied upon by any other party or for any other purpose.</p>
+<p>The Recommendation for Progress Payment assumes that all work has been executed to the quality standards presented in the Contract Document, except where otherwise notified in writing by Engineer to Contract as being defective.</p>
+</div>
+
+<!-- ======================== PAGE 3: CONTRACT WORKS ======================== -->
+<div class="page-break"></div>
+<h1>{{ project_name | upper }}</h1>
+<p style="font-size:8pt;">Payment Recommendation No. {{ pr_number }} Rev No. {{ revision }}</p>
+
+<div class="banner">PAYMENT RECOMMENDATION - CONTRACT WORKS</div>
+
+<table>
+<thead>
+<tr>
+    <th style="width:22%;">Description</th>
+    <th class="num">Contract<br>Sum 1</th>
+    <th class="num">Claim<br>(To date) 2</th>
+    <th class="num">Total<br>Rec'd 3</th>
+    <th class="num">%</th>
+    <th class="num">Variance<br>4=3-2</th>
+    <th class="num">Prev<br>Paid 5</th>
+    <th class="num">Rec'd This<br>Period 6=3-5</th>
+    <th style="width:10%;">Comments</th>
+</tr>
+</thead>
+<tbody>
+{% for item in contract_works %}
+<tr{% if item.get('is_header') %} class="section-header"{% endif %}{% if item.get('is_total') %} class="total-row"{% endif %}>
+    <td class="desc">{{ item.description }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.contract_sum) if item.contract_sum else "-" }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.contractor_claim) if item.contractor_claim else "-" }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.recommended) if item.recommended else "-" }}</td>
+    <td class="num">{{ item.percentage }}</td>
+    <td class="num {% if item.variance and item.variance < 0 %}negative{% endif %}">{{ "({:,.2f})".format(-item.variance) if item.variance and item.variance < 0 else ("{:,.2f}".format(item.variance) if item.variance else "-") }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.previously_paid) if item.previously_paid else "-" }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.recommended_this_period) if item.recommended_this_period else "-" }}</td>
+    <td class="desc" style="font-size:7pt;">{{ item.comments or "" }}</td>
+</tr>
+{% endfor %}
+</tbody>
+<tfoot>
+<tr class="total-row">
+    <td class="desc">Sub-Total Contract Works</td>
+    <td class="num">{{ "{:,.2f}".format(contract_works | map(attribute='contract_sum') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(contract_works | map(attribute='contractor_claim') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(contract_works | map(attribute='recommended') | sum) }}</td>
+    <td></td>
+    <td class="num">{{ "{:,.2f}".format(contract_works | map(attribute='variance') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(contract_works | map(attribute='previously_paid') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(contract_works | map(attribute='recommended_this_period') | sum) }}</td>
+    <td></td>
+</tr>
+</tfoot>
+</table>
+
+<!-- Page: Provisional Sums -->
+{% if provisional_sums %}
+<div class="page-break"></div>
+<h1>{{ project_name | upper }}</h1>
+<p style="font-size:8pt;">Payment Recommendation No. {{ pr_number }} Rev No. {{ revision }}</p>
+
+<div class="banner">PAYMENT RECOMMENDATION - PROVISIONAL SUMS</div>
+
+<table>
+<thead>
+<tr>
+    <th>PS No.</th>
+    <th style="width:24%;">Description</th>
+    <th class="num">Contract Sum</th>
+    <th class="num">Claimed to Date</th>
+    <th class="num">Recommended</th>
+    <th class="num">Previously Paid</th>
+    <th class="num">This Period</th>
+    <th class="num">%</th>
+    <th>Status</th>
+    <th style="width:12%;">Comments</th>
+</tr>
+</thead>
+<tbody>
+{% for item in provisional_sums %}
+<tr>
+    <td>PS {{ item.ps_number }}</td>
+    <td class="desc">{{ item.description }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.contract_sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.claimed_to_date) }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.recommended) }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.previously_paid) }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.this_period) }}</td>
+    <td class="num">{{ item.percentage }}</td>
+    <td>{{ item.status }}</td>
+    <td class="desc" style="font-size:6pt;">{{ item.comments or '' }}</td>
+</tr>
+{% endfor %}
+</tbody>
+<tfoot>
+<tr class="total-row">
+    <td colspan="2">Totals</td>
+    <td class="num">{{ "{:,.2f}".format(provisional_sums | map(attribute='contract_sum') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(provisional_sums | map(attribute='claimed_to_date') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(provisional_sums | map(attribute='recommended') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(provisional_sums | map(attribute='previously_paid') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(provisional_sums | map(attribute='this_period') | sum) }}</td>
+    <td></td>
+    <td></td>
+    <td></td>
+</tr>
+</tfoot>
+</table>
+{% endif %}
+
+<!-- Page: Variations -->
+{% if variation_works %}
+<div class="page-break"></div>
+<h1>{{ project_name | upper }}</h1>
+<p style="font-size:8pt;">Payment Recommendation No. {{ pr_number }} Rev No. {{ revision }}</p>
+
+<div class="banner">PAYMENT RECOMMENDATION - VARIATIONS</div>
+
+<table>
+<thead>
+<tr>
+    <th>CI/PMI</th>
+    <th style="width:22%;">Description</th>
+    <th class="num">Submission ($)</th>
+    <th>Type</th>
+    <th class="num">Claimed to Date</th>
+    <th class="num">Recommended</th>
+    <th class="num">Previously Paid</th>
+    <th class="num">This Period</th>
+    <th>Status</th>
+    <th style="width:12%;">Comments</th>
+</tr>
+</thead>
+<tbody>
+{% for item in variation_works %}
+<tr>
+    <td>CI {{ item.ci_number }}</td>
+    <td class="desc">{{ item.description }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.submission) }}</td>
+    <td>{{ item.type }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.claimed_to_date) }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.recommended) }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.previously_paid) }}</td>
+    <td class="num">{{ "{:,.2f}".format(item.this_period) }}</td>
+    <td>{{ item.status }}</td>
+    <td class="desc" style="font-size:6pt;">{{ item.comments or '' }}</td>
+</tr>
+{% endfor %}
+</tbody>
+<tfoot>
+<tr class="total-row">
+    <td colspan="2">Totals</td>
+    <td class="num">{{ "{:,.2f}".format(variation_works | map(attribute='submission') | sum) }}</td>
+    <td></td>
+    <td class="num">{{ "{:,.2f}".format(variation_works | map(attribute='claimed_to_date') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(variation_works | map(attribute='recommended') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(variation_works | map(attribute='previously_paid') | sum) }}</td>
+    <td class="num">{{ "{:,.2f}".format(variation_works | map(attribute='this_period') | sum) }}</td>
+    <td></td>
+    <td></td>
+</tr>
+</tfoot>
+</table>
+{% endif %}
+
+</body>
+</html>
