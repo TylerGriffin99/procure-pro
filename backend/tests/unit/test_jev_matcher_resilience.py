@@ -204,7 +204,7 @@ async def test_vps_malformed_answer_falls_back(monkeypatch, caplog):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("code", [401, 403])
+@pytest.mark.parametrize("code", [400, 401, 402, 403, 404, 422])
 async def test_vps_fatal_raises(monkeypatch, code):
     _setup(monkeypatch, n_items=1, item_type="variation")
     monkeypatch.setattr("app.harness.matchers.jev.vps_records",
@@ -253,3 +253,23 @@ async def test_all_none_does_not_emit_outage_summary(monkeypatch, caplog):
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
         await JevMatcher(decide_fn=decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
     assert not any("all 2 items fell back" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [402, 404])
+async def test_wbs_credit_and_notfound_raise(monkeypatch, code):
+    _setup(monkeypatch)
+
+    async def decide(**k):
+        raise _err(code)
+    with pytest.raises(httpx.HTTPStatusError):
+        await JevMatcher(decide_fn=decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw", [None, "", json.dumps({"metadata": {}})])
+async def test_read_items_missing_or_malformed_raises(monkeypatch, raw):
+    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file",
+                        lambda db, sid, path: _async(raw))
+    with pytest.raises(ValueError, match="parsed_claim.json"):
+        await JevMatcher(decide_fn=None)._read_items(None, "sess")

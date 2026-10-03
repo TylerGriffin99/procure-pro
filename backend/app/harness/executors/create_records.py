@@ -157,6 +157,10 @@ async def execute_create_records(
             # Truly new code (doesn't exist in project) — create it
             parent_id = parent_code_to_id.get(match["parent_code"])
             if not parent_id:
+                logger.warning(
+                    "create_records: skipping WBS match for item %s — new code %r has "
+                    "unresolvable parent_code %r; line left uncategorised",
+                    item_idx, match.get("wbs_code"), match.get("parent_code"))
                 continue
             new_wbs = WBSCode(
                 project_id=project_id, parent_id=parent_id,

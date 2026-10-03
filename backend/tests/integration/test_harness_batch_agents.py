@@ -81,6 +81,8 @@ async def test_batch_agents_phase_writes_workspace_via_llm_matcher(client, db_se
     types = [e.type for e in events]
     assert "harness_error" not in types
     assert "usage" in types
+    result = next(e for e in events if e.type == "harness_phase_result" and e.phase_name == "WBS Matching")
+    assert "fell_back=0/1" in result.detail and "residue=0/1" in result.detail
     parsed = json.loads(raw)
     assert parsed[0]["wbs_code"] == "DM-01"
 

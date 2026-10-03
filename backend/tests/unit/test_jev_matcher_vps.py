@@ -75,3 +75,18 @@ async def test_vps_empty_in_scope_set(monkeypatch):
     parsed = {"line_items": [PARSED["line_items"][2]]}
     out = await _run(_matcher(monkeypatch, {}, parsed=parsed))
     assert out.output == [] and out.output_json == "[]"
+
+
+@pytest.mark.asyncio
+async def test_vps_valid_choice_below_floor_is_new_and_warns(monkeypatch, caplog):
+    import app.config
+    monkeypatch.setattr(app.config.settings, "jev_confidence_floor", 0.6, raising=False)
+    answers = {"item_0": {"choice": "v1", "confidence": 0.3},
+               "item_1": {"choice": "v2", "confidence": 0.9}}
+    with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
+        out = await _run(_matcher(monkeypatch, answers))
+    by_index = {m.item_index: m for m in out.output}
+    assert by_index[0].matched_id is None and by_index[0].confidence == 0.3
+    assert by_index[1].matched_id == "v2"
+    assert "below floor" in caplog.text
+    assert out.fell_back == 0

@@ -19,7 +19,7 @@ from app.repos import harness_repo
 logger = logging.getLogger(__name__)
 
 _RETRYABLE = {429, 529}
-_FATAL = {401, 403}  # config errors: raise, never fall back
+_FATAL = {400, 401, 402, 403, 404, 422}  # config/auth/credit errors: raise, never fall back
 _MAX_CONTEXT_TOKENS = 32_000
 NONE_OPTION = "__none__"
 _WBS_INSTRUCTIONS = (
@@ -67,12 +67,17 @@ class JevMatcher:
 
     async def _read_items(self, db, session_id) -> list[dict]:
         raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
-        return json.loads(raw or "{}").get("line_items", [])
+        if not raw:
+            raise ValueError(f"parsed_claim.json missing or empty for session {session_id}")
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict) or "line_items" not in parsed:
+            raise ValueError(f"parsed_claim.json has no 'line_items' for session {session_id}")
+        return parsed["line_items"]
 
     async def _decide_with_retry(self, qid, state, criteria, instructions, max_attempts=4):
         """Call Jev, retrying 429/529 with exponential backoff + jitter.
 
-        401 is a config error and is raised immediately (never falls back).
+        Config/auth/credit errors (_FATAL) are raised immediately (never fall back).
         Any other terminal failure is logged and re-raised.
         """
         delay = 0.5
@@ -110,11 +115,13 @@ class JevMatcher:
     def _is_fatal(e: Exception) -> bool:
         return isinstance(e, httpx.HTTPStatusError) and e.response.status_code in _FATAL
 
-    async def _resolve_residue(self, residue, phase_def, db, project_id, session_id) -> dict[int, WbsMatch]:
+    async def _resolve_residue(
+        self, residue, phase_def, db, project_id, session_id
+    ) -> tuple[dict[int, WbsMatch], MatchOutcome]:
         outcome = await run_llm_matches(
             phase_def=phase_def, db=db, project_id=project_id, session_id=session_id,
         )
-        return {m.item_index: m for m in outcome.output if m.item_index in residue}
+        return {m.item_index: m for m in outcome.output if m.item_index in residue}, outcome
 
     async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome:
         if phase_def.output_schema == list[VpsMatch]:
@@ -163,10 +170,16 @@ class JevMatcher:
             if choice != NONE_OPTION and not in_valid:
                 logger.warning("JevMatcher: out-of-criteria VPS choice %r for item %s; treating as new record",
                                choice, idx)
+            matched_id = choice if in_valid else None
+            floor = settings.jev_confidence_floor
+            if matched_id is not None and conf < floor:
+                logger.warning(
+                    "JevMatcher: VPS item %s confidence %.2f below floor %.2f; treating as new record",
+                    idx, conf, floor)
+                matched_id = None
             results[idx] = VpsMatch(
                 item_index=idx, item_type=item["item_type"],
-                matched_id=choice if in_valid else None,
-                confidence=conf,
+                matched_id=matched_id, confidence=conf,
             )
 
         await asyncio.gather(*(run(i) for i in items))
@@ -177,6 +190,7 @@ class JevMatcher:
             output=output,
             output_json=TypeAdapter(list[VpsMatch]).dump_json(output).decode(),
             input_tokens=in_tok, output_tokens=0,
+            fell_back=len(failed),
         )
 
     async def _match_wbs(self, phase_def, db, project_id, session_id) -> MatchOutcome:
@@ -190,6 +204,9 @@ class JevMatcher:
         results: dict[int, WbsMatch] = {}
         failed: set[int] = set()
         in_tok = 0
+        out_tok = 0
+        cost = 0.0
+        have_cost = False
 
         async def run(item):
             nonlocal in_tok
@@ -230,14 +247,19 @@ class JevMatcher:
 
         # Residue = Jev picked none/unknown OR confidence below the floor.
         floor = settings.jev_confidence_floor
-        residue = {idx for idx, m in results.items()
+        residue: set[int] = {idx for idx, m in results.items()
                    if m.is_new or m.wbs_code_id is None or m.confidence < floor}
         if results and len(failed) == len(results):
             logger.warning("JevMatcher: all %d items fell back to LLM (Jev unavailable)", len(results))
         if residue:
             logger.info("JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
                         len(residue), len(results), sorted(residue))
-            resolved = await self._resolve_residue(residue, phase_def, db, project_id, session_id)
+            resolved, llm_outcome = await self._resolve_residue(residue, phase_def, db, project_id, session_id)
+            in_tok += llm_outcome.input_tokens
+            out_tok += llm_outcome.output_tokens
+            if llm_outcome.cost_usd is not None:
+                cost += llm_outcome.cost_usd
+                have_cost = True
             missing = residue - set(resolved)
             if missing:
                 logger.warning("JevMatcher: residue items not resolved by LLM, keeping placeholder: %s",
@@ -247,5 +269,7 @@ class JevMatcher:
         return MatchOutcome(
             output=output,
             output_json=TypeAdapter(list[WbsMatch]).dump_json(output).decode(),
-            input_tokens=in_tok, output_tokens=0,
+            input_tokens=in_tok, output_tokens=out_tok,
+            cost_usd=cost if have_cost else None,
+            fell_back=len(failed), residue=len(residue),
         )

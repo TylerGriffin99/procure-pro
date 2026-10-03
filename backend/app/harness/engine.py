@@ -270,9 +270,12 @@ class HarnessEngine:
             self.db, self.session_id, phase_def.workspace_output, outcome.output_json,
             internal=phase_def.internal,
         )
+        n = len(outcome.output)
+        counts = f"fell_back={outcome.fell_back}/{n} residue={outcome.residue}/{n}"
         await harness_repo.update_phase(
             self.db, self.session_id, str(phase_index),
-            {"status": "completed", "summary": f"Produced {phase_def.workspace_output} (matcher={name})"},
+            {"status": "completed",
+             "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})"},
             phase_index + 1,
         )
         await self.db.commit()
@@ -281,7 +284,7 @@ class HarnessEngine:
             phase_index=phase_index,
             phase_name=phase_def.name,
             status=PhaseStatus.COMPLETED,
-            detail=f"matcher={name}",
+            detail=f"matcher={name} {counts}",
         )
 
     async def _set_failed(self, error: str) -> None:

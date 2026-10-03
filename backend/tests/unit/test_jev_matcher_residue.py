@@ -80,3 +80,31 @@ async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplo
     assert by_index[1].wbs_code == "" and by_index[1].wbs_code_id is None  # placeholder kept
     warns = [r.getMessage() for r in caplog.records if "not resolved by LLM" in r.getMessage()]
     assert len(warns) == 1 and "[1]" in warns[0]
+
+
+@pytest.mark.asyncio
+async def test_residue_tokens_and_counts_accumulate(monkeypatch):
+    parsed = {"line_items": [
+        {"item_index": 0, "description": "x", "contract_value": "1", "item_type": "contract_work"}]}
+    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file",
+                        lambda db, sid, path: _async(json.dumps(parsed)))
+    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
+                        lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
+
+    async def fake_decide(*, state, questions, **k):
+        qid = next(iter(questions))
+        return {"answers": {qid: {"choice": NONE_OPTION, "confidence": 0.9, "probabilities": {}}},
+                "usage": {"input_tokens": 7}}
+
+    llm_result = [WbsMatch(item_index=0, wbs_code="NEW-01", parent_code="DM", is_new=True, confidence=0.7)]
+
+    async def fake_llm(*, phase_def, db, project_id, session_id):
+        return MatchOutcome(output=llm_result,
+                            output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode(),
+                            input_tokens=100, output_tokens=40, cost_usd=0.5)
+    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", fake_llm)
+
+    out = await JevMatcher(decide_fn=fake_decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    assert out.input_tokens == 107 and out.output_tokens == 40
+    assert out.cost_usd == 0.5
+    assert out.residue == 1 and out.fell_back == 0
