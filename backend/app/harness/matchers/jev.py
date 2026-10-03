@@ -112,7 +112,12 @@ class JevMatcher:
         if residue:
             logger.info("JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
                         len(residue), len(results), sorted(residue))
-            results.update(await self._resolve_residue(residue, phase_def, db, project_id, session_id))
+            resolved = await self._resolve_residue(residue, phase_def, db, project_id, session_id)
+            missing = residue - set(resolved)
+            if missing:
+                logger.warning("JevMatcher: residue items not resolved by LLM, keeping placeholder: %s",
+                               sorted(missing))
+            results.update(resolved)
         output = [results[k] for k in sorted(results)]
         return MatchOutcome(
             output=output,
