@@ -150,3 +150,106 @@ async def test_32k_guard_wbs(monkeypatch):
         raise AssertionError("should not be called")
     with pytest.raises(ValueError, match="exceeds 32k context"):
         await JevMatcher(decide_fn=decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+
+
+@pytest.mark.asyncio
+async def test_vps_total_outage_summary(monkeypatch, caplog):
+    _setup(monkeypatch, n_items=2, item_type="variation")
+    monkeypatch.setattr("app.harness.matchers.jev.vps_records",
+                        lambda **k: _async([VpsRecord("r1", "rec", 10.0, "variation")]))
+
+    async def always_529(*, state, questions, **k):
+        raise _err(529)
+
+    with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
+        out = await JevMatcher(decide_fn=always_529).match(phase_def=_VpsPhase(), db=None, project_id="p", session_id="s")
+    assert [m.matched_id for m in out.output] == [None, None]
+    assert any("all 2 VPS items failed Jev" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [
+    {"answers": {"item_0": None}},
+    {"answers": {"item_0": {"choice": "DM-01", "confidence": "abc"}}},
+    {"answers": {"item_0": {"choice": ["x"], "confidence": 0.9}}},
+    {"answers": {}},
+])
+async def test_wbs_malformed_answer_falls_back(monkeypatch, caplog, bad):
+    _setup(monkeypatch, n_items=2)
+    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(2))
+
+    async def decide(*, state, questions, **k):
+        qid = next(iter(questions))
+        return bad if qid == "item_0" else _ok(qid)
+
+    with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
+        out = await JevMatcher(decide_fn=decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    assert len(out.output) == 2 and out.output[0].wbs_code_id == "u1"
+    assert any("item 0 fell back to LLM" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_vps_malformed_answer_falls_back(monkeypatch, caplog):
+    _setup(monkeypatch, n_items=1, item_type="variation")
+    monkeypatch.setattr("app.harness.matchers.jev.vps_records",
+                        lambda **k: _async([VpsRecord("r1", "rec", 10.0, "variation")]))
+
+    async def decide(*, state, questions, **k):
+        return {"answers": {next(iter(questions)): None}}
+
+    with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
+        out = await JevMatcher(decide_fn=decide).match(phase_def=_VpsPhase(), db=None, project_id="p", session_id="s")
+    assert out.output[0].matched_id is None
+    assert any("VPS item 0" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [401, 403])
+async def test_vps_fatal_raises(monkeypatch, code):
+    _setup(monkeypatch, n_items=1, item_type="variation")
+    monkeypatch.setattr("app.harness.matchers.jev.vps_records",
+                        lambda **k: _async([VpsRecord("r1", "rec", 10.0, "variation")]))
+
+    async def decide(**k):
+        raise _err(code)
+    with pytest.raises(httpx.HTTPStatusError):
+        await JevMatcher(decide_fn=decide).match(phase_def=_VpsPhase(), db=None, project_id="p", session_id="s")
+
+
+@pytest.mark.asyncio
+async def test_wbs_403_raises(monkeypatch):
+    _setup(monkeypatch)
+
+    async def decide(**k):
+        raise _err(403)
+    with pytest.raises(httpx.HTTPStatusError):
+        await JevMatcher(decide_fn=decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+
+
+@pytest.mark.asyncio
+async def test_connect_error_logged_and_falls_back(monkeypatch, caplog):
+    _setup(monkeypatch)
+    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(1))
+
+    async def decide(**k):
+        raise httpx.ConnectError("refused")
+
+    with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
+        out = await JevMatcher(decide_fn=decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    assert out.output[0].wbs_code_id == "u1"
+    assert any("ConnectError" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_all_none_does_not_emit_outage_summary(monkeypatch, caplog):
+    from app.harness.matchers.jev import NONE_OPTION
+    _setup(monkeypatch, n_items=2)
+    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(2))
+
+    async def decide(*, state, questions, **k):
+        qid = next(iter(questions))
+        return {"answers": {qid: {"choice": NONE_OPTION, "confidence": 0.9}}, "usage": {}}
+
+    with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
+        await JevMatcher(decide_fn=decide).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    assert not any("all 2 items fell back" in r.getMessage() for r in caplog.records)

@@ -19,6 +19,7 @@ from app.repos import harness_repo
 logger = logging.getLogger(__name__)
 
 _RETRYABLE = {429, 529}
+_FATAL = {401, 403}  # config errors: raise, never fall back
 _MAX_CONTEXT_TOKENS = 32_000
 NONE_OPTION = "__none__"
 _WBS_INSTRUCTIONS = (
@@ -85,7 +86,7 @@ class JevMatcher:
                 )
             except httpx.HTTPStatusError as e:
                 code = e.response.status_code
-                if code == 401:
+                if code in _FATAL:
                     raise
                 if code in _RETRYABLE and attempt < max_attempts:
                     await asyncio.sleep(delay + random.uniform(0, delay))
@@ -107,7 +108,7 @@ class JevMatcher:
 
     @staticmethod
     def _is_fatal(e: Exception) -> bool:
-        return isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401
+        return isinstance(e, httpx.HTTPStatusError) and e.response.status_code in _FATAL
 
     async def _resolve_residue(self, residue, phase_def, db, project_id, session_id) -> dict[int, WbsMatch]:
         outcome = await run_llm_matches(
@@ -133,6 +134,7 @@ class JevMatcher:
         self._check_context(phase_def, [_item_state(i) for i in items], criteria, _VPS_INSTRUCTIONS)
         sem = asyncio.Semaphore(settings.jev_max_concurrency)
         results: dict[int, VpsMatch] = {}
+        failed: set[int] = set()
         in_tok = 0
 
         async def run(item):
@@ -144,25 +146,32 @@ class JevMatcher:
                 async with sem:
                     data = await self._decide_with_retry(qid, state, criteria, _VPS_INSTRUCTIONS)
                 ans = data["answers"][qid]
+                choice = ans.get("choice")
+                conf = float(ans.get("confidence", 0.0))
+                in_valid = choice in valid_ids
+                tok = int(data.get("usage", {}).get("input_tokens", 0))
             except Exception as e:
                 if self._is_fatal(e):
                     raise
-                logger.warning("JevMatcher VPS item %s failed, treating as new record: %s", idx, e)
+                logger.warning("JevMatcher VPS item %s failed, treating as new record: %s: %r",
+                               idx, type(e).__name__, e, exc_info=True)
+                failed.add(idx)
                 results[idx] = VpsMatch(item_index=idx, item_type=item["item_type"],
                                         matched_id=None, confidence=0.0)
                 return
-            in_tok += int(data.get("usage", {}).get("input_tokens", 0))
-            choice = ans.get("choice")
-            if choice != NONE_OPTION and choice not in valid_ids:
+            in_tok += tok
+            if choice != NONE_OPTION and not in_valid:
                 logger.warning("JevMatcher: out-of-criteria VPS choice %r for item %s; treating as new record",
                                choice, idx)
             results[idx] = VpsMatch(
                 item_index=idx, item_type=item["item_type"],
-                matched_id=choice if choice in valid_ids else None,
-                confidence=float(ans.get("confidence", 0.0)),
+                matched_id=choice if in_valid else None,
+                confidence=conf,
             )
 
         await asyncio.gather(*(run(i) for i in items))
+        if results and len(failed) == len(results):
+            logger.warning("JevMatcher: all %d VPS items failed Jev; created as new records", len(results))
         output = [results[k] for k in sorted(results)]
         return MatchOutcome(
             output=output,
@@ -191,19 +200,22 @@ class JevMatcher:
                 async with sem:
                     data = await self._decide_with_retry(qid, state, criteria, _WBS_INSTRUCTIONS)
                 ans = data["answers"][qid]
+                choice = ans.get("choice")
+                conf = float(ans.get("confidence", 0.0))
+                known = choice in key_to_id
+                tok = int(data.get("usage", {}).get("input_tokens", 0))
             except Exception as e:
                 if self._is_fatal(e):
                     raise
-                logger.warning("JevMatcher item %s fell back to LLM: %s", idx, e)
+                logger.warning("JevMatcher item %s fell back to LLM: %s: %r",
+                               idx, type(e).__name__, e, exc_info=True)
                 failed.add(idx)
                 results[idx] = WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=0.0)
                 return
-            in_tok += int(data.get("usage", {}).get("input_tokens", 0))
-            choice = ans.get("choice")
-            conf = float(ans.get("confidence", 0.0))
-            if choice != NONE_OPTION and choice not in key_to_id:
+            in_tok += tok
+            if choice != NONE_OPTION and not known:
                 logger.warning("JevMatcher: out-of-criteria choice %r for item %s; treating as none/new", choice, idx)
-            if choice == NONE_OPTION or choice not in key_to_id:
+            if choice == NONE_OPTION or not known:
                 # No existing code chosen. Placeholder; Task 8 mints the real residue code.
                 results[idx] = WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=conf)
             else:
