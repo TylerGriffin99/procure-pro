@@ -8,10 +8,10 @@ from pydantic import TypeAdapter
 
 from app.config import settings
 from app.harness.matchers.base import MatchOutcome
-from app.harness.matchers.data import Subcat, wbs_subcategories
+from app.harness.matchers.data import Subcat, vps_records, wbs_subcategories
 from app.harness.matchers.jev_client import call_decisions
 from app.harness.matchers.llm import run_llm_matches
-from app.harness.schemas import WbsMatch
+from app.harness.schemas import VpsMatch, WbsMatch
 from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,10 @@ _WBS_INSTRUCTIONS = (
     "Which WBS subcategory does this line item belong to? Prefer an exact or near "
     "(within ~1%) contract-sum match over description similarity. Choose "
     f"'{NONE_OPTION}' only if no subcategory fits."
+)
+_VPS_INSTRUCTIONS = (
+    "Which existing record does this item match? Match on description, then value "
+    f"within ~20%. Choose '{NONE_OPTION}' to create a new record."
 )
 
 
@@ -69,6 +73,59 @@ class JevMatcher:
         return {m.item_index: m for m in outcome.output if m.item_index in residue}
 
     async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome:
+        if phase_def.output_schema == list[VpsMatch]:
+            return await self._match_vps(phase_def, db, project_id, session_id)
+        return await self._match_wbs(phase_def, db, project_id, session_id)
+
+    async def _match_vps(self, phase_def, db, project_id, session_id) -> MatchOutcome:
+        kinds = {"variation", "provisional_sum"}
+        items = [i for i in await self._read_items(db, session_id) if i.get("item_type") in kinds]
+        records = await vps_records(db=db, project_id=project_id)
+        criteria = {
+            r.id: f"{r.description} — ${r.value:,.2f}" if r.value is not None else r.description
+            for r in records
+        }
+        criteria[NONE_OPTION] = "No existing record matches; create a new one"
+        valid_ids = {r.id for r in records}
+        sem = asyncio.Semaphore(settings.jev_max_concurrency)
+        results: dict[int, VpsMatch] = {}
+        in_tok = 0
+
+        async def run(item):
+            nonlocal in_tok
+            idx = item["item_index"]
+            qid = f"item_{idx}"
+            state = {"description": item.get("description", ""),
+                     "contract_value": item.get("contract_value"),
+                     "item_type": item.get("item_type")}
+            async with sem:
+                data = await self._decide(
+                    state=state,
+                    questions={qid: {"type": "choice", "instructions": _VPS_INSTRUCTIONS, "criteria": criteria}},
+                    model=settings.jev_model, url=settings.jev_decisions_url,
+                    api_key=settings.open_router_api_key,
+                )
+            ans = data["answers"][qid]
+            in_tok += int(data.get("usage", {}).get("input_tokens", 0))
+            choice = ans.get("choice")
+            if choice != NONE_OPTION and choice not in valid_ids:
+                logger.warning("JevMatcher: out-of-criteria VPS choice %r for item %s; treating as new record",
+                               choice, idx)
+            results[idx] = VpsMatch(
+                item_index=idx, item_type=item["item_type"],
+                matched_id=choice if choice in valid_ids else None,
+                confidence=float(ans.get("confidence", 0.0)),
+            )
+
+        await asyncio.gather(*(run(i) for i in items))
+        output = [results[k] for k in sorted(results)]
+        return MatchOutcome(
+            output=output,
+            output_json=TypeAdapter(list[VpsMatch]).dump_json(output).decode(),
+            input_tokens=in_tok, output_tokens=0,
+        )
+
+    async def _match_wbs(self, phase_def, db, project_id, session_id) -> MatchOutcome:
         items = [i for i in await self._read_items(db, session_id) if i.get("item_type") == "contract_work"]
         subcats = await wbs_subcategories(db=db, project_id=project_id)
         criteria, key_to_id = build_wbs_criteria(subcats)
