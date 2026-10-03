@@ -50,16 +50,9 @@
   - `choice` resolves to an existing code → direct match.
   - `__none__` / unknown / `confidence < floor` → **residue** → one LLM call resolves those items only.
 
-### Fallback to the LLM — when Jev can't (or shouldn't) commit
+### Fallback to the LLM
 
-Jev handles the confident bulk; the `LlmMatcher` (the existing pydantic-ai categoriser) is a targeted safety net. Four cases, in order of how often they fire:
-
-- **Per-item residue — Jev answered but didn't commit.** Any item where Jev picks `__none__`, returns a choice that doesn't resolve to a known code, or comes back `confidence < jev_confidence_floor` is collected into a *residue set*. **One** LLM call resolves only those items; its results replace just those indices (the confident Jev matches are kept as-is). This is the normal "Jev couldn't match" path — e.g. two subcategories sharing a contract sum, where Jev correctly hedges and the description-based LLM breaks the tie.
-- **Per-item error — a Jev call failed.** A call that fails after bounded `429/529` retries, or returns a malformed answer, or hits a network error, falls back for that item alone (logged with the cause). WBS → the item joins the residue set and the LLM resolves it; VPS → `matched_id = null` (handled by the deterministic new-record path).
-- **Whole-phase fallback — Jev unavailable.** If `open_router_api_key` is unset while `matcher=jev`, the entire phase runs on `LlmMatcher` — byte-for-byte the pre-Jev behaviour — after one WARNING. So turning Jev on is a strict upgrade: if it can't run, matching still happens.
-- **No fallback — configuration error.** `401/403` (bad/missing key) and `400/402/404/422` (bad request, exhausted OpenRouter credits, wrong model id) **raise and fail the phase loudly** — a silent LLM fallback would mask a misconfiguration and quietly change which model is doing the work.
-
-Every fallback is logged, and the per-phase `fell_back=a/N residue=b/N` detail makes the split visible — you can always see how much Jev actually did versus how much the LLM picked up.
+When Jev can't commit — it picks `__none__`, its choice doesn't resolve, `confidence < jev_confidence_floor`, or the call errors after retries — those items are passed to the `LlmMatcher` in a single call while the confident Jev matches are kept. If Jev is unconfigured entirely, the whole phase runs on the LLM (logged); only config/credit errors (401/403/400/402/404/422) raise instead of falling back.
 
 ### No silent failures (hard rule)
 
