@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from string import Template
 from typing import Any
 import uuid
 
@@ -25,6 +24,7 @@ from app.harness.models import (
     PhaseType,
     UsageEvent,
 )
+from app.harness.phase_context import build_phase_context, render_system_prompt
 from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
@@ -184,21 +184,13 @@ class HarnessEngine:
                 "a structured output type is required."
             )
 
-        # Load workspace inputs
-        context = {}
-        for path in phase_def.workspace_inputs:
-            content = await harness_repo.read_workspace_file(self.db, self.session_id, path)
-            var_name = path.replace(".json", "").replace("-", "_").replace("/", "_")
-            context[f"workspace_{var_name}"] = content or "FILE NOT FOUND"
-
-        # Load project-level context from all context loaders
-        for loader in phase_def.context_loaders:
-            extra = await loader(self.db, self.project_id, self.session_id)
-            context.update(extra)
-
-        # Build system prompt from template
-        tmpl = Template(phase_def.system_prompt_template)
-        system_prompt = tmpl.safe_substitute(**context)
+        context = await build_phase_context(
+            db=self.db,
+            session_id=self.session_id,
+            project_id=self.project_id,
+            phase_def=phase_def,
+        )
+        system_prompt = render_system_prompt(phase_def, context)
 
         model = build_model(model_name=phase_def.model) if phase_def.model else None
 
