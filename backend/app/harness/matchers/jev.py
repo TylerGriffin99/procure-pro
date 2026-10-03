@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 
+import httpx
 from pydantic import TypeAdapter
 
 from app.config import settings
@@ -16,6 +18,8 @@ from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
 
+_RETRYABLE = {429, 529}
+_MAX_CONTEXT_TOKENS = 32_000
 NONE_OPTION = "__none__"
 _WBS_INSTRUCTIONS = (
     "Which WBS subcategory does this line item belong to? Prefer an exact or near "
@@ -26,6 +30,12 @@ _VPS_INSTRUCTIONS = (
     "Which existing record does this item match? Match on description, then value "
     f"within ~20%. Choose '{NONE_OPTION}' to create a new record."
 )
+
+
+def _item_state(item: dict) -> dict:
+    return {"description": item.get("description", ""),
+            "contract_value": item.get("contract_value"),
+            "item_type": item.get("item_type")}
 
 
 def build_wbs_criteria(subcats: list[Subcat]) -> tuple[dict[str, str], dict[str, str]]:
@@ -58,13 +68,46 @@ class JevMatcher:
         raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
         return json.loads(raw or "{}").get("line_items", [])
 
-    async def _choose(self, qid, state, criteria):
-        data = await self._decide(
-            state=state,
-            questions={qid: {"type": "choice", "instructions": _WBS_INSTRUCTIONS, "criteria": criteria}},
-            model=settings.jev_model, url=settings.jev_decisions_url, api_key=settings.open_router_api_key,
+    async def _decide_with_retry(self, qid, state, criteria, instructions, max_attempts=4):
+        """Call Jev, retrying 429/529 with exponential backoff + jitter.
+
+        401 is a config error and is raised immediately (never falls back).
+        Any other terminal failure is logged and re-raised.
+        """
+        delay = 0.5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return await self._decide(
+                    state=state,
+                    questions={qid: {"type": "choice", "instructions": instructions, "criteria": criteria}},
+                    model=settings.jev_model, url=settings.jev_decisions_url,
+                    api_key=settings.open_router_api_key,
+                )
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code
+                if code == 401:
+                    raise
+                if code in _RETRYABLE and attempt < max_attempts:
+                    await asyncio.sleep(delay + random.uniform(0, delay))
+                    delay *= 2
+                    continue
+                logger.warning("Jev decision %s failed after %d attempt(s): HTTP %s", qid, attempt, code)
+                raise
+
+    @staticmethod
+    def _check_context(phase_def, states, criteria, instructions) -> None:
+        """Reject requests whose serialized size exceeds ~32k tokens (chars/4 proxy)."""
+        worst = max(states, key=lambda s: len(json.dumps(s, default=str)), default={})
+        payload = json.dumps(
+            {"state": worst, "questions": {"item_0": {"instructions": instructions, "criteria": criteria}}},
+            default=str,
         )
-        return data["answers"][qid], data.get("usage", {})
+        if len(payload) / 4 > _MAX_CONTEXT_TOKENS:
+            raise ValueError(f"Jev request for '{phase_def.name}' exceeds 32k context")
+
+    @staticmethod
+    def _is_fatal(e: Exception) -> bool:
+        return isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 401
 
     async def _resolve_residue(self, residue, phase_def, db, project_id, session_id) -> dict[int, WbsMatch]:
         outcome = await run_llm_matches(
@@ -87,6 +130,7 @@ class JevMatcher:
         }
         criteria[NONE_OPTION] = "No existing record matches; create a new one"
         valid_ids = {r.id for r in records}
+        self._check_context(phase_def, [_item_state(i) for i in items], criteria, _VPS_INSTRUCTIONS)
         sem = asyncio.Semaphore(settings.jev_max_concurrency)
         results: dict[int, VpsMatch] = {}
         in_tok = 0
@@ -95,17 +139,18 @@ class JevMatcher:
             nonlocal in_tok
             idx = item["item_index"]
             qid = f"item_{idx}"
-            state = {"description": item.get("description", ""),
-                     "contract_value": item.get("contract_value"),
-                     "item_type": item.get("item_type")}
-            async with sem:
-                data = await self._decide(
-                    state=state,
-                    questions={qid: {"type": "choice", "instructions": _VPS_INSTRUCTIONS, "criteria": criteria}},
-                    model=settings.jev_model, url=settings.jev_decisions_url,
-                    api_key=settings.open_router_api_key,
-                )
-            ans = data["answers"][qid]
+            state = _item_state(item)
+            try:
+                async with sem:
+                    data = await self._decide_with_retry(qid, state, criteria, _VPS_INSTRUCTIONS)
+                ans = data["answers"][qid]
+            except Exception as e:
+                if self._is_fatal(e):
+                    raise
+                logger.warning("JevMatcher VPS item %s failed, treating as new record: %s", idx, e)
+                results[idx] = VpsMatch(item_index=idx, item_type=item["item_type"],
+                                        matched_id=None, confidence=0.0)
+                return
             in_tok += int(data.get("usage", {}).get("input_tokens", 0))
             choice = ans.get("choice")
             if choice != NONE_OPTION and choice not in valid_ids:
@@ -131,20 +176,29 @@ class JevMatcher:
         criteria, key_to_id = build_wbs_criteria(subcats)
         by_id = {s.id: s for s in subcats}
 
+        self._check_context(phase_def, [_item_state(i) for i in items], criteria, _WBS_INSTRUCTIONS)
         sem = asyncio.Semaphore(settings.jev_max_concurrency)
         results: dict[int, WbsMatch] = {}
+        failed: set[int] = set()
         in_tok = 0
 
         async def run(item):
             nonlocal in_tok
             idx = item["item_index"]
             qid = f"item_{idx}"
-            state = {"description": item.get("description", ""),
-                     "contract_value": item.get("contract_value"),
-                     "item_type": item.get("item_type")}
-            async with sem:
-                ans, usage = await self._choose(qid, state, criteria)
-            in_tok += int(usage.get("input_tokens", 0))
+            state = _item_state(item)
+            try:
+                async with sem:
+                    data = await self._decide_with_retry(qid, state, criteria, _WBS_INSTRUCTIONS)
+                ans = data["answers"][qid]
+            except Exception as e:
+                if self._is_fatal(e):
+                    raise
+                logger.warning("JevMatcher item %s fell back to LLM: %s", idx, e)
+                failed.add(idx)
+                results[idx] = WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=0.0)
+                return
+            in_tok += int(data.get("usage", {}).get("input_tokens", 0))
             choice = ans.get("choice")
             conf = float(ans.get("confidence", 0.0))
             if choice != NONE_OPTION and choice not in key_to_id:
@@ -166,6 +220,8 @@ class JevMatcher:
         floor = settings.jev_confidence_floor
         residue = {idx for idx, m in results.items()
                    if m.is_new or m.wbs_code_id is None or m.confidence < floor}
+        if results and len(failed) == len(results):
+            logger.warning("JevMatcher: all %d items fell back to LLM (Jev unavailable)", len(results))
         if residue:
             logger.info("JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
                         len(residue), len(results), sorted(residue))
