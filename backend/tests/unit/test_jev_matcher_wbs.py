@@ -62,13 +62,49 @@ async def test_wbs_empty_item_set_writes_empty_list(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_wbs_unknown_choice_becomes_residue_none(monkeypatch):
-    # Jev returns a code not in criteria -> treated as none (is_new, no bogus wbs_code_id).
+async def test_wbs_unknown_choice_becomes_residue_none(monkeypatch, caplog):
     answers = {"item_0": {"choice": "ZZ-99", "confidence": 0.5, "probabilities": {}},
-               "item_1": {"choice": NONE_OPTION, "confidence": 0.5, "probabilities": {}}}
-    out = await _matcher(monkeypatch, answers).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+               "item_1": {"choice": NONE_OPTION, "confidence": 0.4, "probabilities": {}}}
+    with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
+        out = await _matcher(monkeypatch, answers).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    assert len(out.output) == 2
     for m in out.output:
-        assert m.wbs_code_id is None and m.is_new is True   # residue placeholder until Task 8 mints real codes
+        assert m.wbs_code == "" and m.wbs_code_id is None and m.is_new is True
+    # Only the hallucinated choice warns; an intentional NONE is silent.
+    warnings = [r for r in caplog.records if "out-of-criteria" in r.getMessage()]
+    assert len(warnings) == 1 and "ZZ-99" in warnings[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_wbs_output_ordered_by_item_index(monkeypatch):
+    m = _matcher(monkeypatch, {
+        f"item_{i}": {"choice": "DM-01", "confidence": 0.9, "probabilities": {}} for i in (0, 1, 5)})
+    items = [{"item_index": i, "description": "d", "contract_value": None, "item_type": "contract_work"}
+             for i in (5, 0, 1)]
+    async def fake_read(db, sid, path):
+        return json.dumps({"line_items": items})
+    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", fake_read)
+    out = await m.match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    assert [x.item_index for x in out.output] == [0, 1, 5]
+
+
+@pytest.mark.asyncio
+async def test_wbs_match_resolves_duplicate_code_to_chosen_id(monkeypatch):
+    m = _matcher(monkeypatch, {
+        "item_0": {"choice": "DM-01#b2", "confidence": 0.9, "probabilities": {}}})
+    dup = [
+        Subcat(id="a1", code="DM-01", description="First", parent_code="DM", contract_sum=1.0),
+        Subcat(id="b2", code="DM-01", description="Second", parent_code="DM", contract_sum=2.0),
+    ]
+    async def fake_subs(*, db, project_id):
+        return dup
+    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories", fake_subs)
+    async def one_item(db, sid, path):
+        return json.dumps({"line_items": [PARSED["line_items"][0]]})
+    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", one_item)
+    out = await m.match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    assert out.output[0].wbs_code == "DM-01" and out.output[0].wbs_code_id == "b2"
+    assert out.output[0].wbs_description == "Second"
 
 
 def test_wbs_duplicate_code_keys_by_id():

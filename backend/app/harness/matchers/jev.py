@@ -83,6 +83,8 @@ class JevMatcher:
             in_tok += int(usage.get("input_tokens", 0))
             choice = ans.get("choice")
             conf = float(ans.get("confidence", 0.0))
+            if choice != NONE_OPTION and choice not in key_to_id:
+                logger.warning("JevMatcher: out-of-criteria choice %r for item %s; treating as none/new", choice, idx)
             if choice == NONE_OPTION or choice not in key_to_id:
                 # No existing code chosen. Placeholder; Task 8 mints the real residue code.
                 results[idx] = WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=conf)
