@@ -10,6 +10,7 @@ from app.config import settings
 from app.harness.matchers.base import MatchOutcome
 from app.harness.matchers.data import Subcat, wbs_subcategories
 from app.harness.matchers.jev_client import call_decisions
+from app.harness.matchers.llm import run_llm_matches
 from app.harness.schemas import WbsMatch
 from app.repos import harness_repo
 
@@ -61,6 +62,12 @@ class JevMatcher:
         )
         return data["answers"][qid], data.get("usage", {})
 
+    async def _resolve_residue(self, residue, phase_def, db, project_id, session_id) -> dict[int, WbsMatch]:
+        outcome = await run_llm_matches(
+            phase_def=phase_def, db=db, project_id=project_id, session_id=session_id,
+        )
+        return {m.item_index: m for m in outcome.output if m.item_index in residue}
+
     async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome:
         items = [i for i in await self._read_items(db, session_id) if i.get("item_type") == "contract_work"]
         subcats = await wbs_subcategories(db=db, project_id=project_id)
@@ -97,6 +104,15 @@ class JevMatcher:
                 )
 
         await asyncio.gather(*(run(i) for i in items))
+
+        # Residue = Jev picked none/unknown OR confidence below the floor.
+        floor = settings.jev_confidence_floor
+        residue = {idx for idx, m in results.items()
+                   if m.is_new or m.wbs_code_id is None or m.confidence < floor}
+        if residue:
+            logger.info("JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
+                        len(residue), len(results), sorted(residue))
+            results.update(await self._resolve_residue(residue, phase_def, db, project_id, session_id))
         output = [results[k] for k in sorted(results)]
         return MatchOutcome(
             output=output,

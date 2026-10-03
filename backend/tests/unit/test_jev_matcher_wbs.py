@@ -2,6 +2,7 @@
 import json
 import pytest
 from app.harness.matchers.jev import JevMatcher, NONE_OPTION
+from app.harness.matchers.base import MatchOutcome
 from app.harness.matchers.data import Subcat
 from app.harness.schemas import WbsMatch
 
@@ -65,11 +66,19 @@ async def test_wbs_empty_item_set_writes_empty_list(monkeypatch):
 async def test_wbs_unknown_choice_becomes_residue_none(monkeypatch, caplog):
     answers = {"item_0": {"choice": "ZZ-99", "confidence": 0.5, "probabilities": {}},
                "item_1": {"choice": NONE_OPTION, "confidence": 0.4, "probabilities": {}}}
+    calls = []
+
+    async def fake_llm(*, phase_def, db, project_id, session_id):
+        calls.append(1)
+        res = [WbsMatch(item_index=0, wbs_code="NEW-00", is_new=True, confidence=0.7),
+               WbsMatch(item_index=1, wbs_code="NEW-01", is_new=True, confidence=0.7)]
+        return MatchOutcome(output=res, output_json="[]")
+    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", fake_llm)
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
         out = await _matcher(monkeypatch, answers).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
-    assert len(out.output) == 2
-    for m in out.output:
-        assert m.wbs_code == "" and m.wbs_code_id is None and m.is_new is True
+    assert len(calls) == 1                               # one LLM call for the whole residue
+    assert [m.wbs_code for m in out.output] == ["NEW-00", "NEW-01"]
+    assert all(m.is_new for m in out.output)
     # Only the hallucinated choice warns; an intentional NONE is silent.
     warnings = [r for r in caplog.records if "out-of-criteria" in r.getMessage()]
     assert len(warnings) == 1 and "ZZ-99" in warnings[0].getMessage()
