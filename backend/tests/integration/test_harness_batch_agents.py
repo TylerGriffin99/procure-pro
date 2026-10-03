@@ -96,3 +96,32 @@ async def test_unconfigured_jev_warns_and_falls_back_to_llm(client, db_session, 
     assert "harness_error" not in [e.type for e in events]
     assert json.loads(raw)[0]["wbs_code"] == "DM-01"
     assert any("falling back to matcher=llm" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_phase4_jev_end_to_end_with_fake_decisions(client, db_session, monkeypatch):
+    """Phase 4 as LLM_BATCH_AGENTS/jev yields a valid list[WbsMatch] via a fake decisions endpoint."""
+    from app.harness.matchers.data import Subcat
+
+    monkeypatch.setattr(settings, "open_router_api_key", "test-key")
+
+    async def fake_subs(*, db, project_id):
+        return [Subcat(id="u1", code="DM-01", description="Soft strip", parent_code="DM", contract_sum=100.0)]
+
+    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories", fake_subs)
+
+    async def fake_decide(*, state, questions, model, url, api_key, timeout=30.0):
+        qid = next(iter(questions))
+        return {
+            "answers": {qid: {"choice": "DM-01", "confidence": 0.95, "probabilities": {"DM-01": 0.95}}},
+            "usage": {"input_tokens": 3},
+        }
+
+    monkeypatch.setattr("app.harness.matchers.jev.call_decisions", fake_decide)
+
+    events, raw = await _run(client, db_session, "jev")
+
+    assert "harness_error" not in [e.type for e in events]
+    parsed = TypeAdapter(list[WbsMatch]).validate_json(raw)
+    assert len(parsed) == 1
+    assert parsed[0].wbs_code == "DM-01" and parsed[0].wbs_code_id == "u1" and not parsed[0].is_new
