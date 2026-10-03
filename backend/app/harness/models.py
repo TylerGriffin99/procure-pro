@@ -29,6 +29,7 @@ class PhaseDefinition:
     workspace_output: str
     system_prompt_template: str = ""
     model: str | None = None
+    matcher: Literal["llm", "jev"] | None = None
     tools: list[str] | None = None
     # pydantic-ai output spec for LLM phases: a BaseModel subclass or list[Model].
     output_schema: Any = None

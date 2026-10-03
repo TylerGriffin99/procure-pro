@@ -123,6 +123,9 @@ class HarnessEngine:
         elif phase_def.phase_type == PhaseType.LLM_SINGLE:
             async for event in self._run_llm_single(phase_index, phase_def, session_config):
                 yield event
+        elif phase_def.phase_type == PhaseType.LLM_BATCH_AGENTS:
+            async for event in self._run_decision_match(phase_index, phase_def, session_config):
+                yield event
         else:
             raise ValueError(f"Unsupported phase type: {phase_def.phase_type}")
 
@@ -224,6 +227,61 @@ class HarnessEngine:
             phase_index=phase_index,
             phase_name=phase_def.name,
             status=PhaseStatus.COMPLETED,
+        )
+
+    async def _run_decision_match(
+        self,
+        phase_index: int,
+        phase_def: PhaseDefinition,
+        session_config: dict[str, Any],
+    ) -> AsyncGenerator[HarnessEvent, None]:
+        from app.config import settings
+        from app.harness.matchers.base import get_matcher
+
+        if phase_def.output_schema is None:
+            raise ValueError(
+                f"LLM_BATCH_AGENTS phase '{phase_def.name}' has no output_schema."
+            )
+
+        name = phase_def.matcher or settings.matcher_default or "llm"
+        # Unconfigured Jev -> run the whole phase on the LLM path (logged, not silent).
+        if name == "jev" and not settings.open_router_api_key:
+            logger.warning(
+                "Phase '%s' requested matcher=jev but open_router_api_key is unset; "
+                "falling back to matcher=llm for the whole phase.",
+                phase_def.name,
+            )
+            name = "llm"
+
+        matcher = get_matcher(name)
+        outcome = await matcher.match(
+            phase_def=phase_def,
+            db=self.db,
+            project_id=self.project_id,
+            session_id=self.session_id,
+        )
+
+        yield UsageEvent(
+            prompt_tokens=outcome.input_tokens,
+            completion_tokens=outcome.output_tokens,
+        )
+
+        await harness_repo.write_workspace_file(
+            self.db, self.session_id, phase_def.workspace_output, outcome.output_json,
+            internal=phase_def.internal,
+        )
+        await harness_repo.update_phase(
+            self.db, self.session_id, str(phase_index),
+            {"status": "completed", "summary": f"Produced {phase_def.workspace_output} (matcher={name})"},
+            phase_index + 1,
+        )
+        await self.db.commit()
+
+        yield HarnessPhaseResultEvent(
+            phase_index=phase_index,
+            phase_name=phase_def.name,
+            status=PhaseStatus.COMPLETED,
+            detail=f"matcher={name}",
         )
 
     async def _set_failed(self, error: str) -> None:
