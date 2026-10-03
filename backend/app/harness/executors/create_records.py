@@ -145,6 +145,14 @@ async def execute_create_records(
     parent_code_to_id = {w.code: w.id for w in all_wbs if w.level == WBSLevel.category}
     index_to_wbs_id: dict[int, uuid.UUID] = {}
 
+    # Confidence lives on the WBS/VPS match (not the parsed line item), keyed by
+    # item_index — the same global line-item index used when creating line items.
+    index_to_confidence: dict[int, Decimal] = {}
+    for m in list(wbs_matches) + list(vps_matches):
+        idx = m.get("item_index")
+        if idx is not None:
+            index_to_confidence[idx] = Decimal(str(m.get("confidence", 0) or 0))
+
     for match in wbs_matches:
         item_idx = match["item_index"]
         code = match.get("wbs_code", "")
@@ -157,6 +165,10 @@ async def execute_create_records(
             # Truly new code (doesn't exist in project) — create it
             parent_id = parent_code_to_id.get(match["parent_code"])
             if not parent_id:
+                logger.warning(
+                    "create_records: skipping WBS match for item %s — new code %r has "
+                    "unresolvable parent_code %r; line left uncategorised",
+                    item_idx, match.get("wbs_code"), match.get("parent_code"))
                 continue
             new_wbs = WBSCode(
                 project_id=project_id, parent_id=parent_id,
@@ -366,7 +378,7 @@ async def execute_create_records(
             suggested_wbs_code_id=index_to_wbs_id.get(i),
             variation_id=var_id_by_index.get(i),
             provisional_sum_id=ps_id_by_index.get(i),
-            categorisation_confidence=Decimal(str(item.get("confidence", 0))),
+            categorisation_confidence=index_to_confidence.get(i, Decimal(0)),
             created_by=user_id,
         ))
 

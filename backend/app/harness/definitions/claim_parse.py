@@ -72,8 +72,9 @@ claim_parse_definition = HarnessDefinition(
         # Phase 4: WBS Categorisation (with WBS context + format playbook)
         PhaseDefinition(
             name="WBS Categorisation",
-            description="Match line items to WBS subcategories via LLM",
-            phase_type=PhaseType.LLM_SINGLE,
+            description="Match line items to WBS subcategories (Jev decision model, LLM fallback)",
+            phase_type=PhaseType.LLM_BATCH_AGENTS,
+            matcher="jev",
             workspace_output="wbs_matches.json",
             workspace_inputs=["parsed_claim.json"],
             system_prompt_template=_load_prompt("categorise_wbs.md"),
@@ -83,8 +84,9 @@ claim_parse_definition = HarnessDefinition(
         # Phase 5: Variation & PS Matching
         PhaseDefinition(
             name="Variation Matching",
-            description="Match variations and provisional sums to existing records via LLM",
-            phase_type=PhaseType.LLM_SINGLE,
+            description="Match variations and provisional sums to existing records (Jev decision model, LLM fallback)",
+            phase_type=PhaseType.LLM_BATCH_AGENTS,
+            matcher="jev",
             workspace_output="vps_matches.json",
             workspace_inputs=["parsed_claim.json"],
             system_prompt_template=_load_prompt("match_variations.md"),
