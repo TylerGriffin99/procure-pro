@@ -27,6 +27,7 @@ from tests.e2e.fixtures.gilmours_claim1 import (
     EXPECTED_CLAIM_ITEM_COUNT,
     EXPECTED_CLAIM_LINE_ITEMS,
     PROJECT,
+    WBS_CODES,
 )
 from tests.e2e.helpers import get_auth_headers, upload_claim_deep_mode
 
@@ -37,13 +38,32 @@ CLAIM_1_PATH = (
 
 EXPECTED_CONTRACT_WORK = [i for i in EXPECTED_CLAIM_LINE_ITEMS if i["item_type"] == "contract_work"]
 RECLASSIFIED_PS = [i for i in EXPECTED_CLAIM_LINE_ITEMS if i["item_type"] == "provisional_sum"]
+
+
+def _unambiguous_expected_codes() -> dict[str, str]:
+    """ref_code -> WBS code, for contract_work items whose contract_value equals exactly one
+    subcategory's contract_sum (ground truth independent of the fake's fuzzy fallback)."""
+    subs = [w for w in WBS_CODES if w.get("parent_code")]
+    out = {}
+    for item in EXPECTED_CONTRACT_WORK:
+        hits = [w["code"] for w in subs
+                if abs(float(w["contract_sum"]) - float(item["contract_value"])) < 0.01]
+        if len(hits) == 1:
+            out[item["ref_code"]] = hits[0]
+    return out
+
+
+EXPECTED_CODES = _unambiguous_expected_codes()
 _SUM_RE = re.compile(r"contract sum \$([\d,]+\.\d\d)")
 
 
 @pytest.fixture
 def fake_jev(monkeypatch):
     """Deterministic stand-in for the Jev decisions endpoint. Returns the call log."""
-    calls: list[dict] = []
+    class CallLog(list):
+        llm_called = False
+
+    calls = CallLog()
 
     async def fake_call_decisions(*, state, questions, model, url, api_key, timeout=30.0):
         (qid, q), = questions.items()
@@ -65,6 +85,7 @@ def fake_jev(monkeypatch):
                 "usage": {"input_tokens": 1}}
 
     async def llm_must_not_run(*a, **kw):
+        calls.llm_called = True
         raise AssertionError("LLM residue fallback invoked; jev fake should resolve every item")
 
     monkeypatch.setattr(jev_module, "call_decisions", fake_call_decisions)
@@ -79,13 +100,16 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
     headers = await get_auth_headers(client)
     project_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
     assert project_resp.status_code == 201, project_resp.text
-    project_id = project_resp.json()["id"]
+    project = project_resp.json()
+    project_id = project["id"]
+    id_by_code = {c["code"]: c["id"] for cat in project["wbs_codes"] for c in cat.get("children", [])}
 
     claim_id = await upload_claim_deep_mode(client, project_id, CLAIM_1_PATH, headers)
 
     # Phases 4 & 5 went through the (fake) Jev endpoint once per matched item (29 WBS + 3 VPS).
     assert len(fake_jev) == EXPECTED_CLAIM_ITEM_COUNT
     assert {c["api_key"] for c in fake_jev} == {"test-key"}
+    assert fake_jev.llm_called is False  # a swallowed guard AssertionError cannot hide an LLM call
 
     # Workspace: one WBS match per contract-work item, all resolved to existing codes.
     session_id = (await db_session.execute(select(HarnessSession.id))).scalars().one()
@@ -109,6 +133,19 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
     n_cw = sum(1 for li in claim["line_items"] if li["item_type"] == "contract_work")
     assert n_cw == len(EXPECTED_CONTRACT_WORK)
     assert n_cw == len(wbs) - len(RECLASSIFIED_PS)  # 4 PS rows reclassified out of contract_work
+
+    # Correctness: for items with an unambiguous exact contract-sum match, the correct
+    # subcategory must be what was stored (wbs_matches.json AND the claim line item).
+    assert len(EXPECTED_CODES) >= 20, EXPECTED_CODES
+    match_by_index = {m["item_index"]: m for m in wbs}
+    idx_by_ref = {i["ref_code"]: i["item_index"] for i in parsed_cw}
+    stored_by_ref = {li["ref_code"]: li["suggested_wbs_code_id"]
+                     for li in claim["line_items"] if li["item_type"] == "contract_work"}
+    for ref, code in EXPECTED_CODES.items():
+        m = match_by_index[idx_by_ref[ref]]
+        assert m["wbs_code"] == code, f"ref {ref}: matched {m['wbs_code']}, expected {code}"
+        assert m["wbs_code_id"] == id_by_code[code], f"ref {ref}: wrong wbs_code_id"
+        assert stored_by_ref[ref] == id_by_code[code], f"ref {ref}: claim item stored wrong WBS id"
 
     # Assessment record created. create_records emits one history row per existing
     # PS/variation record plus one row per claim line item, so we assert on the rows
