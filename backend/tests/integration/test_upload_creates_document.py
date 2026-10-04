@@ -1,12 +1,26 @@
 import hashlib
 import io
 import uuid
+from unittest.mock import patch
 
 import pytest
 
 from app.repos import document_repo, harness_repo
 from tests.e2e.fixtures.gilmours_claim1 import PROJECT
 from tests.e2e.helpers import get_auth_headers
+
+
+def _readable_clean_pdf():
+    """A pdfplumber stand-in so this persistence test isn't gated on real PDF parsing."""
+    page = type("Page", (), {
+        "extract_text": lambda self: "Progress Claim No. 1",
+        "extract_tables": lambda self: [],
+    })()
+    return type("PDF", (), {
+        "pages": [page],
+        "__enter__": lambda self: self,
+        "__exit__": lambda self, *a: None,
+    })()
 
 
 @pytest.mark.asyncio
@@ -16,11 +30,12 @@ async def test_upload_persists_document_and_links_session(client, db_session):
     project_id = proj_resp.json()["id"]
 
     content = b"%PDF-1.4\nminimal\n%%EOF"
-    resp = await client.post(
-        f"/api/projects/{project_id}/claims/upload",
-        files={"file": ("claim.pdf", io.BytesIO(content), "application/pdf")},
-        headers=headers,
-    )
+    with patch("pdfplumber.open", return_value=_readable_clean_pdf()):
+        resp = await client.post(
+            f"/api/projects/{project_id}/claims/upload",
+            files={"file": ("claim.pdf", io.BytesIO(content), "application/pdf")},
+            headers=headers,
+        )
     assert resp.status_code == 201, resp.text
     session_id = uuid.UUID(resp.json()["harness_session_id"])
 

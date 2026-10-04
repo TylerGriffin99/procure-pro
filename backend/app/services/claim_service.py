@@ -59,6 +59,64 @@ def _auto_fill_dates(claim_received: date | None) -> dict[str, date | None]:
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 
 
+def _extract_screenable_text(content: bytes) -> str:
+    """Return the page text + table-cell text a PDF would expose downstream.
+
+    Mirrors what raw_extraction feeds the LLM phases (text and tables) so the
+    screen covers the same surface. Raises if the PDF cannot be read.
+    """
+    import pdfplumber
+    from io import BytesIO
+
+    parts: list[str] = []
+    with pdfplumber.open(BytesIO(content)) as pdf:
+        if len(pdf.pages) == 0:
+            raise ValueError("PDF has zero pages")
+        for page in pdf.pages:
+            parts.append(page.extract_text() or "")
+            for table in page.extract_tables() or []:
+                for row in table:
+                    parts.extend(cell for cell in row if cell)
+    return "\n".join(parts)
+
+
+def _screen_pdf_content(content: bytes) -> None:
+    """Reject the upload unless it can be read AND is free of disallowed content.
+
+    This is the ingestion trust boundary: a document only reaches the DB if it was
+    successfully screened and found clean, so downstream code can treat stored
+    documents as trusted. We fail CLOSED — an unreadable PDF is rejected rather
+    than stored unscreened, because the screen and a downstream reader are not
+    guaranteed to fail on the same inputs.
+    """
+    from app.services.guardrails import screen_text
+
+    try:
+        text = _extract_screenable_text(content)
+    except Exception:
+        logger.warning("Rejected upload: PDF could not be read for screening", exc_info=True)
+        raise HTTPException(status_code=400, detail="Could not read the PDF to screen it")
+
+    if not text.strip():
+        # Parsed, but yielded no text/tables to screen (e.g. an image-only scan).
+        # Fail closed: we can't vouch for content we couldn't extract.
+        logger.warning("Rejected upload: PDF has no extractable text to screen")
+        raise HTTPException(status_code=400, detail="PDF has no extractable text to screen")
+
+    violations = screen_text(text)
+    if violations:
+        categories = sorted({v.category for v in violations})
+        # Snippets are attacker-controlled: log them (repr guards against log
+        # injection) but never reflect them to the client.
+        snippets = "; ".join(f"{v.category}:{v.snippet!r}" for v in violations)
+        logger.warning("Rejected upload: disallowed content [%s] — %s",
+                       ", ".join(categories), snippets)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Document rejected: it contains disallowed content ({', '.join(categories)})",
+        )
+
+
 async def create_document_from_upload(
     db: AsyncSession, project_id: uuid.UUID, file: UploadFile
 ):
@@ -72,6 +130,8 @@ async def create_document_from_upload(
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail="File exceeds the 25MB limit")
+    import asyncio
+    await asyncio.to_thread(_screen_pdf_content, content)  # PDF parse is blocking
     return await document_repo.create_document(
         db, project_id, file.filename or "upload.pdf", file.content_type, content,
     )
