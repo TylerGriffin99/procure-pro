@@ -34,11 +34,15 @@ case "$SUITE" in
         uv run pytest "$FILE" -v -s "$@"
         ;;
     all)
-        echo "Running all tests..."
-        uv run pytest tests/ -v "$@"
+        echo "Running all tests (evals excluded)..."
+        uv run pytest tests/ -v -m "not eval" "$@"
+        ;;
+    eval)
+        echo "Running Jev matcher eval (real Jev + LLM, paid)..."
+        uv run pytest tests/eval -v -s -m eval "$@"
         ;;
     *)
-        echo "Usage: $0 [unit|e2e|all] [pytest args...]"
+        echo "Usage: $0 [unit|e2e|all|eval] [pytest args...]"
         exit 1
         ;;
 esac

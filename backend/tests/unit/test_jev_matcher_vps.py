@@ -68,6 +68,8 @@ async def test_vps_out_of_criteria_is_null_and_warns(monkeypatch, caplog):
     assert by_index[0].matched_id is None
     assert by_index[1].matched_id == "v2"
     assert "bogus" in caplog.text
+    # The out-of-criteria choice is counted as a grounding violation; the valid one is not.
+    assert out.out_of_criteria == 1
 
 
 @pytest.mark.asyncio

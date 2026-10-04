@@ -15,6 +15,9 @@ class MatchOutcome:
     cost_usd: float | None = None
     fell_back: int = 0         # items that fell back after a Jev failure
     residue: int = 0           # items routed to the LLM (none/low-confidence)
+    out_of_criteria: int = 0   # items where the matcher chose an option not in the
+                               # supplied criteria set (a grounding violation: the
+                               # model named an option that does not exist)
 
 
 @runtime_checkable

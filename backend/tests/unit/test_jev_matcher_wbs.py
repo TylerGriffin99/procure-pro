@@ -82,6 +82,8 @@ async def test_wbs_unknown_choice_becomes_residue_none(monkeypatch, caplog):
     # Only the hallucinated choice warns; an intentional NONE is silent.
     warnings = [r for r in caplog.records if "out-of-criteria" in r.getMessage()]
     assert len(warnings) == 1 and "ZZ-99" in warnings[0].getMessage()
+    # The grounding violation is counted; the intentional NONE is not.
+    assert out.out_of_criteria == 1
 
 
 @pytest.mark.asyncio

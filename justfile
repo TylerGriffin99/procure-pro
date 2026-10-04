@@ -92,6 +92,11 @@ test-e2e *args:
 test-e2e-one file *args:
     ./scripts/test.sh e2e-file {{file}} {{args}}
 
+# Run the Jev matcher eval: real Jev + LLM over the golden set, N runs, prints a
+# spread report (paid, requires OPEN_ROUTER_API_KEY). `just eval runs=3` for a demo.
+eval runs="10" *args:
+    EVAL_RUNS={{runs}} ./scripts/test.sh eval {{args}}
+
 # ── Internals ───────────────────────────────────────────────────────────────
 
 # Create .env from the template on a fresh clone so compose can interpolate.

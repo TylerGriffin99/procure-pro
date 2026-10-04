@@ -38,6 +38,7 @@ include = ["app*"]
 asyncio_mode = "auto"
 markers = [
     "full_pipeline: Full 8-claim e2e pipeline test (slow, requires all PDFs + LLM)",
+    "eval: Nondeterministic, paid matcher eval (real Jev + LLM). Excluded from the default suite; run via `just eval`.",
 ]
 
 [build-system]

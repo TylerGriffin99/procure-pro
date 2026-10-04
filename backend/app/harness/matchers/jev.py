@@ -142,6 +142,7 @@ class JevMatcher:
         sem = asyncio.Semaphore(settings.jev_max_concurrency)
         results: dict[int, VpsMatch] = {}
         failed: set[int] = set()
+        ooc: set[int] = set()  # out-of-criteria (grounding) violations
         in_tok = 0
 
         async def run(item):
@@ -170,6 +171,7 @@ class JevMatcher:
             if choice != NONE_OPTION and not in_valid:
                 logger.warning("JevMatcher: out-of-criteria VPS choice %r for item %s; treating as new record",
                                choice, idx)
+                ooc.add(idx)
             matched_id = choice if in_valid else None
             floor = settings.jev_confidence_floor
             if matched_id is not None and conf < floor:
@@ -190,7 +192,7 @@ class JevMatcher:
             output=output,
             output_json=TypeAdapter(list[VpsMatch]).dump_json(output).decode(),
             input_tokens=in_tok, output_tokens=0,
-            fell_back=len(failed),
+            fell_back=len(failed), out_of_criteria=len(ooc),
         )
 
     async def _match_wbs(self, phase_def, db, project_id, session_id) -> MatchOutcome:
@@ -203,6 +205,7 @@ class JevMatcher:
         sem = asyncio.Semaphore(settings.jev_max_concurrency)
         results: dict[int, WbsMatch] = {}
         failed: set[int] = set()
+        ooc: set[int] = set()  # out-of-criteria (grounding) violations
         in_tok = 0
         out_tok = 0
         cost = 0.0
@@ -232,6 +235,7 @@ class JevMatcher:
             in_tok += tok
             if choice != NONE_OPTION and not known:
                 logger.warning("JevMatcher: out-of-criteria choice %r for item %s; treating as none/new", choice, idx)
+                ooc.add(idx)
             if choice == NONE_OPTION or not known:
                 # No existing code chosen. Placeholder; Task 8 mints the real residue code.
                 results[idx] = WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=conf)
@@ -271,5 +275,5 @@ class JevMatcher:
             output_json=TypeAdapter(list[WbsMatch]).dump_json(output).decode(),
             input_tokens=in_tok, output_tokens=out_tok,
             cost_usd=cost if have_cost else None,
-            fell_back=len(failed), residue=len(residue),
+            fell_back=len(failed), residue=len(residue), out_of_criteria=len(ooc),
         )
