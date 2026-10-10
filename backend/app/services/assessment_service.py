@@ -54,12 +54,19 @@ def _fmt_date(d) -> str:
 def _resolve_claim_dates(claim) -> dict[str, str]:
     """Resolve claim dates for PDF, falling back to created_at and auto-calculating."""
     if not claim:
-        return {"claim_received": "", "provisional_payment_schedule_due": "", "payment_schedule_due": "", "payment_due": ""}
+        return {
+            "claim_received": "",
+            "provisional_payment_schedule_due": "",
+            "payment_schedule_due": "",
+            "payment_due": "",
+        }
 
     claim_received = claim.claim_received
     if not claim_received and claim.created_at:
         # No explicit claim_received — use created_at and recalculate all dates
-        claim_received = claim.created_at.date() if hasattr(claim.created_at, "date") else claim.created_at
+        claim_received = (
+            claim.created_at.date() if hasattr(claim.created_at, "date") else claim.created_at
+        )
         auto = _auto_fill_dates(claim_received)
         return {
             "claim_received": _fmt_date(claim_received),
@@ -87,7 +94,10 @@ def _resolve_claim_dates(claim) -> dict[str, str]:
 
 
 async def create_assessment(
-    db: AsyncSession, project_id: uuid.UUID, data: AssessmentCreate, user: User,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    data: AssessmentCreate,
+    user: User,
 ) -> Assessment:
     # Load claim with line items
     claim = await claim_repo.get_by_id(db, data.claim_id)
@@ -96,7 +106,9 @@ async def create_assessment(
 
     # Get previously certified amount from latest finalised assessment
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
-    previously_certified = prev_assessment.total_payment_to_date if prev_assessment else Decimal("0")
+    previously_certified = (
+        prev_assessment.total_payment_to_date if prev_assessment else Decimal("0")
+    )
 
     # Determine version
     latest_version = await assessment_repo.get_latest_version_number(db, data.claim_id)
@@ -111,19 +123,23 @@ async def create_assessment(
     )
 
     for i, cli in enumerate(sorted(claim.line_items, key=lambda x: x.sort_order)):
-        assessment.line_items.append(AssessmentLineItem(
-            claim_line_item_id=cli.id,
-            description=cli.description,
-            contractor_claim_to_date=cli.ptd,
-            total_recommended=Decimal("0"),
-            percentage=Decimal("0"),
-            variance_to_claim=Decimal("0") - cli.ptd,
-            previously_paid=Decimal("0"),
-            recommended_this_period=Decimal("0"),
-            status=LineItemStatus.approved if cli.ptd == Decimal("0") else LineItemStatus.unapproved,
-            sort_order=i,
-            created_by=user.id,
-        ))
+        assessment.line_items.append(
+            AssessmentLineItem(
+                claim_line_item_id=cli.id,
+                description=cli.description,
+                contractor_claim_to_date=cli.ptd,
+                total_recommended=Decimal("0"),
+                percentage=Decimal("0"),
+                variance_to_claim=Decimal("0") - cli.ptd,
+                previously_paid=Decimal("0"),
+                recommended_this_period=Decimal("0"),
+                status=LineItemStatus.approved
+                if cli.ptd == Decimal("0")
+                else LineItemStatus.unapproved,
+                sort_order=i,
+                created_by=user.id,
+            )
+        )
 
     await assessment_repo.add(db, assessment)
     await db.commit()
@@ -131,7 +147,9 @@ async def create_assessment(
     return assessment
 
 
-async def get_assessment(db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID) -> Assessment:
+async def get_assessment(
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID
+) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
@@ -139,7 +157,9 @@ async def get_assessment(db: AsyncSession, project_id: uuid.UUID, assessment_id:
 
 
 async def get_latest_by_claim(
-    db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    claim_id: uuid.UUID,
 ) -> Assessment:
     assessment = await assessment_repo.get_latest_by_claim(db, claim_id, project_id=project_id)
     if not assessment:
@@ -162,7 +182,9 @@ async def update_line_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.contract_sum and item.contract_sum > 0:
-            item.percentage = (data.total_recommended / item.contract_sum * 100).quantize(Decimal("0.01"))
+            item.percentage = (data.total_recommended / item.contract_sum * 100).quantize(
+                Decimal("0.01")
+            )
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -180,7 +202,9 @@ async def update_line_item(
 
 
 async def get_aggregated_assessment(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    assessment_id: uuid.UUID,
 ) -> dict:
     """Fetch assessment and return it with pre-aggregated groups."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
@@ -204,7 +228,9 @@ async def get_aggregated_assessment(
 
 
 async def get_prior_interims(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    assessment_id: uuid.UUID,
 ) -> dict:
     """Find items from the previous finalised assessment that have status='interim'."""
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
@@ -221,11 +247,13 @@ async def get_prior_interims(
         if any(item.status == LineItemStatus.interim for item in items):
             total_rec = sum(item.total_recommended for item in items)
             comments = next((item.comments for item in items if item.comments), None)
-            wbs_interims.append({
-                "parent_id": str(wbs_id),
-                "previously_paid": str(total_rec),
-                "comments": comments,
-            })
+            wbs_interims.append(
+                {
+                    "parent_id": str(wbs_id),
+                    "previously_paid": str(total_rec),
+                    "comments": comments,
+                }
+            )
 
     variation_interims = []
     var_groups: dict[uuid.UUID, list] = {}
@@ -235,11 +263,13 @@ async def get_prior_interims(
         if any(item.status == LineItemStatus.interim for item in items):
             total_rec = sum(item.total_recommended for item in items)
             comments = next((item.comments for item in items if item.comments), None)
-            variation_interims.append({
-                "parent_id": str(var_id),
-                "previously_paid": str(total_rec),
-                "comments": comments,
-            })
+            variation_interims.append(
+                {
+                    "parent_id": str(var_id),
+                    "previously_paid": str(total_rec),
+                    "comments": comments,
+                }
+            )
 
     ps_interims = []
     ps_groups_dict: dict[uuid.UUID, list] = {}
@@ -249,11 +279,13 @@ async def get_prior_interims(
         if any(item.status == LineItemStatus.interim for item in items):
             total_rec = sum(item.total_recommended for item in items)
             comments = next((item.comments for item in items if item.comments), None)
-            ps_interims.append({
-                "parent_id": str(ps_id),
-                "previously_paid": str(total_rec),
-                "comments": comments,
-            })
+            ps_interims.append(
+                {
+                    "parent_id": str(ps_id),
+                    "previously_paid": str(total_rec),
+                    "comments": comments,
+                }
+            )
 
     return {
         "wbs_interims": wbs_interims,
@@ -276,19 +308,27 @@ async def create_interim_adjustment(
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
     if assessment.status != AssessmentStatus.draft:
-        raise HTTPException(status_code=400, detail="Assessment must be in draft to add adjustments")
+        raise HTTPException(
+            status_code=400, detail="Assessment must be in draft to add adjustments"
+        )
 
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
-    source_id = prev_assessment.id if prev_assessment and prev_assessment.id != assessment_id else None
+    source_id = (
+        prev_assessment.id if prev_assessment and prev_assessment.id != assessment_id else None
+    )
 
     comment_prefix = "Interim"
     comment_text = f"{comment_prefix} - {data.comments}" if data.comments else comment_prefix
 
     if data.item_type == "line-item":
         history = next(
-            (li for li in assessment.line_items
-             if li.wbs_code_id == data.parent_id and li.claim_line_item_id is None
-             and not li.adjustment_type),
+            (
+                li
+                for li in assessment.line_items
+                if li.wbs_code_id == data.parent_id
+                and li.claim_line_item_id is None
+                and not li.adjustment_type
+            ),
             None,
         )
         group_prev_paid = history.previously_paid if history else Decimal("0")
@@ -317,9 +357,13 @@ async def create_interim_adjustment(
 
     elif data.item_type == "variation":
         history = next(
-            (av for av in assessment.variation_items
-             if av.variation_id == data.parent_id and av.claim_line_item_id is None
-             and not av.adjustment_type),
+            (
+                av
+                for av in assessment.variation_items
+                if av.variation_id == data.parent_id
+                and av.claim_line_item_id is None
+                and not av.adjustment_type
+            ),
             None,
         )
         group_prev_paid = history.previously_paid if history else Decimal("0")
@@ -345,9 +389,13 @@ async def create_interim_adjustment(
 
     elif data.item_type == "provisional-sum":
         history = next(
-            (ps for ps in assessment.provisional_sum_items
-             if ps.provisional_sum_id == data.parent_id and ps.claim_line_item_id is None
-             and not ps.adjustment_type),
+            (
+                ps
+                for ps in assessment.provisional_sum_items
+                if ps.provisional_sum_id == data.parent_id
+                and ps.claim_line_item_id is None
+                and not ps.adjustment_type
+            ),
             None,
         )
         group_prev_paid = history.previously_paid if history else Decimal("0")
@@ -389,7 +437,9 @@ async def close_out_item(
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")
     if assessment.status != AssessmentStatus.draft:
-        raise HTTPException(status_code=400, detail="Assessment must be in draft to close out items")
+        raise HTTPException(
+            status_code=400, detail="Assessment must be in draft to close out items"
+        )
 
     def _update_comment(item):
         """Update comment prefix from Interim to Closed Out (idempotent)."""
@@ -398,7 +448,7 @@ async def close_out_item(
                 if item.comments.startswith("Closed Out"):
                     return  # already closed out, don't double-prefix
                 if item.comments.startswith("Interim"):
-                    item.comments = "Closed Out" + item.comments[len("Interim"):]
+                    item.comments = "Closed Out" + item.comments[len("Interim") :]
                 else:
                     item.comments = f"Closed Out - {item.comments}"
             else:
@@ -421,7 +471,9 @@ async def close_out_item(
             item.updated_by = user.id
 
     elif data.item_type == "provisional-sum":
-        matching = [ps for ps in assessment.provisional_sum_items if ps.provisional_sum_id == data.parent_id]
+        matching = [
+            ps for ps in assessment.provisional_sum_items if ps.provisional_sum_id == data.parent_id
+        ]
         for item in matching:
             item.status = LineItemStatus.approved
             item.is_closed_out = True
@@ -435,7 +487,10 @@ async def close_out_item(
 
 
 async def generate_assessment_export(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, format: str = "pdf",
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    assessment_id: uuid.UUID,
+    format: str = "pdf",
 ) -> tuple[bytes, str]:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -461,17 +516,19 @@ async def generate_assessment_export(
     for g in wbs_groups:
         all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
         comments = "; ".join(r.comments for r in all_rows if r.comments)
-        contract_works.append({
-            "description": g.description,
-            "contract_sum": g.contract_sum,
-            "contractor_claim": g.contractor_claim_to_date,
-            "recommended": g.total_recommended,
-            "percentage": f"{g.percentage:.1f}%",
-            "variance": g.variance_to_claim,
-            "previously_paid": g.previously_paid,
-            "recommended_this_period": g.recommended_this_period,
-            "comments": comments,
-        })
+        contract_works.append(
+            {
+                "description": g.description,
+                "contract_sum": g.contract_sum,
+                "contractor_claim": g.contractor_claim_to_date,
+                "recommended": g.total_recommended,
+                "percentage": f"{g.percentage:.1f}%",
+                "variance": g.variance_to_claim,
+                "previously_paid": g.previously_paid,
+                "recommended_this_period": g.recommended_this_period,
+                "comments": comments,
+            }
+        )
 
     # Build variation_works list for PDF
     variation_works = []
@@ -482,7 +539,7 @@ async def generate_assessment_export(
         display_comments = comments
         for prefix in ("Closed Out - ", "Interim - ", "Closed Out", "Interim"):
             if display_comments.startswith(prefix):
-                display_comments = display_comments[len(prefix):]
+                display_comments = display_comments[len(prefix) :]
                 break
         display_comments = display_comments.strip()
 
@@ -497,18 +554,20 @@ async def generate_assessment_export(
         else:
             display_status = ""
 
-        variation_works.append({
-            "ci_number": g.contractor_ref,
-            "description": g.description,
-            "submission": g.contractor_submission,
-            "type": "",
-            "claimed_to_date": g.contractor_claim_to_date,
-            "recommended": g.total_recommended,
-            "previously_paid": g.previously_paid,
-            "this_period": g.recommended_this_period,
-            "status": display_status,
-            "comments": display_comments,
-        })
+        variation_works.append(
+            {
+                "ci_number": g.contractor_ref,
+                "description": g.description,
+                "submission": g.contractor_submission,
+                "type": "",
+                "claimed_to_date": g.contractor_claim_to_date,
+                "recommended": g.total_recommended,
+                "previously_paid": g.previously_paid,
+                "this_period": g.recommended_this_period,
+                "status": display_status,
+                "comments": display_comments,
+            }
+        )
 
     # Build provisional_sums list for PDF
     provisional_sums = []
@@ -518,7 +577,7 @@ async def generate_assessment_export(
         display_comments = comments
         for prefix in ("Closed Out - ", "Interim - ", "Closed Out", "Interim"):
             if display_comments.startswith(prefix):
-                display_comments = display_comments[len(prefix):]
+                display_comments = display_comments[len(prefix) :]
                 break
         display_comments = display_comments.strip()
 
@@ -532,18 +591,20 @@ async def generate_assessment_export(
         else:
             display_status = ""
 
-        provisional_sums.append({
-            "ps_number": g.ps_number,
-            "description": g.description,
-            "contract_sum": g.contract_sum,
-            "claimed_to_date": g.contractor_claim_to_date,
-            "recommended": g.total_recommended,
-            "previously_paid": g.previously_paid,
-            "this_period": g.recommended_this_period,
-            "percentage": f"{g.percentage:.1f}%",
-            "status": display_status,
-            "comments": display_comments,
-        })
+        provisional_sums.append(
+            {
+                "ps_number": g.ps_number,
+                "description": g.description,
+                "contract_sum": g.contract_sum,
+                "claimed_to_date": g.contractor_claim_to_date,
+                "recommended": g.total_recommended,
+                "previously_paid": g.previously_paid,
+                "this_period": g.recommended_this_period,
+                "percentage": f"{g.percentage:.1f}%",
+                "status": display_status,
+                "comments": display_comments,
+            }
+        )
 
     # Calculate totals using aggregator
     totals = compute_assessment_totals(wbs_groups, var_groups, ps_groups)
@@ -552,7 +613,10 @@ async def generate_assessment_export(
     value_claimed = totals.value_claimed_to_date
     adjustments = totals.adjustments
 
-    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
+    retention_tiers = [
+        {"percentage": t.percentage, "up_to_amount": t.up_to_amount}
+        for t in project.retention_tiers
+    ]
     total_retention = calculate_retention(total_recommended, retention_tiers)
     retention_details = calculate_retention_per_tier(total_recommended, retention_tiers)
 
@@ -569,12 +633,24 @@ async def generate_assessment_export(
         "issue_date": assessment.created_at.strftime("%d %B %Y") if assessment.created_at else "",
         "principal": project.client_name,
         "end_client_name": project.end_client_name or project.client_name,
-        "end_client_address_lines": (project.end_client_address or "").split("\n") if project.end_client_address else [],
-        "end_client_representative_first_name": (project.end_client_representative or "").split()[0] if project.end_client_representative else "",
+        "end_client_address_lines": (project.end_client_address or "").split("\n")
+        if project.end_client_address
+        else [],
+        "end_client_representative_first_name": (project.end_client_representative or "").split()[0]
+        if project.end_client_representative
+        else "",
         "landlord_split_pct": project.landlord_split_pct,
         "operator_split_pct": project.operator_split_pct,
-        "landlord_amount": (recommended_this_period * project.landlord_split_pct).quantize(Decimal("0.01")) if project.landlord_split_pct else Decimal("0"),
-        "operator_amount": (recommended_this_period * project.operator_split_pct).quantize(Decimal("0.01")) if project.operator_split_pct else Decimal("0"),
+        "landlord_amount": (recommended_this_period * project.landlord_split_pct).quantize(
+            Decimal("0.01")
+        )
+        if project.landlord_split_pct
+        else Decimal("0"),
+        "operator_amount": (recommended_this_period * project.operator_split_pct).quantize(
+            Decimal("0.01")
+        )
+        if project.operator_split_pct
+        else Decimal("0"),
         "engineer": project.end_client_representative or "",
         "contractor": project.contractor_name,
         "claim_number": claim.claim_number if claim else assessment.version,
@@ -582,7 +658,9 @@ async def generate_assessment_export(
         "contract_sum": project.contract_sum,
         "adjustment_to_provisional_sums": totals.adjustment_to_provisional_sums,
         "approved_variation_orders": totals.approved_variation_orders,
-        "adjusted_contract_sum": project.contract_sum + totals.approved_variation_orders + totals.adjustment_to_provisional_sums,
+        "adjusted_contract_sum": project.contract_sum
+        + totals.approved_variation_orders
+        + totals.adjustment_to_provisional_sums,
         "value_claimed": value_claimed,
         "adjustments": adjustments,
         "total_recommended": total_recommended,
@@ -601,8 +679,9 @@ async def generate_assessment_export(
     }
 
     if format == "excel":
-        return generate_payment_recommendation_excel(pdf_data), \
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return generate_payment_recommendation_excel(
+            pdf_data
+        ), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return generate_payment_recommendation_pdf(pdf_data), "application/pdf"
 
 
@@ -621,7 +700,9 @@ async def update_variation_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.variation and item.variation.contractor_submission > 0:
-            item.percentage = (data.total_recommended / item.variation.contractor_submission * 100).quantize(Decimal("0.01"))
+            item.percentage = (
+                data.total_recommended / item.variation.contractor_submission * 100
+            ).quantize(Decimal("0.01"))
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -653,7 +734,9 @@ async def update_provisional_sum_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.provisional_sum and item.provisional_sum.contract_sum > 0:
-            item.percentage = (data.total_recommended / item.provisional_sum.contract_sum * 100).quantize(Decimal("0.01"))
+            item.percentage = (
+                data.total_recommended / item.provisional_sum.contract_sum * 100
+            ).quantize(Decimal("0.01"))
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -684,16 +767,25 @@ async def reclassify_item(
     # Find source row in the appropriate list
     source_row = None
     if data.source_type == "line-item":
-        source_row = next((li for li in assessment.line_items if li.id == data.source_item_id), None)
+        source_row = next(
+            (li for li in assessment.line_items if li.id == data.source_item_id), None
+        )
     elif data.source_type == "variation":
-        source_row = next((av for av in assessment.variation_items if av.id == data.source_item_id), None)
+        source_row = next(
+            (av for av in assessment.variation_items if av.id == data.source_item_id), None
+        )
     elif data.source_type == "provisional-sum":
-        source_row = next((ps for ps in assessment.provisional_sum_items if ps.id == data.source_item_id), None)
+        source_row = next(
+            (ps for ps in assessment.provisional_sum_items if ps.id == data.source_item_id), None
+        )
 
     if not source_row:
         raise HTTPException(status_code=404, detail="Source item not found")
     if source_row.claim_line_item_id is None:
-        raise HTTPException(status_code=400, detail="Cannot reclassify a history row without a linked claim line item")
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot reclassify a history row without a linked claim line item",
+        )
 
     # Capture carried values
     recommended_this_period = source_row.recommended_this_period
@@ -844,7 +936,10 @@ async def reclassify_item(
 
 
 async def finalise_assessment(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, user: User,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    assessment_id: uuid.UUID,
+    user: User,
 ) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -898,12 +993,19 @@ async def finalise_assessment(
     assessment.contract_sum = project.contract_sum
     assessment.approved_variation_orders = totals.approved_variation_orders
     assessment.adjustment_to_provisional_sums = totals.adjustment_to_provisional_sums
-    assessment.adjusted_contract_sum = project.contract_sum + totals.approved_variation_orders + totals.adjustment_to_provisional_sums
+    assessment.adjusted_contract_sum = (
+        project.contract_sum
+        + totals.approved_variation_orders
+        + totals.adjustment_to_provisional_sums
+    )
     total_recommended = totals.total_recommended
     assessment.total_recommended = total_recommended
 
     # Calculate retention and payment-to-date for use by future assessments
-    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
+    retention_tiers = [
+        {"percentage": t.percentage, "up_to_amount": t.up_to_amount}
+        for t in project.retention_tiers
+    ]
     total_retention = calculate_retention(total_recommended, retention_tiers)
     assessment.total_retention = total_retention
     total_payment_to_date = total_recommended - total_retention
@@ -925,7 +1027,10 @@ async def finalise_assessment(
 
 
 async def revert_to_draft(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, user: User,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    assessment_id: uuid.UUID,
+    user: User,
 ) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:

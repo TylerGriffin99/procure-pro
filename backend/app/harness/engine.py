@@ -1,4 +1,5 @@
 """Harness engine — phase-based orchestration with SSE streaming."""
+
 from __future__ import annotations
 
 import asyncio
@@ -101,6 +102,7 @@ class HarnessEngine:
 
         # All phases complete
         from app.models.harness_session import HarnessSessionStatus
+
         await harness_repo.set_status(self.db, self.session_id, HarnessSessionStatus.completed)
         await self.db.commit()
 
@@ -148,12 +150,17 @@ class HarnessEngine:
 
         result_str = json.dumps(result) if isinstance(result, dict) else str(result)
         await harness_repo.write_workspace_file(
-            self.db, self.session_id, phase_def.workspace_output, result_str,
+            self.db,
+            self.session_id,
+            phase_def.workspace_output,
+            result_str,
             internal=phase_def.internal,
         )
 
         await harness_repo.update_phase(
-            self.db, self.session_id, str(phase_index),
+            self.db,
+            self.session_id,
+            str(phase_index),
             {"status": "completed", "summary": f"Produced {phase_def.workspace_output}"},
             phase_index + 1,
         )
@@ -212,12 +219,17 @@ class HarnessEngine:
 
         # Write validated output to workspace (bare JSON matching the typed schema).
         await harness_repo.write_workspace_file(
-            self.db, self.session_id, phase_def.workspace_output, response.output_json,
+            self.db,
+            self.session_id,
+            phase_def.workspace_output,
+            response.output_json,
             internal=phase_def.internal,
         )
 
         await harness_repo.update_phase(
-            self.db, self.session_id, str(phase_index),
+            self.db,
+            self.session_id,
+            str(phase_index),
             {"status": "completed", "summary": f"Produced {phase_def.workspace_output}"},
             phase_index + 1,
         )
@@ -239,9 +251,7 @@ class HarnessEngine:
         from app.harness.matchers.base import get_matcher
 
         if phase_def.output_schema is None:
-            raise ValueError(
-                f"LLM_BATCH_AGENTS phase '{phase_def.name}' has no output_schema."
-            )
+            raise ValueError(f"LLM_BATCH_AGENTS phase '{phase_def.name}' has no output_schema.")
 
         name = phase_def.matcher or settings.matcher_default or "llm"
         # Unconfigured Jev -> run the whole phase on the LLM path (logged, not silent).
@@ -267,15 +277,22 @@ class HarnessEngine:
         )
 
         await harness_repo.write_workspace_file(
-            self.db, self.session_id, phase_def.workspace_output, outcome.output_json,
+            self.db,
+            self.session_id,
+            phase_def.workspace_output,
+            outcome.output_json,
             internal=phase_def.internal,
         )
         n = len(outcome.output)
         counts = f"fell_back={outcome.fell_back}/{n} residue={outcome.residue}/{n}"
         await harness_repo.update_phase(
-            self.db, self.session_id, str(phase_index),
-            {"status": "completed",
-             "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})"},
+            self.db,
+            self.session_id,
+            str(phase_index),
+            {
+                "status": "completed",
+                "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})",
+            },
             phase_index + 1,
         )
         await self.db.commit()
@@ -289,5 +306,8 @@ class HarnessEngine:
 
     async def _set_failed(self, error: str) -> None:
         from app.models.harness_session import HarnessSessionStatus
-        await harness_repo.set_status(self.db, self.session_id, HarnessSessionStatus.failed, error_message=error)
+
+        await harness_repo.set_status(
+            self.db, self.session_id, HarnessSessionStatus.failed, error_message=error
+        )
         await self.db.commit()

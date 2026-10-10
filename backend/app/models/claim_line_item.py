@@ -29,9 +29,15 @@ class ClaimLineItem(AuditMixin, Base):
     current: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     balance: Mapped[Decimal] = mapped_column(Numeric(15, 2))
 
-    suggested_wbs_code_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("wbs_codes.id"))
-    variation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("variations.id"))
-    provisional_sum_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("provisional_sums.id"))
+    suggested_wbs_code_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wbs_codes.id")
+    )
+    variation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("variations.id")
+    )
+    provisional_sum_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("provisional_sums.id")
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     categorisation_confidence: Mapped[Decimal | None] = mapped_column(Numeric(3, 2), nullable=True)
     warnings: Mapped[list | None] = mapped_column(JSONB, default=list)

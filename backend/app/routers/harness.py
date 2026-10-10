@@ -1,4 +1,5 @@
 """Harness SSE streaming + lifecycle endpoints."""
+
 import logging
 import uuid
 
@@ -41,7 +42,9 @@ def _coerce_harness_type(value: str) -> HarnessType | None:
         return None
 
 
-def _build_phases(harness_type: HarnessType, current_phase: int, phase_results: dict, status: str) -> list[HarnessPhaseInfo]:
+def _build_phases(
+    harness_type: HarnessType, current_phase: int, phase_results: dict, status: str
+) -> list[HarnessPhaseInfo]:
     definition = harness_registry.get(harness_type)
     if not definition:
         return []
@@ -57,12 +60,15 @@ def _build_phases(harness_type: HarnessType, current_phase: int, phase_results: 
             phase_status = "running"
         else:
             phase_status = "pending"
-        phases.append(HarnessPhaseInfo(
-            index=i, name=phase_def.name,
-            phase_type=phase_def.phase_type.value,
-            status=phase_status,
-            result_summary=phase_results.get(str(i), {}).get("summary"),
-        ))
+        phases.append(
+            HarnessPhaseInfo(
+                index=i,
+                name=phase_def.name,
+                phase_type=phase_def.phase_type.value,
+                status=phase_status,
+                result_summary=phase_results.get(str(i), {}).get("summary"),
+            )
+        )
     return phases
 
 
@@ -76,13 +82,21 @@ async def get_harness_session(
     if not session or session.user_id != user.id:
         raise HTTPException(status_code=404, detail="Session not found")
     ht = _coerce_harness_type(session.harness_type)
-    phases = _build_phases(ht, session.current_phase, session.phase_results, session.status.value) if ht else []
+    phases = (
+        _build_phases(ht, session.current_phase, session.phase_results, session.status.value)
+        if ht
+        else []
+    )
     return HarnessSessionResponse(
-        id=session.id, user_id=session.user_id, project_id=session.project_id,
-        harness_type=session.harness_type, status=session.status.value,
+        id=session.id,
+        user_id=session.user_id,
+        project_id=session.project_id,
+        harness_type=session.harness_type,
+        status=session.status.value,
         current_phase=session.current_phase,
         phases=phases,
-        claim_id=session.claim_id, error_message=session.error_message,
+        claim_id=session.claim_id,
+        error_message=session.error_message,
         created_at=session.created_at,
     )
 
@@ -138,7 +152,11 @@ async def stream_harness_session(
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -151,7 +169,9 @@ async def cancel_harness_session(
     session = await harness_repo.get_session(db, session_id)
     if not session or session.user_id != user.id:
         raise HTTPException(status_code=404, detail="Session not found")
-    await harness_repo.set_status(db, session_id, HarnessSessionStatus.failed, error_message="Cancelled by user")
+    await harness_repo.set_status(
+        db, session_id, HarnessSessionStatus.failed, error_message="Cancelled by user"
+    )
     await db.commit()
     return {"id": str(session_id), "status": "failed"}
 
@@ -200,7 +220,9 @@ async def list_workspace_files(
         raise HTTPException(status_code=404, detail="Session not found")
     files = await harness_repo.list_workspace_files(db, session_id)
     return [
-        WorkspaceFileResponse(file_path=f.file_path, created_at=f.created_at, updated_at=f.updated_at)
+        WorkspaceFileResponse(
+            file_path=f.file_path, created_at=f.created_at, updated_at=f.updated_at
+        )
         for f in files
     ]
 

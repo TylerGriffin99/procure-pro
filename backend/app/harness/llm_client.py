@@ -5,6 +5,7 @@ interface. Used by the non-agent utilities (`utils/categoriser`,
 `utils/variation_matcher`); harness phases use `agent_runner` for validated,
 typed structured outputs.
 """
+
 import logging
 
 import openai
@@ -36,4 +37,6 @@ def get_client() -> openai.AsyncOpenAI:
             api_key=settings.deepseek_api_key,
         )
 
-    raise ValueError(f"Unknown LLM_PROVIDER: {provider!r}. Use 'anthropic', 'openai', 'openrouter', or 'deepseek'.")
+    raise ValueError(
+        f"Unknown LLM_PROVIDER: {provider!r}. Use 'anthropic', 'openai', 'openrouter', or 'deepseek'."
+    )

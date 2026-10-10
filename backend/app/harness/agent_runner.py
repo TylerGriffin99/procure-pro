@@ -5,6 +5,7 @@ Runs a single structured LLM call through a pydantic-ai ``Agent`` whose
 validated and fully typed. Provider routing mirrors ``llm_client.get_client``:
 all four providers are reached through the OpenAI-compatible interface.
 """
+
 from __future__ import annotations
 
 import logging

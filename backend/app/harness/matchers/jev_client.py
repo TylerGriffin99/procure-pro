@@ -6,6 +6,7 @@ raw transport seam (and the default ``decide_fn``); ``decide_with_retry`` wraps 
 ``decide_fn`` with bounded backoff and validates the response into a typed
 :class:`~app.harness.schemas.JevDecisionResponse`.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -56,9 +57,11 @@ def is_fatal(exc: Exception) -> bool:
 
 def item_state(item: ParsedClaimItem) -> dict[str, Any]:
     """The per-item ``state`` payload sent to the Jev decisions API."""
-    return {"description": item.description,
-            "contract_value": item.contract_value,
-            "item_type": item.item_type}
+    return {
+        "description": item.description,
+        "contract_value": item.contract_value,
+        "item_type": item.item_type,
+    }
 
 
 def check_context_budget(
@@ -72,7 +75,10 @@ def check_context_budget(
     """Reject a request whose largest serialized item exceeds ~32k tokens (chars/4 proxy)."""
     worst = max(states, key=lambda s: len(json.dumps(s, default=str)), default={})
     payload = json.dumps(
-        {"state": worst, "questions": {"item_0": {"instructions": instructions, "criteria": criteria}}},
+        {
+            "state": worst,
+            "questions": {"item_0": {"instructions": instructions, "criteria": criteria}},
+        },
         default=str,
     )
     if len(payload) / 4 > max_tokens:
@@ -104,8 +110,12 @@ async def decide_with_retry(
         try:
             raw = await decide_fn(
                 state=state,
-                questions={qid: {"type": "choice", "instructions": instructions, "criteria": criteria}},
-                model=model, url=url, api_key=api_key,
+                questions={
+                    qid: {"type": "choice", "instructions": instructions, "criteria": criteria}
+                },
+                model=model,
+                url=url,
+                api_key=api_key,
             )
             return JevDecisionResponse.model_validate(raw)
         except httpx.HTTPStatusError as e:
@@ -116,6 +126,8 @@ async def decide_with_retry(
                 await asyncio.sleep(delay + random.uniform(0, delay))
                 delay *= 2
                 continue
-            logger.warning("Jev decision %s failed after %d attempt(s): HTTP %s", qid, attempt, code)
+            logger.warning(
+                "Jev decision %s failed after %d attempt(s): HTTP %s", qid, attempt, code
+            )
             raise
     raise RuntimeError("unreachable: decide_with_retry loop exhausted")

@@ -7,6 +7,7 @@ that downstream programmatic phases (``create_records``) consume.
 Field sets mirror exactly what ``create_records`` reads, so the workspace-file
 contract is unchanged — only now it is typed and validated at the source.
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Literal

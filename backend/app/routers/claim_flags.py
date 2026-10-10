@@ -1,4 +1,5 @@
 """Claim parse flags API."""
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +11,9 @@ from app.models.user import User
 from app.repos import harness_repo
 from app.schemas.claim_flag import ClaimParseFlagResponse, ResolveFlagRequest
 
-router = APIRouter(prefix="/api/projects/{project_id}/claims/{claim_id}/flags", tags=["claim_flags"])
+router = APIRouter(
+    prefix="/api/projects/{project_id}/claims/{claim_id}/flags", tags=["claim_flags"]
+)
 
 
 @router.get("", response_model=list[ClaimParseFlagResponse])
@@ -40,6 +43,7 @@ async def resolve_flag(
         from sqlalchemy import select
 
         from app.models.claim_parse_flag import ClaimParseFlag
+
         result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
         flag = result.scalar_one_or_none()
         if flag:

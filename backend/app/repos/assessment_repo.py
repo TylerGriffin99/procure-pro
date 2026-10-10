@@ -21,9 +21,7 @@ def _eager_options(
         opts.append(selectinload(Assessment.line_items))
     if with_variations:
         opts.append(
-            selectinload(Assessment.variation_items).selectinload(
-                AssessmentVariation.variation
-            )
+            selectinload(Assessment.variation_items).selectinload(AssessmentVariation.variation)
         )
     if with_provisional_sums:
         opts.append(
@@ -103,7 +101,9 @@ async def get_latest_by_claim(
 
 async def get_latest_version_number(db: AsyncSession, claim_id: uuid.UUID) -> int:
     result = await db.execute(
-        select(Assessment).where(Assessment.claim_id == claim_id).order_by(Assessment.version.desc())
+        select(Assessment)
+        .where(Assessment.claim_id == claim_id)
+        .order_by(Assessment.version.desc())
     )
     latest = result.scalar_one_or_none()
     return latest.version if latest else 0
@@ -133,18 +133,14 @@ async def get_latest_finalised(
 
 
 async def delete_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Assessment).where(Assessment.claim_id == claim_id)
-    )
+    result = await db.execute(select(Assessment).where(Assessment.claim_id == claim_id))
     for assessment in result.scalars().all():
         await db.delete(assessment)
 
 
 async def delete_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:
     """Delete all assessments for a project and flush."""
-    result = await db.execute(
-        select(Assessment).where(Assessment.project_id == project_id)
-    )
+    result = await db.execute(select(Assessment).where(Assessment.project_id == project_id))
     for assessment in result.scalars().all():
         await db.delete(assessment)
     await db.flush()

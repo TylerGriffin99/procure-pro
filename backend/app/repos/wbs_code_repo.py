@@ -17,9 +17,7 @@ async def create(db: AsyncSession, **kwargs) -> WBSCode:
 
 
 async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[WBSCode]:
-    result = await db.execute(
-        select(WBSCode).where(WBSCode.project_id == project_id)
-    )
+    result = await db.execute(select(WBSCode).where(WBSCode.project_id == project_id))
     return list(result.scalars().all())
 
 
@@ -39,9 +37,7 @@ async def get_by_id(db: AsyncSession, wbs_code_id: uuid.UUID) -> WBSCode | None:
 
 async def get_by_id_with_children(db: AsyncSession, wbs_code_id: uuid.UUID) -> WBSCode | None:
     result = await db.execute(
-        select(WBSCode)
-        .where(WBSCode.id == wbs_code_id)
-        .options(selectinload(WBSCode.children))
+        select(WBSCode).where(WBSCode.id == wbs_code_id).options(selectinload(WBSCode.children))
     )
     return result.scalar_one_or_none()
 
@@ -60,17 +56,13 @@ async def update(db: AsyncSession, wbs: WBSCode, **kwargs) -> WBSCode:
 async def is_in_use(db: AsyncSession, wbs_code_id: uuid.UUID) -> bool:
     """Check if a WBS code is referenced by any claim or assessment line items."""
     assessment_ref = await db.execute(
-        select(
-            exists().where(AssessmentLineItem.wbs_code_id == wbs_code_id)
-        )
+        select(exists().where(AssessmentLineItem.wbs_code_id == wbs_code_id))
     )
     if assessment_ref.scalar():
         return True
 
     claim_ref = await db.execute(
-        select(
-            exists().where(ClaimLineItem.suggested_wbs_code_id == wbs_code_id)
-        )
+        select(exists().where(ClaimLineItem.suggested_wbs_code_id == wbs_code_id))
     )
     if claim_ref.scalar():
         return True

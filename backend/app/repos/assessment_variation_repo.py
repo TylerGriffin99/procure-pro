@@ -8,7 +8,9 @@ from app.models.assessment_variation import AssessmentVariation
 
 
 async def get_by_id(
-    db: AsyncSession, item_id: uuid.UUID, assessment_id: uuid.UUID,
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    assessment_id: uuid.UUID,
 ) -> AssessmentVariation | None:
     result = await db.execute(
         select(AssessmentVariation)

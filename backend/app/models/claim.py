@@ -44,5 +44,6 @@ class Claim(AuditMixin, Base):
 
     validation_warnings: Mapped[list | None] = mapped_column(JSONB, default=list)
 
-    line_items: Mapped[list["ClaimLineItem"]] = relationship(back_populates="claim", cascade="all, delete-orphan")
-
+    line_items: Mapped[list["ClaimLineItem"]] = relationship(
+        back_populates="claim", cascade="all, delete-orphan"
+    )

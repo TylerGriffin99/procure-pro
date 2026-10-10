@@ -32,9 +32,7 @@ async def create_session(
 
 
 async def get_session(db: AsyncSession, session_id: uuid.UUID) -> HarnessSession | None:
-    result = await db.execute(
-        select(HarnessSession).where(HarnessSession.id == session_id)
-    )
+    result = await db.execute(select(HarnessSession).where(HarnessSession.id == session_id))
     return result.scalar_one_or_none()
 
 
@@ -73,11 +71,7 @@ async def set_status(
     values: dict = {"status": status}
     if error_message is not None:
         values["error_message"] = error_message
-    await db.execute(
-        update(HarnessSession)
-        .where(HarnessSession.id == session_id)
-        .values(**values)
-    )
+    await db.execute(update(HarnessSession).where(HarnessSession.id == session_id).values(**values))
     await db.flush()
 
 
@@ -104,14 +98,13 @@ async def update_phase(
 
 async def set_claim_id(db: AsyncSession, session_id: uuid.UUID, claim_id: uuid.UUID) -> None:
     await db.execute(
-        update(HarnessSession)
-        .where(HarnessSession.id == session_id)
-        .values(claim_id=claim_id)
+        update(HarnessSession).where(HarnessSession.id == session_id).values(claim_id=claim_id)
     )
     await db.flush()
 
 
 # -- Workspace files --
+
 
 async def write_workspace_file(
     db: AsyncSession,
@@ -141,8 +134,7 @@ async def read_workspace_file(
     file_path: str,
 ) -> str | None:
     result = await db.execute(
-        select(HarnessWorkspaceFile.content)
-        .where(
+        select(HarnessWorkspaceFile.content).where(
             HarnessWorkspaceFile.session_id == session_id,
             HarnessWorkspaceFile.file_path == file_path,
         )
@@ -164,6 +156,7 @@ async def list_workspace_files(
 
 
 # -- Flags --
+
 
 async def create_flag(
     db: AsyncSession,
@@ -221,9 +214,8 @@ async def resolve_flag(
     user_id: uuid.UUID,
 ) -> ClaimParseFlag | None:
     from sqlalchemy import func as sa_func
-    result = await db.execute(
-        select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id)
-    )
+
+    result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
     flag = result.scalar_one_or_none()
     if flag is None:
         return None
@@ -236,9 +228,7 @@ async def resolve_flag(
 
 async def delete_sessions_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> None:
     """Delete all harness sessions linked to a claim (cascades to workspace_files & flags)."""
-    result = await db.execute(
-        select(HarnessSession).where(HarnessSession.claim_id == claim_id)
-    )
+    result = await db.execute(select(HarnessSession).where(HarnessSession.claim_id == claim_id))
     for session in result.scalars().all():
         await db.delete(session)
     await db.flush()
@@ -246,9 +236,7 @@ async def delete_sessions_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> Non
 
 async def delete_sessions_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:
     """Delete all harness sessions for a project (cascades to workspace_files & flags)."""
-    result = await db.execute(
-        select(HarnessSession).where(HarnessSession.project_id == project_id)
-    )
+    result = await db.execute(select(HarnessSession).where(HarnessSession.project_id == project_id))
     for session in result.scalars().all():
         await db.delete(session)
     await db.flush()

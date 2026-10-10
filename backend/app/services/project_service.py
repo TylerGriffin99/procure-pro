@@ -46,7 +46,10 @@ async def create_project(
 
     for tier in data.retention_tiers:
         await retention_tier_repo.create(
-            db, project_id=project.id, **tier.model_dump(), created_by=user.id,
+            db,
+            project_id=project.id,
+            **tier.model_dump(),
+            created_by=user.id,
         )
 
     # Two-pass WBS code creation
@@ -108,7 +111,10 @@ async def get_project(db: AsyncSession, project_id: uuid.UUID):
 
 
 async def update_project(
-    db: AsyncSession, project_id: uuid.UUID, data: ProjectUpdate, user: User,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    data: ProjectUpdate,
+    user: User,
 ) -> Project:
     project = await project_repo.get_by_id(db, project_id)
     if not project:
@@ -140,7 +146,10 @@ async def delete_project(db: AsyncSession, project_id: uuid.UUID) -> None:
 
 
 async def create_wbs_code(
-    db: AsyncSession, project_id: uuid.UUID, data: WBSCodeCreate, user: User,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    data: WBSCodeCreate,
+    user: User,
 ) -> WBSCode:
     project = await project_repo.get_by_id(db, project_id)
     if not project:
@@ -148,7 +157,9 @@ async def create_wbs_code(
 
     existing = await wbs_code_repo.get_by_project(db, project_id)
     if any(w.code == data.code for w in existing):
-        raise HTTPException(status_code=422, detail=f"WBS code '{data.code}' already exists in this project")
+        raise HTTPException(
+            status_code=422, detail=f"WBS code '{data.code}' already exists in this project"
+        )
 
     if data.level == "subcategory":
         parent_id = data.parent_id
@@ -180,8 +191,11 @@ async def create_wbs_code(
 
 
 async def update_wbs_code(
-    db: AsyncSession, project_id: uuid.UUID, wbs_code_id: uuid.UUID,
-    data: WBSCodeUpdate, user: User,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    wbs_code_id: uuid.UUID,
+    data: WBSCodeUpdate,
+    user: User,
 ) -> WBSCode:
     wbs = await wbs_code_repo.get_by_id(db, wbs_code_id)
     if not wbs or wbs.project_id != project_id:
@@ -204,7 +218,10 @@ async def update_wbs_code(
     if "code" in update_data and update_data["code"] != wbs.code:
         existing = await wbs_code_repo.get_by_project(db, project_id)
         if any(w.code == update_data["code"] and w.id != wbs_code_id for w in existing):
-            raise HTTPException(status_code=422, detail=f"WBS code '{update_data['code']}' already exists in this project")
+            raise HTTPException(
+                status_code=422,
+                detail=f"WBS code '{update_data['code']}' already exists in this project",
+            )
 
     if "level" in update_data and update_data["level"] is not None:
         update_data["level"] = WBSLevel(update_data["level"])

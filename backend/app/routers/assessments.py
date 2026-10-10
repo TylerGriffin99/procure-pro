@@ -122,7 +122,9 @@ async def update_provisional_sum_item(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return await assessment_service.update_provisional_sum_item(db, assessment_id, item_id, body, user)
+    return await assessment_service.update_provisional_sum_item(
+        db, assessment_id, item_id, body, user
+    )
 
 
 @router.post("/{assessment_id}/reclassify", response_model=AggregatedAssessmentResponse)
@@ -203,7 +205,9 @@ async def create_interim_adjustment(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await assessment_service.create_interim_adjustment(db, project_id, assessment_id, body, user)
+    result = await assessment_service.create_interim_adjustment(
+        db, project_id, assessment_id, body, user
+    )
     return _build_aggregated_response(result)
 
 

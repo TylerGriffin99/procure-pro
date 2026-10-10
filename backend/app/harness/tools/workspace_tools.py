@@ -1,4 +1,5 @@
 """Workspace file read/write for harness phases."""
+
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession

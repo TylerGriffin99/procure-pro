@@ -2,6 +2,7 @@
 
 Mirrors the queries in ``app.harness.context_loaders``.
 """
+
 from __future__ import annotations
 
 import json
@@ -58,13 +59,21 @@ async def vps_records(*, db, project_id) -> list[VpsRecord]:
     variations = await variation_repo.get_by_project(db, project_id)
     sums = await provisional_sum_repo.get_by_project(db, project_id)
     out = [
-        VpsRecord(id=str(v.id), description=v.description or "",
-                  value=_num(v.contractor_submission), item_type="variation")
+        VpsRecord(
+            id=str(v.id),
+            description=v.description or "",
+            value=_num(v.contractor_submission),
+            item_type="variation",
+        )
         for v in variations
     ]
     out += [
-        VpsRecord(id=str(p.id), description=p.description or "",
-                  value=_num(p.contract_sum), item_type="provisional_sum")
+        VpsRecord(
+            id=str(p.id),
+            description=p.description or "",
+            value=_num(p.contract_sum),
+            item_type="provisional_sum",
+        )
         for p in sums
     ]
     return out

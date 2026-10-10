@@ -1,4 +1,5 @@
 """Phase 1: Detect document format from raw extracted text."""
+
 import json
 import logging
 import uuid

@@ -1,4 +1,5 @@
 """Phase 2: Deterministic validation of contractor claim math."""
+
 import json
 import logging
 import uuid
@@ -46,14 +47,24 @@ async def execute_validate_claim(
 
     flags_created = 0
 
-    async def _flag(flag_type: FlagType, severity: FlagSeverity, description: str,
-                    ref: str | None = None, expected: Decimal | None = None,
-                    actual: Decimal | None = None) -> None:
+    async def _flag(
+        flag_type: FlagType,
+        severity: FlagSeverity,
+        description: str,
+        ref: str | None = None,
+        expected: Decimal | None = None,
+        actual: Decimal | None = None,
+    ) -> None:
         nonlocal flags_created
         await harness_repo.create_flag(
-            db=db, session_id=session_id,
-            flag_type=flag_type, severity=severity, description=description,
-            line_item_ref=ref, expected_value=expected, actual_value=actual,
+            db=db,
+            session_id=session_id,
+            flag_type=flag_type,
+            severity=severity,
+            description=description,
+            line_item_ref=ref,
+            expected_value=expected,
+            actual_value=actual,
         )
         flags_created += 1
 
@@ -67,17 +78,23 @@ async def execute_validate_claim(
         # Percentage bounds
         if percentage < ZERO or percentage > HUNDRED:
             await _flag(
-                FlagType.percentage_error, FlagSeverity.error,
+                FlagType.percentage_error,
+                FlagSeverity.error,
                 f"Percentage {percentage}% outside 0-100 range",
-                ref=ref, expected=HUNDRED, actual=percentage,
+                ref=ref,
+                expected=HUNDRED,
+                actual=percentage,
             )
 
         # Over-claiming: PTD exceeds contract value
         if contract_value > ZERO and ptd > contract_value:
             await _flag(
-                FlagType.over_claim, FlagSeverity.warning,
+                FlagType.over_claim,
+                FlagSeverity.warning,
                 f"PTD (${ptd:,.2f}) exceeds contract value (${contract_value:,.2f})",
-                ref=ref, expected=contract_value, actual=ptd,
+                ref=ref,
+                expected=contract_value,
+                actual=ptd,
             )
 
         # Missing ref — not a data quality issue, ref_code is the
@@ -89,7 +106,8 @@ async def execute_validate_claim(
     for ref, count in ref_counts.items():
         if count > 1:
             await _flag(
-                FlagType.duplicate_item, FlagSeverity.warning,
+                FlagType.duplicate_item,
+                FlagSeverity.warning,
                 f"Ref code '{ref}' appears {count} times",
                 ref=ref,
             )
@@ -111,20 +129,24 @@ async def execute_validate_claim(
         ps_total = project.provisional_sum_total
         if abs(sum_ps - ps_total) > TOLERANCE:
             await _flag(
-                FlagType.total_mismatch, FlagSeverity.warning,
+                FlagType.total_mismatch,
+                FlagSeverity.warning,
                 f"Provisional sums claimed (${sum_ps:,.2f}) do not match "
                 f"project provisional sum total (${ps_total:,.2f})",
-                expected=ps_total, actual=sum_ps,
+                expected=ps_total,
+                actual=sum_ps,
             )
 
     # Project over budget: contract works + provisional sums + variations > original total
     revised_total = sum_cw + sum_ps + sum_var
     if orig_total > ZERO and revised_total > orig_total + TOLERANCE:
         await _flag(
-            FlagType.project_over_budget, FlagSeverity.warning,
+            FlagType.project_over_budget,
+            FlagSeverity.warning,
             f"Project over budget: works + provisional sums + variations "
             f"(${revised_total:,.2f}) exceeds original contract (${orig_total:,.2f})",
-            expected=orig_total, actual=revised_total,
+            expected=orig_total,
+            actual=revised_total,
         )
 
     # Total claimed exceeds revised contract total (all current + historic claims)
@@ -132,15 +154,18 @@ async def execute_validate_claim(
     revised_contract = _dec(summary.get("revised_contract_total"))
     if revised_contract > ZERO and sum_claimed_ptd > revised_contract + TOLERANCE:
         await _flag(
-            FlagType.over_claim, FlagSeverity.warning,
+            FlagType.over_claim,
+            FlagSeverity.warning,
             f"Total claimed to date (${sum_claimed_ptd:,.2f}) exceeds "
             f"revised contract total (${revised_contract:,.2f})",
-            expected=revised_contract, actual=sum_claimed_ptd,
+            expected=revised_contract,
+            actual=sum_claimed_ptd,
         )
 
     logger.info(
         "Validation complete: %d items checked, %d flags created",
-        len(line_items), flags_created,
+        len(line_items),
+        flags_created,
     )
 
     return {

@@ -1,4 +1,5 @@
 """Deterministic validation checks on parsed claim data."""
+
 import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -24,9 +25,7 @@ def _validate_line_item(item: ParsedLineItem) -> list[str]:
     warnings: list[str] = []
 
     if item.percentage < ZERO or item.percentage > HUNDRED:
-        warnings.append(
-            f"Percentage {item.percentage}% is outside expected 0-100% range"
-        )
+        warnings.append(f"Percentage {item.percentage}% is outside expected 0-100% range")
 
     if item.current > ZERO and item.contract_value > ZERO and item.current > item.contract_value:
         warnings.append(
@@ -58,12 +57,8 @@ def _validate_claim_totals(parsed: ParsedClaim) -> list[str]:
         warnings.append("No line items extracted from PDF")
         return warnings
 
-    sum_cw = sum(
-        i.contract_value for i in parsed.line_items if i.item_type == "contract_work"
-    )
-    sum_var = sum(
-        i.contract_value for i in parsed.line_items if i.item_type == "variation"
-    )
+    sum_cw = sum(i.contract_value for i in parsed.line_items if i.item_type == "contract_work")
+    sum_var = sum(i.contract_value for i in parsed.line_items if i.item_type == "variation")
 
     orig = parsed.summary.original_contract_total
     if orig and abs(sum_cw - orig) > TOLERANCE:

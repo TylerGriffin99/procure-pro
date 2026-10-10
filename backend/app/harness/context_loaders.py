@@ -3,6 +3,7 @@
 These provide project-level data (WBS codes, variations, provisional sums) and
 format-specific playbook content that LLM phases need.
 """
+
 import json
 import logging
 import uuid
@@ -23,7 +24,9 @@ _FALLBACK_PLAYBOOK = (
 
 
 async def load_wbs_context(
-    db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    session_id: uuid.UUID,
 ) -> dict[str, str]:
     """Load project WBS categories and subcategories for the categorisation prompt."""
     all_wbs = await wbs_code_repo.get_by_project(db, project_id)
@@ -51,7 +54,9 @@ async def load_wbs_context(
 
 
 async def load_variations_context(
-    db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    session_id: uuid.UUID,
 ) -> dict[str, str]:
     """Load existing variations and provisional sums for the matching prompt."""
     from app.repos import provisional_sum_repo, variation_repo
@@ -61,7 +66,7 @@ async def load_variations_context(
 
     if variations:
         variations_text = "\n".join(
-            f"- id={v.id} | ci_number={v.ci_number} | contractor_ref=\"{v.contractor_ref or ''}\" | description=\"{v.description}\" | submission={v.contractor_submission} | approved={v.approved_amount or 'N/A'} | status={v.status.value}"
+            f'- id={v.id} | ci_number={v.ci_number} | contractor_ref="{v.contractor_ref or ""}" | description="{v.description}" | submission={v.contractor_submission} | approved={v.approved_amount or "N/A"} | status={v.status.value}'
             for v in variations
         )
     else:
@@ -69,7 +74,7 @@ async def load_variations_context(
 
     if provisional_sums:
         ps_text = "\n".join(
-            f"- id={ps.id} | ps_number={ps.ps_number} | description=\"{ps.description}\" | contract_sum={ps.contract_sum} | approved={ps.approved_amount or 'N/A'}"
+            f'- id={ps.id} | ps_number={ps.ps_number} | description="{ps.description}" | contract_sum={ps.contract_sum} | approved={ps.approved_amount or "N/A"}'
             for ps in provisional_sums
         )
     else:
@@ -82,7 +87,9 @@ async def load_variations_context(
 
 
 async def load_format_playbook(
-    db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    session_id: uuid.UUID,
 ) -> dict[str, str]:
     """Load format-specific playbook based on format_detection.json."""
     raw = await harness_repo.read_workspace_file(db, session_id, "format_detection.json")

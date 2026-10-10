@@ -35,7 +35,9 @@ class PhaseDefinition:
     output_schema: Any = None
     workspace_inputs: list[str] = field(default_factory=list)
     executor: Callable | None = None
-    context_loaders: list[Callable] = field(default_factory=list)  # async (db, project_id, session_id) -> dict
+    context_loaders: list[Callable] = field(
+        default_factory=list
+    )  # async (db, project_id, session_id) -> dict
     validator: Callable | None = None
     post_execute: Callable | None = None
     internal: bool = False
@@ -61,6 +63,7 @@ class HarnessDefinition:
 
 
 # --- SSE event models ---
+
 
 class PhaseStatus(StrEnum):
     PENDING = "pending"

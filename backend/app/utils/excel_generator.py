@@ -1,4 +1,5 @@
 """Generate payment recommendation Excel workbook using openpyxl."""
+
 import io
 from decimal import Decimal
 
@@ -33,7 +34,7 @@ def _set_column_widths(ws, widths: list[int]):
         ws.column_dimensions[get_column_letter(i)].width = w
 
 
-NUMBER_FMT = '#,##0.00'
+NUMBER_FMT = "#,##0.00"
 
 
 def _write_summary_sheet(wb: Workbook, data: dict):
@@ -121,8 +122,15 @@ def _write_contract_works_sheet(wb: Workbook, data: dict):
     """Write the Contract Works sheet."""
     ws = wb.create_sheet("Contract Works")
     headers = [
-        "Description", "Contract Sum", "Claim to Date", "Total Recommended",
-        "Percentage", "Variance", "Previously Paid", "Recommended This Period", "Comments",
+        "Description",
+        "Contract Sum",
+        "Claim to Date",
+        "Total Recommended",
+        "Percentage",
+        "Variance",
+        "Previously Paid",
+        "Recommended This Period",
+        "Comments",
     ]
 
     for col, header in enumerate(headers, 1):
@@ -132,12 +140,16 @@ def _write_contract_works_sheet(wb: Workbook, data: dict):
     for i, item in enumerate(data.get("contract_works", []), 2):
         ws.cell(row=i, column=1, value=item.get("description", ""))
         ws.cell(row=i, column=2, value=_dec(item.get("contract_sum"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=3, value=_dec(item.get("contractor_claim"))).number_format = NUMBER_FMT
+        ws.cell(
+            row=i, column=3, value=_dec(item.get("contractor_claim"))
+        ).number_format = NUMBER_FMT
         ws.cell(row=i, column=4, value=_dec(item.get("recommended"))).number_format = NUMBER_FMT
         ws.cell(row=i, column=5, value=item.get("percentage", ""))
         ws.cell(row=i, column=6, value=_dec(item.get("variance"))).number_format = NUMBER_FMT
         ws.cell(row=i, column=7, value=_dec(item.get("previously_paid"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=8, value=_dec(item.get("recommended_this_period"))).number_format = NUMBER_FMT
+        ws.cell(
+            row=i, column=8, value=_dec(item.get("recommended_this_period"))
+        ).number_format = NUMBER_FMT
         ws.cell(row=i, column=9, value=item.get("comments", ""))
 
     _set_column_widths(ws, [30, 15, 15, 18, 12, 15, 15, 20, 30])
@@ -147,8 +159,16 @@ def _write_variations_sheet(wb: Workbook, data: dict):
     """Write the Variations sheet."""
     ws = wb.create_sheet("Variations")
     headers = [
-        "CI Number", "Description", "Submission", "Type",
-        "Claimed to Date", "Recommended", "Previously Paid", "This Period", "Status", "Comments",
+        "CI Number",
+        "Description",
+        "Submission",
+        "Type",
+        "Claimed to Date",
+        "Recommended",
+        "Previously Paid",
+        "This Period",
+        "Status",
+        "Comments",
     ]
 
     for col, header in enumerate(headers, 1):
@@ -174,8 +194,16 @@ def _write_provisional_sums_sheet(wb: Workbook, data: dict):
     """Write the Provisional Sums sheet."""
     ws = wb.create_sheet("Provisional Sums")
     headers = [
-        "PS Number", "Description", "Contract Sum", "Claimed to Date",
-        "Recommended", "Previously Paid", "This Period", "Percentage", "Status", "Comments",
+        "PS Number",
+        "Description",
+        "Contract Sum",
+        "Claimed to Date",
+        "Recommended",
+        "Previously Paid",
+        "This Period",
+        "Percentage",
+        "Status",
+        "Comments",
     ]
 
     for col, header in enumerate(headers, 1):

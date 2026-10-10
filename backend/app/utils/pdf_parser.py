@@ -1,4 +1,5 @@
 """Template-based WBPRO claim PDF parser using pdfplumber."""
+
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -149,7 +150,7 @@ def _find_section_titles(text: str) -> list[str]:
     titles = []
     for line in text.split("\n"):
         stripped = line.strip()
-        if re.match(r'^[A-Z]{2,}(?:\s+[A-Z]{2,})+$', stripped):
+        if re.match(r"^[A-Z]{2,}(?:\s+[A-Z]{2,})+$", stripped):
             titles.append(stripped.title())
     return titles
 
@@ -238,18 +239,20 @@ def parse_wbpro_claim(pdf_path: str) -> ParsedClaim:
                         ref = first_cell
                         desc = (row[1] or "").strip()
 
-                        line_items.append(ParsedLineItem(
-                            ref_code=ref,
-                            description=desc,
-                            contract_value=_parse_number(row[3]),
-                            percentage=_parse_percentage(row[4]),
-                            ptd=_parse_number(row[5]),
-                            previous=_parse_number(row[6]),
-                            current=_parse_number(row[7]),
-                            balance=_parse_number(row[8]) if len(row) > 8 else Decimal("0"),
-                            item_type="variation",
-                            section_title=current_section,
-                        ))
+                        line_items.append(
+                            ParsedLineItem(
+                                ref_code=ref,
+                                description=desc,
+                                contract_value=_parse_number(row[3]),
+                                percentage=_parse_percentage(row[4]),
+                                ptd=_parse_number(row[5]),
+                                previous=_parse_number(row[6]),
+                                current=_parse_number(row[7]),
+                                balance=_parse_number(row[8]) if len(row) > 8 else Decimal("0"),
+                                item_type="variation",
+                                section_title=current_section,
+                            )
+                        )
 
                     elif _is_contract_works_row(row):
                         ref = first_cell
@@ -259,18 +262,20 @@ def parse_wbpro_claim(pdf_path: str) -> ParsedClaim:
                         if desc.lower().startswith("provisional sum"):
                             item_type = "provisional_sum"
 
-                        line_items.append(ParsedLineItem(
-                            ref_code=ref,
-                            description=desc,
-                            contract_value=_parse_number(row[2]),
-                            percentage=_parse_percentage(row[3]),
-                            ptd=_parse_number(row[4]),
-                            previous=_parse_number(row[5]),
-                            current=_parse_number(row[6]),
-                            balance=_parse_number(row[7]) if len(row) > 7 else Decimal("0"),
-                            item_type=item_type,
-                            section_title=current_section,
-                        ))
+                        line_items.append(
+                            ParsedLineItem(
+                                ref_code=ref,
+                                description=desc,
+                                contract_value=_parse_number(row[2]),
+                                percentage=_parse_percentage(row[3]),
+                                ptd=_parse_number(row[4]),
+                                previous=_parse_number(row[5]),
+                                current=_parse_number(row[6]),
+                                balance=_parse_number(row[7]) if len(row) > 7 else Decimal("0"),
+                                item_type=item_type,
+                                section_title=current_section,
+                            )
+                        )
 
             # Reset variation flag for next page if we see contract works again
             if "CONTRACT WORKS" in text and "VARIATION" not in text:

@@ -8,7 +8,9 @@ from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 
 
 async def get_by_id(
-    db: AsyncSession, item_id: uuid.UUID, assessment_id: uuid.UUID,
+    db: AsyncSession,
+    item_id: uuid.UUID,
+    assessment_id: uuid.UUID,
 ) -> AssessmentProvisionalSum | None:
     result = await db.execute(
         select(AssessmentProvisionalSum)
@@ -28,7 +30,9 @@ async def create(db: AsyncSession, **kwargs) -> AssessmentProvisionalSum:
     return item
 
 
-async def update(db: AsyncSession, item: AssessmentProvisionalSum, **kwargs) -> AssessmentProvisionalSum:
+async def update(
+    db: AsyncSession, item: AssessmentProvisionalSum, **kwargs
+) -> AssessmentProvisionalSum:
     for key, value in kwargs.items():
         setattr(item, key, value)
     await db.flush()

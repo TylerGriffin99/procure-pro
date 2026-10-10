@@ -1,4 +1,5 @@
 """Generate payment recommendation PDF using WeasyPrint."""
+
 import os
 from pathlib import Path
 

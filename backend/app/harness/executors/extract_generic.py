@@ -4,6 +4,7 @@ For claim formats that don't match a known deterministic parser (e.g. WBPRO),
 this module sends the raw extraction through an LLM prompt and normalises
 the response into the parsed_claim.json schema.
 """
+
 import json
 import logging
 import string
@@ -113,7 +114,8 @@ def validate_and_normalise(raw_response: dict) -> dict:
     raw_summary = raw_response.get("summary") or {}
     # Recompute from items if summary is missing or incomplete
     needs_recompute = not raw_summary or not all(
-        raw_summary.get(k) for k in ("original_contract_total", "revised_contract_total", "claimed_amount")
+        raw_summary.get(k)
+        for k in ("original_contract_total", "revised_contract_total", "claimed_amount")
     )
 
     if needs_recompute:

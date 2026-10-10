@@ -1,4 +1,5 @@
 """LLM-based matching of claim variation/PS items to existing project records."""
+
 import json
 import logging
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class VariationMatch:
     """Result of matching a single claim item to an existing project record."""
+
     claim_ref: str
     item_type: str  # "variation" or "provisional_sum"
     matched_id: UUID | None
@@ -42,7 +44,12 @@ async def match_variations_and_ps(
     # First claim: no existing records, skip LLM entirely
     if not existing_variations and not existing_provisional_sums:
         return [
-            VariationMatch(claim_ref=item["ref_code"], item_type=item["item_type"], matched_id=None, confidence=1.0)
+            VariationMatch(
+                claim_ref=item["ref_code"],
+                item_type=item["item_type"],
+                matched_id=None,
+                confidence=1.0,
+            )
             for item in new_items
         ]
 
@@ -58,7 +65,12 @@ async def match_variations_and_ps(
     if not key_map.get(provider):
         logger.warning("No API key for provider %s — skipping variation matching", provider)
         return [
-            VariationMatch(claim_ref=item["ref_code"], item_type=item["item_type"], matched_id=None, confidence=1.0)
+            VariationMatch(
+                claim_ref=item["ref_code"],
+                item_type=item["item_type"],
+                matched_id=None,
+                confidence=1.0,
+            )
             for item in new_items
         ]
 
@@ -88,8 +100,7 @@ async def match_variations_and_ps(
     )
 
     prompt = (
-        _PROMPT_TEMPLATE
-        .replace("{EXISTING_VARIATIONS}", variations_text)
+        _PROMPT_TEMPLATE.replace("{EXISTING_VARIATIONS}", variations_text)
         .replace("{EXISTING_PROVISIONAL_SUMS}", ps_text)
         .replace("{NEW_ITEMS}", items_text)
     )
@@ -124,12 +135,14 @@ async def match_variations_and_ps(
             if matched_id_str and str(matched_id_str) in valid_ids:
                 matched_id = UUID(str(matched_id_str))
 
-            matches.append(VariationMatch(
-                claim_ref=str(item["claim_ref"]),
-                item_type=item.get("item_type", "variation"),
-                matched_id=matched_id,
-                confidence=float(item.get("confidence", 0.5)),
-            ))
+            matches.append(
+                VariationMatch(
+                    claim_ref=str(item["claim_ref"]),
+                    item_type=item.get("item_type", "variation"),
+                    matched_id=matched_id,
+                    confidence=float(item.get("confidence", 0.5)),
+                )
+            )
 
         logger.info(
             "Variation matcher: %d/%d items matched to existing records",
@@ -141,6 +154,11 @@ async def match_variations_and_ps(
     except Exception:
         logger.exception("Variation matching LLM call failed — treating all as new")
         return [
-            VariationMatch(claim_ref=item["ref_code"], item_type=item["item_type"], matched_id=None, confidence=0.0)
+            VariationMatch(
+                claim_ref=item["ref_code"],
+                item_type=item["item_type"],
+                matched_id=None,
+                confidence=0.0,
+            )
             for item in new_items
         ]

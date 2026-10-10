@@ -26,7 +26,9 @@ class WBSCode(AuditMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"))
-    parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("wbs_codes.id"))
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wbs_codes.id")
+    )
     code: Mapped[str] = mapped_column(String(20))
     description: Mapped[str] = mapped_column(String(500))
     level: Mapped[WBSLevel] = mapped_column(Enum(WBSLevel), default=WBSLevel.subcategory)

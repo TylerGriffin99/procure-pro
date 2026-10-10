@@ -3,13 +3,18 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://claimreview:claimreview_dev@localhost:6000/claimreview"
+    database_url: str = (
+        "postgresql+asyncpg://claimreview:claimreview_dev@localhost:6000/claimreview"
+    )
 
     @model_validator(mode="after")
     def normalize_database_url(self):
         if self.database_url.startswith("postgresql://"):
-            self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            self.database_url = self.database_url.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
         return self
+
     secret_key: str
     access_token_expire_minutes: int = 60 * 24
 

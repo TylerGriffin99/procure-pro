@@ -4,6 +4,7 @@ Converts raw_extraction.json (pdfplumber output) into parsed_claim.json
 for WBPRO-format contractor claims. Column layouts are fixed and known,
 so no LLM is needed.
 """
+
 import logging
 import re
 from decimal import Decimal, InvalidOperation

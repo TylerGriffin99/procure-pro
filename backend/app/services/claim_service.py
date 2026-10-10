@@ -111,17 +111,16 @@ def _screen_pdf_content(content: bytes) -> None:
         # Snippets are attacker-controlled: log them (repr guards against log
         # injection) but never reflect them to the client.
         snippets = "; ".join(f"{v.category}:{v.snippet!r}" for v in violations)
-        logger.warning("Rejected upload: disallowed content [%s] — %s",
-                       ", ".join(categories), snippets)
+        logger.warning(
+            "Rejected upload: disallowed content [%s] — %s", ", ".join(categories), snippets
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Document rejected: it contains disallowed content ({', '.join(categories)})",
         )
 
 
-async def create_document_from_upload(
-    db: AsyncSession, project_id: uuid.UUID, file: UploadFile
-):
+async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, file: UploadFile):
     """Validate an uploaded PDF and persist it as a Document. Returns the Document."""
     from app.repos import document_repo
 
@@ -133,9 +132,14 @@ async def create_document_from_upload(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail="File exceeds the 25MB limit")
     import asyncio
+
     await asyncio.to_thread(_screen_pdf_content, content)  # PDF parse is blocking
     return await document_repo.create_document(
-        db, project_id, file.filename or "upload.pdf", file.content_type, content,
+        db,
+        project_id,
+        file.filename or "upload.pdf",
+        file.content_type,
+        content,
     )
 
 
@@ -168,7 +172,9 @@ def _build_claim_response(
     )
 
 
-async def create_claim(db: AsyncSession, project_id: uuid.UUID, data: ClaimCreate, user: User) -> ClaimResponse:
+async def create_claim(
+    db: AsyncSession, project_id: uuid.UUID, data: ClaimCreate, user: User
+) -> ClaimResponse:
     auto_dates = _auto_fill_dates(data.claim_received)
     claim = Claim(
         project_id=project_id,
@@ -176,25 +182,28 @@ async def create_claim(db: AsyncSession, project_id: uuid.UUID, data: ClaimCreat
         period_from=data.period_from,
         period_to=data.period_to,
         claim_received=data.claim_received,
-        provisional_payment_schedule_due=data.provisional_payment_schedule_due or auto_dates.get("provisional_payment_schedule_due"),
+        provisional_payment_schedule_due=data.provisional_payment_schedule_due
+        or auto_dates.get("provisional_payment_schedule_due"),
         payment_schedule_due=data.payment_schedule_due or auto_dates.get("payment_schedule_due"),
         payment_due=auto_dates.get("payment_due"),
         created_by=user.id,
     )
     for i, item in enumerate(data.line_items):
-        claim.line_items.append(ClaimLineItem(
-            item_type=ClaimItemType(item.item_type),
-            ref_code=item.ref_code,
-            description=item.description,
-            contract_value=item.contract_value,
-            percentage=item.percentage,
-            ptd=item.ptd,
-            previous=item.previous,
-            current=item.current,
-            balance=item.balance,
-            sort_order=i,
-            created_by=user.id,
-        ))
+        claim.line_items.append(
+            ClaimLineItem(
+                item_type=ClaimItemType(item.item_type),
+                ref_code=item.ref_code,
+                description=item.description,
+                contract_value=item.contract_value,
+                percentage=item.percentage,
+                ptd=item.ptd,
+                previous=item.previous,
+                current=item.current,
+                balance=item.balance,
+                sort_order=i,
+                created_by=user.id,
+            )
+        )
     db.add(claim)
     await db.commit()
     await db.refresh(claim, ["line_items"])
@@ -206,11 +215,13 @@ async def list_claims(db: AsyncSession, project_id: uuid.UUID) -> list[ClaimResp
     results = []
     for c in claims:
         latest = await assessment_repo.get_latest_by_claim(db, c.id, project_id=project_id)
-        results.append(_build_claim_response(
-            c,
-            assessment_id=latest.id if latest else None,
-            assessment_status=latest.status.value if latest else None,
-        ))
+        results.append(
+            _build_claim_response(
+                c,
+                assessment_id=latest.id if latest else None,
+                assessment_status=latest.status.value if latest else None,
+            )
+        )
     return results
 
 
@@ -222,7 +233,10 @@ async def get_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID
 
 
 async def update_claim(
-    db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID, data: ClaimUpdate,
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    claim_id: uuid.UUID,
+    data: ClaimUpdate,
 ) -> ClaimResponse:
     claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
     if not claim:
@@ -256,9 +270,7 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
 
     # Collect WBS code IDs referenced by this claim's line items
     claim_wbs_ids = {
-        cli.suggested_wbs_code_id
-        for cli in claim.line_items
-        if cli.suggested_wbs_code_id
+        cli.suggested_wbs_code_id for cli in claim.line_items if cli.suggested_wbs_code_id
     }
 
     # Delete harness sessions linked to this claim (cascades to workspace_files & flags)
@@ -305,6 +317,7 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
     # Delete the source Document (cascades away any remaining sessions on it).
     if document_id is not None:
         from app.repos import document_repo
+
         document = await document_repo.get_document(db, document_id)
         if document is not None:
             await db.delete(document)

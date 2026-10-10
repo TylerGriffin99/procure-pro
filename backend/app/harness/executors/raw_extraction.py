@@ -1,4 +1,5 @@
 """Phase 0: Extract raw text and tables from PDF using pdfplumber."""
+
 import logging
 import uuid
 from io import BytesIO
@@ -46,11 +47,13 @@ async def execute_raw_extraction(
                     clean_table.append(clean_row)
                 clean_tables.append(clean_table)
 
-            pages_data.append({
-                "page_num": page.page_number,
-                "text": text,
-                "tables": clean_tables,
-            })
+            pages_data.append(
+                {
+                    "page_num": page.page_number,
+                    "text": text,
+                    "tables": clean_tables,
+                }
+            )
 
         first_text = pages_data[0]["text"] if pages_data else ""
         metadata = _extract_metadata(first_text)
@@ -67,6 +70,7 @@ async def execute_raw_extraction(
 def _extract_metadata(text: str) -> dict[str, str]:
     """Extract basic metadata from first page text via simple pattern matching."""
     import re
+
     metadata = {}
 
     patterns = {

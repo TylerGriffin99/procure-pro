@@ -7,6 +7,7 @@ not from individual rows.
 
 No DB access — takes data in, returns computed results.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -23,6 +24,7 @@ ZERO = Decimal("0.00")
 # whose columns are narrower types (e.g. str-enums for `status`/`adjustment_type`)
 # structurally satisfy them, and so do plain-attribute test fakes. The aggregators
 # only ever read these fields.
+
 
 class LineItemLike(Protocol):
     @property
@@ -134,6 +136,7 @@ class PSLike(Protocol):
 
 # ── Output dataclasses ───────────────────────────────────────────────────
 
+
 @dataclass
 class AggregatedWBSGroup:
     wbs_code_id: uuid.UUID | None
@@ -194,6 +197,7 @@ class AssessmentTotals:
 
 # ── Aggregation functions ────────────────────────────────────────────────
 
+
 def aggregate_line_items(
     rows: Sequence[LineItemLike],
     wbs_codes: Sequence[WBSLike],
@@ -245,19 +249,21 @@ def aggregate_line_items(
         else:
             description = children[0].description if children else ""
 
-        result.append(AggregatedWBSGroup(
-            wbs_code_id=wbs_id if wbs_id != _UNCATEGORIZED else None,
-            description=description,
-            contract_sum=master_contract_sum,
-            previously_paid=previously_paid,
-            recommended_this_period=rec_this_period,
-            total_recommended=total_recommended,
-            contractor_claim_to_date=contractor_claim_to_date,
-            variance_to_claim=variance,
-            percentage=pct,
-            history_row=history,
-            child_rows=children,
-        ))
+        result.append(
+            AggregatedWBSGroup(
+                wbs_code_id=wbs_id if wbs_id != _UNCATEGORIZED else None,
+                description=description,
+                contract_sum=master_contract_sum,
+                previously_paid=previously_paid,
+                recommended_this_period=rec_this_period,
+                total_recommended=total_recommended,
+                contractor_claim_to_date=contractor_claim_to_date,
+                variance_to_claim=variance,
+                percentage=pct,
+                history_row=history,
+                child_rows=children,
+            )
+        )
 
     return result
 
@@ -302,21 +308,23 @@ def aggregate_variations(
         variance = total_recommended - contractor_claim_to_date
         pct = (total_recommended / submission * 100) if submission else ZERO
 
-        result.append(AggregatedVariationGroup(
-            variation_id=vid,
-            ci_number=master.ci_number if master else 0,
-            contractor_ref=(master.contractor_ref or "") if master else "",
-            description=master.description if master else "",
-            contractor_submission=submission,
-            previously_paid=previously_paid,
-            recommended_this_period=rec_this_period,
-            total_recommended=total_recommended,
-            contractor_claim_to_date=contractor_claim_to_date,
-            variance_to_claim=variance,
-            percentage=pct,
-            history_row=history,
-            child_rows=children,
-        ))
+        result.append(
+            AggregatedVariationGroup(
+                variation_id=vid,
+                ci_number=master.ci_number if master else 0,
+                contractor_ref=(master.contractor_ref or "") if master else "",
+                description=master.description if master else "",
+                contractor_submission=submission,
+                previously_paid=previously_paid,
+                recommended_this_period=rec_this_period,
+                total_recommended=total_recommended,
+                contractor_claim_to_date=contractor_claim_to_date,
+                variance_to_claim=variance,
+                percentage=pct,
+                history_row=history,
+                child_rows=children,
+            )
+        )
 
     result.sort(key=lambda g: g.ci_number)
     return result
@@ -362,20 +370,22 @@ def aggregate_provisional_sums(
         variance = total_recommended - contractor_claim_to_date
         pct = (total_recommended / master_contract_sum * 100) if master_contract_sum else ZERO
 
-        result.append(AggregatedPSGroup(
-            provisional_sum_id=psid,
-            ps_number=master.ps_number if master else 0,
-            description=master.description if master else "",
-            contract_sum=master_contract_sum,
-            previously_paid=previously_paid,
-            recommended_this_period=rec_this_period,
-            total_recommended=total_recommended,
-            contractor_claim_to_date=contractor_claim_to_date,
-            variance_to_claim=variance,
-            percentage=pct,
-            history_row=history,
-            child_rows=children,
-        ))
+        result.append(
+            AggregatedPSGroup(
+                provisional_sum_id=psid,
+                ps_number=master.ps_number if master else 0,
+                description=master.description if master else "",
+                contract_sum=master_contract_sum,
+                previously_paid=previously_paid,
+                recommended_this_period=rec_this_period,
+                total_recommended=total_recommended,
+                contractor_claim_to_date=contractor_claim_to_date,
+                variance_to_claim=variance,
+                percentage=pct,
+                history_row=history,
+                child_rows=children,
+            )
+        )
 
     result.sort(key=lambda g: g.ps_number)
     return result
