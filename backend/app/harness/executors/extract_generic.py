@@ -9,11 +9,11 @@ import json
 import logging
 import string
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 
 from pydantic_ai.models import Model
 
 from app.harness.agent_runner import run_structured
+from app.harness.prompts import load_playbook, load_prompt
 from app.harness.schemas import GenericExtraction
 
 logger = logging.getLogger(__name__)
@@ -154,11 +154,8 @@ async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dic
     a pydantic-ai agent (validated against ``GenericExtraction``), and normalises
     the typed result. ``model`` is for tests; production uses the configured one.
     """
-    prompts_dir = Path(__file__).parent.parent / "prompts"
-    playbooks_dir = Path(__file__).parent.parent / "playbooks" / "formats"
-
-    template_text = (prompts_dir / "extract_line_items.md").read_text()
-    playbook_text = (playbooks_dir / "generic.md").read_text()
+    template_text = load_prompt("extract_line_items")
+    playbook_text = load_playbook("generic")
 
     # Render prompt
     prompt = string.Template(template_text).safe_substitute(

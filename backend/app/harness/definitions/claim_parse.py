@@ -1,7 +1,5 @@
 """CLAIM_PARSE harness definition — 7-phase claim parsing pipeline."""
 
-from pathlib import Path
-
 from app.harness.context_loaders import (
     load_format_playbook,
     load_variations_context,
@@ -19,15 +17,9 @@ from app.harness.models import (
     PhaseDefinition,
     PhaseType,
 )
+from app.harness.prompts import load_prompt
 from app.harness.registry import harness_registry
 from app.harness.schemas import VpsMatch, WbsMatch
-
-_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
-
-
-def _load_prompt(name: str) -> str:
-    return (_PROMPTS_DIR / name).read_text()
-
 
 claim_parse_definition = HarnessDefinition(
     harness_type=HarnessType.CLAIM_PARSE,
@@ -78,7 +70,7 @@ claim_parse_definition = HarnessDefinition(
             matcher="jev",
             workspace_output="wbs_matches.json",
             workspace_inputs=["parsed_claim.json"],
-            system_prompt_template=_load_prompt("categorise_wbs.md"),
+            system_prompt_template=load_prompt("categorise_wbs"),
             context_loaders=[load_wbs_context, load_format_playbook],
             output_schema=list[WbsMatch],
         ),
@@ -93,7 +85,7 @@ claim_parse_definition = HarnessDefinition(
             matcher="jev",
             workspace_output="vps_matches.json",
             workspace_inputs=["parsed_claim.json"],
-            system_prompt_template=_load_prompt("match_variations.md"),
+            system_prompt_template=load_prompt("match_variations"),
             context_loaders=[load_variations_context],
             output_schema=list[VpsMatch],
         ),
