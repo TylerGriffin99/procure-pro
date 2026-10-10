@@ -7,6 +7,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,24 +36,16 @@ from app.repos import harness_repo
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class HarnessEngine:
     """Walks through phases, dispatching by type, yielding SSE events."""
 
-    def __init__(
-        self,
-        definition: HarnessDefinition,
-        session_id: uuid.UUID,
-        user_id: uuid.UUID,
-        project_id: uuid.UUID,
-        db: AsyncSession,
-        cancel_event: asyncio.Event | None = None,
-    ) -> None:
-        self.definition = definition
-        self.session_id = session_id
-        self.user_id = user_id
-        self.project_id = project_id
-        self.db = db
-        self.cancel_event = cancel_event or asyncio.Event()
+    definition: HarnessDefinition
+    session_id: uuid.UUID
+    user_id: uuid.UUID
+    project_id: uuid.UUID
+    db: AsyncSession
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     async def run(self) -> AsyncGenerator[HarnessEvent, None]:
         """Execute harness from current_phase, yielding SSE events."""
