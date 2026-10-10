@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import error_handlers
 from app.routers import assessments, auth, claim_flags, claims, harness, projects
 
 logging.basicConfig(
@@ -18,6 +19,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Claim Review API", version="0.1.0", lifespan=lifespan)
+error_handlers.register(app)
 
 app.add_middleware(
     CORSMiddleware,
