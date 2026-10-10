@@ -15,11 +15,13 @@ import json
 import re
 from pathlib import Path
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 import app.harness.matchers.jev as jev_module
+from app.clients.jev_client import JevClient
 from app.config import settings
 from app.models.harness_session import HarnessSession
 from app.repos import harness_repo
@@ -65,7 +67,10 @@ def fake_jev(monkeypatch):
 
     calls = CallLog()
 
-    async def fake_call_decisions(*, state, questions, model, url, api_key, timeout=30.0):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        state, questions = body["state"], body["questions"]
+        api_key = request.headers["Authorization"].removeprefix("Bearer ")
         (qid, q), = questions.items()
         criteria = {k: v for k, v in q["criteria"].items() if k != jev_module.NONE_OPTION}
         choice = jev_module.NONE_OPTION
@@ -81,14 +86,27 @@ def fake_jev(monkeypatch):
             choice = max(pool, key=lambda k: difflib.SequenceMatcher(
                 None, state["description"].lower(), criteria[k].lower()).ratio())
         calls.append({"qid": qid, "choice": choice, "api_key": api_key})
-        return {"answers": {qid: {"choice": choice, "confidence": 0.95}},
-                "usage": {"input_tokens": 1}}
+        return httpx.Response(200, json={
+            "answers": {qid: {"choice": choice, "confidence": 0.95}},
+            "usage": {"input_tokens": 1},
+        })
 
     async def llm_must_not_run(*a, **kw):
         calls.llm_called = True
         raise AssertionError("LLM residue fallback invoked; jev fake should resolve every item")
 
-    monkeypatch.setattr(jev_module, "call_decisions", fake_call_decisions)
+    monkeypatch.setattr(
+        JevClient,
+        "from_settings",
+        classmethod(
+            lambda cls, s: JevClient(
+                url=s.jev_decisions_url,
+                api_key=s.open_router_api_key,
+                model=s.jev_model,
+                transport=httpx.MockTransport(handler),
+            )
+        ),
+    )
     monkeypatch.setattr(jev_module, "run_llm_matches", llm_must_not_run)
     monkeypatch.setattr(settings, "open_router_api_key", "test-key")
     return calls
