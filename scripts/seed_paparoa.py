@@ -7,6 +7,7 @@ Usage:
     python scripts/seed_paparoa.py                     # defaults to localhost:8000
     python scripts/seed_paparoa.py http://localhost:8000
 """
+
 import json
 import sys
 import urllib.parse
@@ -115,9 +116,12 @@ PROJECT = {
 
 
 def get_token():
-    form = urllib.parse.urlencode({"username": "tylergriffin70@gmail.com", "password": "Test@123"}).encode()
+    form = urllib.parse.urlencode(
+        {"username": "tylergriffin70@gmail.com", "password": "Test@123"}
+    ).encode()
     req = urllib.request.Request(
-        f"{BASE_URL}/api/v1/auth/login", data=form,
+        f"{BASE_URL}/api/v1/auth/login",
+        data=form,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     with urllib.request.urlopen(req) as resp:

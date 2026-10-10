@@ -10,6 +10,7 @@ Run after seed_user.py (the project is attached to the demo user):
 
 The script is idempotent — running it again will not create a duplicate.
 """
+
 import asyncio
 import os
 import sys
@@ -17,7 +18,9 @@ import uuid
 from decimal import Decimal
 
 # Make the backend package importable regardless of where this is run from.
-BACKEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend")
+BACKEND_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"
+)
 sys.path.insert(0, BACKEND_DIR)
 
 from app.database import async_session  # noqa: E402
@@ -40,11 +43,25 @@ WBS: list[tuple[str, str, str, str | None, int, str | None]] = [
     ("DM", "Demolition", "category", None, 0, None),
     ("DM-01", "Demolition existing structure", "subcategory", "DM", 1, "120480.00"),
     ("DM-02", "Removal and reinstatement of PIR", "subcategory", "DM", 2, "27944.00"),
-    ("DM-03", "Removal and reinstatement of chiller units", "subcategory", "DM", 3, "6490.25"),
+    (
+        "DM-03",
+        "Removal and reinstatement of chiller units",
+        "subcategory",
+        "DM",
+        3,
+        "6490.25",
+    ),
     ("DM-04", "Temp lighting to birdcage - setup", "subcategory", "DM", 4, "14297.75"),
     ("DM-05", "Bulk Excavation", "subcategory", "DM", 5, "64504.78"),
     ("DR", "Drainage", "category", None, 10, None),
-    ("DR-01", "Relocation of stormwater, sewer and water", "subcategory", "DR", 11, "156773.92"),
+    (
+        "DR-01",
+        "Relocation of stormwater, sewer and water",
+        "subcategory",
+        "DR",
+        11,
+        "156773.92",
+    ),
     ("CP", "Car Park & Yard", "category", None, 20, None),
     ("CP-01", "Concrete driveway", "subcategory", "CP", 21, "30800.00"),
     ("CP-02", "Asphalt prep and hotmix", "subcategory", "CP", 22, "24860.00"),
@@ -61,7 +78,14 @@ WBS: list[tuple[str, str, str, str | None, int, str | None]] = [
     ("CF", "Ceiling Finishes", "category", None, 70, None),
     ("CF-01", "Suspended ceilings", "subcategory", "CF", 71, "68026.70"),
     ("HV", "HVAC", "category", None, 80, None),
-    ("HV-01", "Removal and reinstatement of aircon units", "subcategory", "HV", 81, "14298.00"),
+    (
+        "HV-01",
+        "Removal and reinstatement of aircon units",
+        "subcategory",
+        "HV",
+        81,
+        "14298.00",
+    ),
     ("FP", "Fire Protection", "category", None, 90, None),
     ("FP-01", "Fire Sprinkler Alteration", "subcategory", "FP", 91, "200000.00"),
     ("PL", "Preliminaries", "category", None, 100, None),
@@ -72,7 +96,14 @@ WBS: list[tuple[str, str, str, str | None, int, str | None]] = [
     ("PL-05", "Temp ablution blocks", "subcategory", "PL", 105, "54865.97"),
     ("PL-06", "Temp office", "subcategory", "PL", 106, "37607.20"),
     ("PL-07", "Temp driveway", "subcategory", "PL", 107, "50565.00"),
-    ("PL-08", "Temp lighting to birdcage - setup", "subcategory", "PL", 108, "21131.25"),
+    (
+        "PL-08",
+        "Temp lighting to birdcage - setup",
+        "subcategory",
+        "PL",
+        108,
+        "21131.25",
+    ),
     ("MG", "Margin", "category", None, 110, None),
     ("MG-01", "General Margin", "subcategory", "MG", 111, "250000.00"),
     ("PS", "Provisional Sums", "category", None, 120, None),
@@ -93,11 +124,15 @@ async def seed() -> None:
     async with async_session() as db:
         user = await user_repo.get_by_email(db, DEMO_EMAIL)
         if user is None:
-            print(f"Demo user '{DEMO_EMAIL}' not found — run scripts/seed_user.py first.")
+            print(
+                f"Demo user '{DEMO_EMAIL}' not found — run scripts/seed_user.py first."
+            )
             sys.exit(1)
 
         if await project_repo.get_by_id(db, PROJECT_ID) is not None:
-            print(f"Project '{PROJECT_NAME}' ({PROJECT_ID}) already exists; nothing to do.")
+            print(
+                f"Project '{PROJECT_NAME}' ({PROJECT_ID}) already exists; nothing to do."
+            )
             return
 
         wbs_codes = [
@@ -107,11 +142,15 @@ async def seed() -> None:
                 level=level,
                 parent_code=parent_code,
                 sort_order=sort_order,
-                contract_sum=(Decimal(contract_sum) if contract_sum is not None else None),
+                contract_sum=(
+                    Decimal(contract_sum) if contract_sum is not None else None
+                ),
             )
             for (code, description, level, parent_code, sort_order, contract_sum) in WBS
         ]
-        contract_sum = sum((w.contract_sum or Decimal(0) for w in wbs_codes), Decimal(0))
+        contract_sum = sum(
+            (w.contract_sum or Decimal(0) for w in wbs_codes), Decimal(0)
+        )
 
         retention_tiers = [
             RetentionTierCreate(
@@ -133,7 +172,9 @@ async def seed() -> None:
             retention_tiers=retention_tiers,
             wbs_codes=wbs_codes,
         )
-        project = await project_service.create_project(db, data, user, project_id=PROJECT_ID)
+        project = await project_service.create_project(
+            db, data, user, project_id=PROJECT_ID
+        )
         print(
             f"Created project '{project.name}' (id={project.id}) "
             f"with {len(wbs_codes)} WBS codes and contract sum {contract_sum}."
