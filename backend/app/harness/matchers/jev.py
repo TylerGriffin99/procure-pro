@@ -175,10 +175,9 @@ class JevMatcher:
             if self.client.is_fatal(exc):
                 raise
             logger.warning(
-                "JevMatcher: Jev call for item %s failed (%s): %r",
+                "JevMatcher: Jev call for item %s failed (%s)",
                 item.item_index,
                 type(exc).__name__,
-                exc,
                 exc_info=True,
             )
             return ItemDecision(item_index=item.item_index, failed=True)

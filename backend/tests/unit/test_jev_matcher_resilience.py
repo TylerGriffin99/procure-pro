@@ -7,6 +7,7 @@ from pydantic import TypeAdapter
 from app.harness.matchers.data import read_parsed_items
 from app.harness.schemas import MatchOutcome, Subcat, VpsRecord
 from tests.unit.jev_fakes import fake_client
+from app.clients.jev_client import JevClient
 from app.harness.matchers.jev import JevMatcher
 from app.harness.schemas import VpsMatch, WbsMatch
 
@@ -270,3 +271,16 @@ async def test_read_items_missing_or_malformed_raises(monkeypatch, raw):
                         lambda db, sid, path: _async(raw))
     with pytest.raises(ValueError, match="parsed_claim.json"):
         await read_parsed_items(None, "sess")
+
+
+@pytest.mark.asyncio
+async def test_bad_url_scheme_raises_without_fallback(monkeypatch):
+    _setup(monkeypatch)
+
+    async def boom_llm(**k):
+        raise AssertionError("must not fall back on a misconfigured URL")
+    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", boom_llm)
+
+    client = JevClient(url="openrouter.ai/no-scheme", api_key="k", model="m")
+    with pytest.raises(httpx.UnsupportedProtocol):
+        await JevMatcher(client=client).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")

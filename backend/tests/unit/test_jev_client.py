@@ -121,3 +121,13 @@ def test_item_state_shape():
 
     item = ParsedClaimItem(item_index=0, description="d", item_type="variation", contract_value="1")
     assert JevClient.item_state(item) == {"description": "d", "contract_value": "1", "item_type": "variation"}
+
+
+def test_is_fatal_for_transport_misconfiguration():
+    req = httpx.Request("POST", "http://x")
+    assert JevClient.is_fatal(httpx.UnsupportedProtocol("x", request=req)) is True
+    assert JevClient.is_fatal(httpx.LocalProtocolError("x")) is True
+    for code in (301, 405):
+        err = httpx.HTTPStatusError("boom", request=req, response=httpx.Response(code, request=req))
+        assert JevClient.is_fatal(err) is True
+    assert JevClient.is_fatal(httpx.ConnectError("x")) is False

@@ -57,8 +57,14 @@ class JevClient:
 
     @staticmethod
     def is_fatal(exc: Exception) -> bool:
-        """A Jev HTTP error that must not fall back (config/auth/credit error)."""
-        return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in FATAL_STATUS
+        """A Jev error that must not fall back: config/auth/credit errors and transport-level
+        misconfiguration (bad URL/scheme, illegal header value) — raise, never fall back."""
+        if isinstance(exc, (httpx.UnsupportedProtocol, httpx.LocalProtocolError, httpx.InvalidURL)):
+            return True
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            return status in FATAL_STATUS or 300 <= status < 400 or status == 405
+        return False
 
     @staticmethod
     def is_retryable(exc: Exception) -> bool:
