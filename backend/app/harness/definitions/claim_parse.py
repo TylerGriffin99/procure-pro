@@ -1,6 +1,16 @@
 """CLAIM_PARSE harness definition — 7-phase claim parsing pipeline."""
 from pathlib import Path
 
+from app.harness.context_loaders import (
+    load_format_playbook,
+    load_variations_context,
+    load_wbs_context,
+)
+from app.harness.executors.create_records import execute_create_records
+from app.harness.executors.detect_format import execute_detect_format
+from app.harness.executors.extract_line_items import execute_extract_line_items
+from app.harness.executors.raw_extraction import execute_raw_extraction
+from app.harness.executors.validate_claim import execute_validate_claim
 from app.harness.models import (
     HarnessDefinition,
     HarnessPrerequisites,
@@ -10,16 +20,6 @@ from app.harness.models import (
 )
 from app.harness.registry import harness_registry
 from app.harness.schemas import VpsMatch, WbsMatch
-from app.harness.context_loaders import (
-    load_wbs_context,
-    load_variations_context,
-    load_format_playbook,
-)
-from app.harness.executors.raw_extraction import execute_raw_extraction
-from app.harness.executors.detect_format import execute_detect_format
-from app.harness.executors.extract_line_items import execute_extract_line_items
-from app.harness.executors.validate_claim import execute_validate_claim
-from app.harness.executors.create_records import execute_create_records
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 

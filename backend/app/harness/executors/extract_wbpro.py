@@ -162,9 +162,7 @@ def is_skip_row(row: list[str | None]) -> bool:
     desc = str(row[1] or "").strip().lower() if len(row) > 1 else ""
     ref = str(row[0] or "").strip() if len(row) > 0 else ""
     total_keywords = ("total", "sub-total", "subtotal", "sub total")
-    if not ref and any(kw in desc for kw in total_keywords):
-        return True
-    return False
+    return not ref and any(kw in desc for kw in total_keywords)
 
 
 def parse_wbpro(raw_extraction: dict) -> dict:

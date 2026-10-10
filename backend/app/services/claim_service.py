@@ -1,25 +1,26 @@
 import logging
 import uuid
 from datetime import date, timedelta
+
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-logger = logging.getLogger(__name__)
 
 from app.models.claim import Claim, ClaimItemType
 from app.models.claim_line_item import ClaimLineItem
 from app.models.user import User
 from app.models.wbs_code import WBSLevel
 from app.repos import (
-    claim_repo,
-    wbs_code_repo,
     assessment_repo,
-    variation_repo,
-    provisional_sum_repo,
+    claim_repo,
     harness_repo,
+    provisional_sum_repo,
+    variation_repo,
+    wbs_code_repo,
 )
 from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimSummaryResponse, ClaimUpdate
+
+logger = logging.getLogger(__name__)
 
 WORKING_DAYS_OFFSET = 5
 
@@ -65,8 +66,9 @@ def _extract_screenable_text(content: bytes) -> str:
     Mirrors what raw_extraction feeds the LLM phases (text and tables) so the
     screen covers the same surface. Raises if the PDF cannot be read.
     """
-    import pdfplumber
     from io import BytesIO
+
+    import pdfplumber
 
     parts: list[str] = []
     with pdfplumber.open(BytesIO(content)) as pdf:
@@ -93,9 +95,9 @@ def _screen_pdf_content(content: bytes) -> None:
 
     try:
         text = _extract_screenable_text(content)
-    except Exception:
+    except Exception as e:
         logger.warning("Rejected upload: PDF could not be read for screening", exc_info=True)
-        raise HTTPException(status_code=400, detail="Could not read the PDF to screen it")
+        raise HTTPException(status_code=400, detail="Could not read the PDF to screen it") from e
 
     if not text.strip():
         # Parsed, but yielded no text/tables to screen (e.g. an image-only scan).
@@ -229,7 +231,7 @@ async def update_claim(
     updates = data.model_dump(exclude_unset=True)
 
     # If claim_received changed, auto-fill derived dates unless explicitly provided
-    if "claim_received" in updates and updates["claim_received"]:
+    if updates.get("claim_received"):
         auto = _auto_fill_dates(updates["claim_received"])
         for key, val in auto.items():
             if key not in updates:
@@ -270,9 +272,8 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
 
     # Clean up orphaned Variation/PS masters created by reclassification
     # (project-scoped records that may no longer have any assessment rows)
-    from app.models.assessment_variation import AssessmentVariation
     from app.models.assessment_provisional_sum import AssessmentProvisionalSum
-    from app.models.provisional_sum import ProvisionalSum
+    from app.models.assessment_variation import AssessmentVariation
 
     all_variations = await variation_repo.get_by_project(db, project_id)
     for var in all_variations:

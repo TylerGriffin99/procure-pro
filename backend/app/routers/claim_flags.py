@@ -38,6 +38,7 @@ async def resolve_flag(
     else:
         # Unresolve — reset resolved fields
         from sqlalchemy import select
+
         from app.models.claim_parse_flag import ClaimParseFlag
         result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
         flag = result.scalar_one_or_none()

@@ -6,9 +6,9 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repos import harness_repo
-from app.harness.executors.extract_wbpro import parse_wbpro
 from app.harness.executors.extract_generic import parse_generic
+from app.harness.executors.extract_wbpro import parse_wbpro
+from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
 

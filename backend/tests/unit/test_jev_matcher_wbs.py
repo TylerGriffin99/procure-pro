@@ -26,7 +26,7 @@ PARSED = {"line_items": [
 def _matcher(monkeypatch, answers):
     async def fake_read(db, sid, path):
         return json.dumps(PARSED)
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", fake_read)
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", fake_read)
 
     async def fake_subs(*, db, project_id):
         return SUBCATS
@@ -57,7 +57,7 @@ async def test_wbs_empty_item_set_writes_empty_list(monkeypatch):
     m = _matcher(monkeypatch, {})
     async def only_variation(db, sid, path):
         return json.dumps({"line_items": [PARSED["line_items"][2]]})
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", only_variation)
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", only_variation)
     out = await m.match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
     assert out.output == [] and out.output_json == "[]"
 
@@ -94,7 +94,7 @@ async def test_wbs_output_ordered_by_item_index(monkeypatch):
              for i in (5, 0, 1)]
     async def fake_read(db, sid, path):
         return json.dumps({"line_items": items})
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", fake_read)
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", fake_read)
     out = await m.match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
     assert [x.item_index for x in out.output] == [0, 1, 5]
 
@@ -112,7 +112,7 @@ async def test_wbs_match_resolves_duplicate_code_to_chosen_id(monkeypatch):
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories", fake_subs)
     async def one_item(db, sid, path):
         return json.dumps({"line_items": [PARSED["line_items"][0]]})
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", one_item)
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", one_item)
     out = await m.match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
     assert out.output[0].wbs_code == "DM-01" and out.output[0].wbs_code_id == "b2"
     assert out.output[0].wbs_description == "Second"

@@ -4,11 +4,17 @@ Mirrors the queries in ``app.harness.context_loaders``.
 """
 from __future__ import annotations
 
+import json
+import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+from app.harness.schemas import ParsedClaimItem
 from app.models.wbs_code import WBSLevel
-from app.repos import provisional_sum_repo, variation_repo, wbs_code_repo
+from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass(eq=True)
@@ -62,3 +68,14 @@ async def vps_records(*, db, project_id) -> list[VpsRecord]:
         for p in sums
     ]
     return out
+
+
+async def read_parsed_items(db: AsyncSession, session_id: uuid.UUID) -> list[ParsedClaimItem]:
+    """Load and validate the parsed claim's line items from the session workspace."""
+    raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
+    if not raw:
+        raise ValueError(f"parsed_claim.json missing or empty for session {session_id}")
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict) or "line_items" not in parsed:
+        raise ValueError(f"parsed_claim.json has no 'line_items' for session {session_id}")
+    return [ParsedClaimItem.model_validate(i) for i in parsed["line_items"]]

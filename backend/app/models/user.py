@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from sqlalchemy import String, Enum
+from sqlalchemy import Enum, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 

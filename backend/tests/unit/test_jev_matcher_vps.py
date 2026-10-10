@@ -22,7 +22,7 @@ RECORDS = [VpsRecord("v1", "Variation one", 900.0, "variation"),
 def _matcher(monkeypatch, answers, parsed=PARSED, seen=None):
     async def fake_read(db, sid, path):
         return json.dumps(parsed)
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", fake_read)
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", fake_read)
 
     async def fake_records(*, db, project_id):
         return RECORDS

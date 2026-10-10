@@ -1,12 +1,16 @@
 import uuid
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import String, ForeignKey, Numeric, Integer, Enum
+from sqlalchemy import Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import AuditMixin, Base
 from app.models.claim import ClaimItemType
+
+if TYPE_CHECKING:
+    from app.models.claim import Claim
 
 
 class ClaimLineItem(AuditMixin, Base):

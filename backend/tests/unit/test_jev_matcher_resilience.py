@@ -5,7 +5,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from app.harness.matchers.base import MatchOutcome
-from app.harness.matchers.data import Subcat, VpsRecord
+from app.harness.matchers.data import Subcat, VpsRecord, read_parsed_items
 from app.harness.matchers.jev import JevMatcher
 from app.harness.schemas import VpsMatch, WbsMatch
 
@@ -34,14 +34,14 @@ def _err(code):
 def _setup(monkeypatch, n_items=1, item_type="contract_work"):
     parsed = {"line_items": [{"item_index": i, "description": "x", "contract_value": "1",
                               "item_type": item_type} for i in range(n_items)]}
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file",
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
                         lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
 
     async def no_sleep(*a, **k):
         return None
-    monkeypatch.setattr("app.harness.matchers.jev.asyncio.sleep", no_sleep)
+    monkeypatch.setattr("app.harness.matchers.jev_client.asyncio.sleep", no_sleep)
 
 
 def _fake_llm(n):
@@ -269,7 +269,7 @@ async def test_wbs_credit_and_notfound_raise(monkeypatch, code):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("raw", [None, "", json.dumps({"metadata": {}})])
 async def test_read_items_missing_or_malformed_raises(monkeypatch, raw):
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file",
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(raw))
     with pytest.raises(ValueError, match="parsed_claim.json"):
-        await JevMatcher(decide_fn=None)._read_items(None, "sess")
+        await read_parsed_items(None, "sess")

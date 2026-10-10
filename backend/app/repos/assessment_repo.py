@@ -1,13 +1,12 @@
 import uuid
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.assessment import Assessment, AssessmentStatus
-from app.models.assessment_variation import AssessmentVariation
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+from app.models.assessment_variation import AssessmentVariation
 
 
 def _eager_options(

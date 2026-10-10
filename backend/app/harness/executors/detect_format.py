@@ -36,9 +36,8 @@ def detect_format(all_pages_text: str) -> dict:
     """
     markers_found = []
     for marker_text, label in _WBPRO_MARKERS:
-        if marker_text in all_pages_text:
-            if label not in markers_found:
-                markers_found.append(label)
+        if marker_text in all_pages_text and label not in markers_found:
+            markers_found.append(label)
 
     if len(markers_found) >= _WBPRO_THRESHOLD:
         confidence = min(0.7 + len(markers_found) * 0.05, 0.99)

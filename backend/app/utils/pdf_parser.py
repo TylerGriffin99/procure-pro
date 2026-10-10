@@ -122,9 +122,8 @@ def _extract_header_info(pages: list) -> dict:
                 payment_due = m.group(1)
 
     # Fallback: search all text for contractor name
-    if not contractor_name:
-        if "Kynoch" in text:
-            contractor_name = "Kynoch Construction Ltd"
+    if not contractor_name and "Kynoch" in text:
+        contractor_name = "Kynoch Construction Ltd"
 
     return {
         "claim_number": claim_number,

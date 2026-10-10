@@ -24,7 +24,7 @@ async def test_none_and_lowconf_items_routed_to_llm(monkeypatch):
         {"item_index": 0, "description": "x", "contract_value": "1", "item_type": "contract_work"},
         {"item_index": 1, "description": "y", "contract_value": "2", "item_type": "contract_work"},
     ]}
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file",
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
                         lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
@@ -58,7 +58,7 @@ async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplo
     parsed = {"line_items": [
         {"item_index": i, "description": "x", "contract_value": "1", "item_type": "contract_work"}
         for i in (0, 1)]}
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file",
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
                         lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
@@ -86,7 +86,7 @@ async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplo
 async def test_residue_tokens_and_counts_accumulate(monkeypatch):
     parsed = {"line_items": [
         {"item_index": 0, "description": "x", "contract_value": "1", "item_type": "contract_work"}]}
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file",
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
                         lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))

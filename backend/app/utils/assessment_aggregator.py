@@ -10,6 +10,7 @@ No DB access — takes data in, returns computed results.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Protocol
@@ -18,68 +19,117 @@ ZERO = Decimal("0.00")
 
 
 # ── Protocols for duck-typing ORM models and test fakes ──────────────────
+# Members are read-only (properties) so the protocols are covariant: ORM models
+# whose columns are narrower types (e.g. str-enums for `status`/`adjustment_type`)
+# structurally satisfy them, and so do plain-attribute test fakes. The aggregators
+# only ever read these fields.
 
 class LineItemLike(Protocol):
-    id: uuid.UUID
-    wbs_code_id: uuid.UUID | None
-    claim_line_item_id: uuid.UUID | None
-    description: str
-    contract_sum: Decimal
-    contractor_claim_to_date: Decimal
-    total_recommended: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    status: str
-    sort_order: int
-    comments: str | None
-    adjustment_type: str | None
+    @property
+    def id(self) -> uuid.UUID: ...
+    @property
+    def wbs_code_id(self) -> uuid.UUID | None: ...
+    @property
+    def claim_line_item_id(self) -> uuid.UUID | None: ...
+    @property
+    def description(self) -> str: ...
+    @property
+    def contract_sum(self) -> Decimal | None: ...
+    @property
+    def contractor_claim_to_date(self) -> Decimal: ...
+    @property
+    def total_recommended(self) -> Decimal: ...
+    @property
+    def previously_paid(self) -> Decimal: ...
+    @property
+    def recommended_this_period(self) -> Decimal: ...
+    @property
+    def variance_to_claim(self) -> Decimal: ...
+    @property
+    def percentage(self) -> Decimal: ...
+    @property
+    def status(self) -> str: ...
+    @property
+    def sort_order(self) -> int: ...
+    @property
+    def comments(self) -> str | None: ...
+    @property
+    def adjustment_type(self) -> str | None: ...
 
 
 class WBSLike(Protocol):
-    id: uuid.UUID
-    description: str
-    contract_sum: Decimal | None
+    @property
+    def id(self) -> uuid.UUID: ...
+    @property
+    def description(self) -> str: ...
+    @property
+    def contract_sum(self) -> Decimal | None: ...
 
 
 class VariationItemLike(Protocol):
-    id: uuid.UUID
-    variation_id: uuid.UUID
-    claim_line_item_id: uuid.UUID | None
-    contractor_claim_to_date: Decimal
-    total_recommended: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    status: str
-    adjustment_type: str | None
+    @property
+    def id(self) -> uuid.UUID: ...
+    @property
+    def variation_id(self) -> uuid.UUID: ...
+    @property
+    def claim_line_item_id(self) -> uuid.UUID | None: ...
+    @property
+    def contractor_claim_to_date(self) -> Decimal: ...
+    @property
+    def total_recommended(self) -> Decimal: ...
+    @property
+    def previously_paid(self) -> Decimal: ...
+    @property
+    def recommended_this_period(self) -> Decimal: ...
+    @property
+    def status(self) -> str: ...
+    @property
+    def adjustment_type(self) -> str | None: ...
 
 
 class VariationLike(Protocol):
-    id: uuid.UUID
-    ci_number: int
-    contractor_ref: str
-    description: str
-    contractor_submission: Decimal
+    @property
+    def id(self) -> uuid.UUID: ...
+    @property
+    def ci_number(self) -> int: ...
+    @property
+    def contractor_ref(self) -> str | None: ...
+    @property
+    def description(self) -> str: ...
+    @property
+    def contractor_submission(self) -> Decimal: ...
 
 
 class PSItemLike(Protocol):
-    id: uuid.UUID
-    provisional_sum_id: uuid.UUID
-    claim_line_item_id: uuid.UUID | None
-    contractor_claim_to_date: Decimal
-    total_recommended: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    status: str
-    adjustment_type: str | None
+    @property
+    def id(self) -> uuid.UUID: ...
+    @property
+    def provisional_sum_id(self) -> uuid.UUID: ...
+    @property
+    def claim_line_item_id(self) -> uuid.UUID | None: ...
+    @property
+    def contractor_claim_to_date(self) -> Decimal: ...
+    @property
+    def total_recommended(self) -> Decimal: ...
+    @property
+    def previously_paid(self) -> Decimal: ...
+    @property
+    def recommended_this_period(self) -> Decimal: ...
+    @property
+    def status(self) -> str: ...
+    @property
+    def adjustment_type(self) -> str | None: ...
 
 
 class PSLike(Protocol):
-    id: uuid.UUID
-    ps_number: int
-    description: str
-    contract_sum: Decimal
+    @property
+    def id(self) -> uuid.UUID: ...
+    @property
+    def ps_number(self) -> int: ...
+    @property
+    def description(self) -> str: ...
+    @property
+    def contract_sum(self) -> Decimal: ...
 
 
 # ── Output dataclasses ───────────────────────────────────────────────────
@@ -145,8 +195,8 @@ class AssessmentTotals:
 # ── Aggregation functions ────────────────────────────────────────────────
 
 def aggregate_line_items(
-    rows: list[LineItemLike],
-    wbs_codes: list[WBSLike],
+    rows: Sequence[LineItemLike],
+    wbs_codes: Sequence[WBSLike],
 ) -> list[AggregatedWBSGroup]:
     """Group line items by wbs_code_id, compute totals, source contract_sum from WBS master."""
     wbs_map: dict[uuid.UUID, WBSLike] = {w.id: w for w in wbs_codes}
@@ -213,8 +263,8 @@ def aggregate_line_items(
 
 
 def aggregate_variations(
-    rows: list[VariationItemLike],
-    variations: list[VariationLike],
+    rows: Sequence[VariationItemLike],
+    variations: Sequence[VariationLike],
 ) -> list[AggregatedVariationGroup]:
     """Group variation items by variation_id, compute totals, source contractor_submission from master."""
     var_map: dict[uuid.UUID, VariationLike] = {v.id: v for v in variations}
@@ -255,7 +305,7 @@ def aggregate_variations(
         result.append(AggregatedVariationGroup(
             variation_id=vid,
             ci_number=master.ci_number if master else 0,
-            contractor_ref=master.contractor_ref if master else "",
+            contractor_ref=(master.contractor_ref or "") if master else "",
             description=master.description if master else "",
             contractor_submission=submission,
             previously_paid=previously_paid,
@@ -273,8 +323,8 @@ def aggregate_variations(
 
 
 def aggregate_provisional_sums(
-    rows: list[PSItemLike],
-    provisional_sums: list[PSLike],
+    rows: Sequence[PSItemLike],
+    provisional_sums: Sequence[PSLike],
 ) -> list[AggregatedPSGroup]:
     """Group PS items by provisional_sum_id, compute totals, source contract_sum from master."""
     ps_map: dict[uuid.UUID, PSLike] = {p.id: p for p in provisional_sums}

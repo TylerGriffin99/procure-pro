@@ -4,9 +4,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
-import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,7 +89,7 @@ class HarnessEngine:
                 async for event in self._run_phase(phase_index, phase_def, session.config):
                     yield event
             except Exception as e:
-                logger.error("harness_engine.phase_error", exc_info=True)
+                logger.exception("harness_engine.phase_error")
                 await self._set_failed(f"Phase '{phase_def.name}' failed: {e}")
                 yield HarnessPhaseErrorEvent(
                     phase_index=phase_index,

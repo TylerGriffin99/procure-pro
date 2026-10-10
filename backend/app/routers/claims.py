@@ -1,16 +1,16 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models.user import User
-from app.schemas.claim import ClaimResponse, ClaimCreate, ClaimUpdate
-from app.services import claim_service
-from app.repos import harness_repo
-from app.services.claim_service import create_document_from_upload
 from app.harness.models import HarnessType
+from app.models.user import User
+from app.repos import harness_repo
+from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate
+from app.services import claim_service
+from app.services.claim_service import create_document_from_upload
 
 router = APIRouter(prefix="/api/projects/{project_id}/claims", tags=["claims"])
 

@@ -5,10 +5,10 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.harness.models import HarnessType
+from app.models.claim_parse_flag import ClaimParseFlag, FlagSeverity, FlagType
 from app.models.harness_session import HarnessSession, HarnessSessionStatus
 from app.models.harness_workspace_file import HarnessWorkspaceFile
-from app.models.claim_parse_flag import ClaimParseFlag, FlagType, FlagSeverity
-from app.harness.models import HarnessType
 
 
 async def create_session(

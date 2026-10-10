@@ -7,7 +7,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.harness.definitions  # noqa: F401 — triggers registration
-
 from app.database import async_session, get_db
 from app.dependencies import get_current_user
 from app.harness.engine import HarnessEngine
@@ -30,6 +29,16 @@ router = APIRouter(prefix="/api/harness", tags=["harness"])
 
 def _sse(event: HarnessEvent) -> str:
     return f"data: {event.model_dump_json()}\n\n"
+
+
+def _coerce_harness_type(value: str) -> HarnessType | None:
+    """Parse a stored harness_type string into the enum, or None if it is not a
+    known type (e.g. a legacy/removed value). Lets callers degrade gracefully
+    instead of raising ValueError on the boundary conversion."""
+    try:
+        return HarnessType(value)
+    except ValueError:
+        return None
 
 
 def _build_phases(harness_type: HarnessType, current_phase: int, phase_results: dict, status: str) -> list[HarnessPhaseInfo]:
@@ -66,11 +75,13 @@ async def get_harness_session(
     session = await harness_repo.get_session(db, session_id)
     if not session or session.user_id != user.id:
         raise HTTPException(status_code=404, detail="Session not found")
+    ht = _coerce_harness_type(session.harness_type)
+    phases = _build_phases(ht, session.current_phase, session.phase_results, session.status.value) if ht else []
     return HarnessSessionResponse(
         id=session.id, user_id=session.user_id, project_id=session.project_id,
         harness_type=session.harness_type, status=session.status.value,
         current_phase=session.current_phase,
-        phases=_build_phases(session.harness_type, session.current_phase, session.phase_results, session.status.value),
+        phases=phases,
         claim_id=session.claim_id, error_message=session.error_message,
         created_at=session.created_at,
     )
@@ -89,7 +100,8 @@ async def stream_harness_session(
     if session.status in (HarnessSessionStatus.completed, HarnessSessionStatus.failed):
         raise HTTPException(status_code=400, detail=f"Session already {session.status.value}")
 
-    definition = harness_registry.get(session.harness_type)
+    ht = _coerce_harness_type(session.harness_type)
+    definition = harness_registry.get(ht) if ht is not None else None
     if not definition:
         raise HTTPException(status_code=400, detail=f"Unknown harness type: {session.harness_type}")
 
@@ -113,11 +125,13 @@ async def stream_harness_session(
                     yield _sse(event)
                 yield "data: [DONE]\n\n"
             except Exception as e:
-                logger.error("harness_stream.error", exc_info=True)
+                logger.exception("harness_stream.error")
                 try:
                     await engine._set_failed(str(e))
                 except Exception:
-                    pass
+                    # Best-effort status update; the stream error below is the
+                    # primary signal, but don't swallow this one silently.
+                    logger.exception("harness_stream.set_failed_error")
                 yield _sse(HarnessErrorEvent(session_id=session_id, error=str(e)))
                 yield "data: [DONE]\n\n"
 
@@ -159,11 +173,15 @@ async def rerun_harness_session(
     if old.status != HarnessSessionStatus.failed:
         raise HTTPException(status_code=409, detail="Only failed sessions can be re-run")
 
+    ht = _coerce_harness_type(old.harness_type)
+    if ht is None:
+        raise HTTPException(status_code=400, detail=f"Unknown harness type: {old.harness_type}")
+
     new_session = await harness_repo.create_session(
         db=db,
         user_id=user.id,
         project_id=old.project_id,
-        harness_type=old.harness_type,
+        harness_type=ht,
         document_id=old.document_id,
         config={"document_id": str(old.document_id)},
     )

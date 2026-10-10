@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.wbs_code import WBSLevel
-from app.repos import wbs_code_repo, harness_repo
+from app.repos import harness_repo, wbs_code_repo
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ async def load_variations_context(
     db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID,
 ) -> dict[str, str]:
     """Load existing variations and provisional sums for the matching prompt."""
-    from app.repos import variation_repo, provisional_sum_repo
+    from app.repos import provisional_sum_repo, variation_repo
 
     variations = await variation_repo.get_by_project(db, project_id)
     provisional_sums = await provisional_sum_repo.get_by_project(db, project_id)

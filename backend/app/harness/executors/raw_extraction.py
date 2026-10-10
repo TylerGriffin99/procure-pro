@@ -27,8 +27,8 @@ async def execute_raw_extraction(
     if document is None:
         raise FileNotFoundError(f"Document not found: {document_id}")
 
-    pages_data = []
-    metadata = {}
+    pages_data: list[dict[str, Any]] = []
+    metadata: dict[str, str] = {}
 
     with pdfplumber.open(BytesIO(document.file_data)) as pdf:
         if len(pdf.pages) == 0:

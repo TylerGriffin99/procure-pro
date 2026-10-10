@@ -25,6 +25,7 @@ class FakeLineItem:
     status: str
     sort_order: int
     comments: str | None = None
+    adjustment_type: str | None = None
 
 
 @dataclass
@@ -46,6 +47,7 @@ class FakeVariationItem:
     variance_to_claim: Decimal
     percentage: Decimal
     status: str
+    adjustment_type: str | None = None
 
 
 @dataclass
@@ -54,6 +56,7 @@ class FakeVariation:
     contractor_ref: str
     description: str
     contractor_submission: Decimal
+    ci_number: int = 1
 
 
 @dataclass
@@ -68,6 +71,7 @@ class FakePSItem:
     variance_to_claim: Decimal
     percentage: Decimal
     status: str
+    adjustment_type: str | None = None
 
 
 @dataclass

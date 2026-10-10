@@ -1,8 +1,10 @@
 """Phase 5: Create domain records from workspace data."""
 import json
 import logging
+import re
 import uuid
-from datetime import datetime, timezone, date as dt_date
+from datetime import UTC, datetime
+from datetime import date as dt_date
 from decimal import Decimal
 from typing import Any
 
@@ -10,25 +12,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessment import Assessment, LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
-from app.models.assessment_variation import AssessmentVariation
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+from app.models.assessment_variation import AssessmentVariation
 from app.models.claim import Claim, ClaimItemType
 from app.models.claim_line_item import ClaimLineItem
 from app.models.provisional_sum import ProvisionalSum
 from app.models.variation import Variation, VariationStatus
 from app.models.wbs_code import WBSCode, WBSLevel
 from app.repos import (
-    project_repo, assessment_repo,
-    variation_repo, provisional_sum_repo, harness_repo,
+    assessment_repo,
+    harness_repo,
+    project_repo,
+    provisional_sum_repo,
+    variation_repo,
     wbs_code_repo,
 )
-from app.utils.assessment_engine import calculate_assessment_totals
 from app.utils.assessment_aggregator import (
     aggregate_line_items,
-    aggregate_variations,
     aggregate_provisional_sums,
+    aggregate_variations,
 )
-import re
+from app.utils.assessment_engine import calculate_assessment_totals
 
 logger = logging.getLogger(__name__)
 
@@ -353,7 +357,7 @@ async def execute_create_records(
         period_from=_parse_date(metadata.get("period_from")),
         period_to=_parse_date(metadata.get("period_to")),
         payment_due=_parse_date(metadata.get("payment_due")),
-        parsed_at=datetime.now(timezone.utc),
+        parsed_at=datetime.now(UTC),
         original_contract_total=_dec(summary.get("original_contract_total")),
         variations_total=_dec(summary.get("variations_total")),
         revised_contract_total=_dec(summary.get("revised_contract_total")),
@@ -412,8 +416,8 @@ async def execute_create_records(
     previously_certified = latest_assessment.total_payment_to_date if latest_assessment else ZERO
 
     # Build previous assessment history lookups — sum across multiple rows per WBS/var/PS
-    prev_recommended_by_wbs: dict[uuid.UUID, Decimal] = {}
-    prev_contractor_claim_by_wbs: dict[uuid.UUID, Decimal] = {}
+    prev_recommended_by_wbs: dict[uuid.UUID | None, Decimal] = {}
+    prev_contractor_claim_by_wbs: dict[uuid.UUID | None, Decimal] = {}
     prev_variation_recommended: dict[uuid.UUID, Decimal] = {}
     prev_variation_contractor_claim: dict[uuid.UUID, Decimal] = {}
     prev_ps_recommended: dict[uuid.UUID, Decimal] = {}
@@ -592,16 +596,16 @@ async def execute_create_records(
 
     # -- Calculate retention and assessment summary totals --
     sub_total_contract_works = sum(
-        (ali.total_recommended or ZERO) for ali in assessment.line_items
+        ((ali.total_recommended or ZERO) for ali in assessment.line_items), ZERO
     )
     sub_total_provisional_sums = sum(
-        (aps.total_recommended or ZERO) for aps in assessment.provisional_sum_items
+        ((aps.total_recommended or ZERO) for aps in assessment.provisional_sum_items), ZERO
     )
     sub_total_variations_recommended = sum(
-        (av.total_recommended or ZERO) for av in assessment.variation_items
+        ((av.total_recommended or ZERO) for av in assessment.variation_items), ZERO
     )
     variations_claimed = sum(
-        (av.contractor_claim_to_date or ZERO) for av in assessment.variation_items
+        ((av.contractor_claim_to_date or ZERO) for av in assessment.variation_items), ZERO
     )
 
     retention_tiers = [

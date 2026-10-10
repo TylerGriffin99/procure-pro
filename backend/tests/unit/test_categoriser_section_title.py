@@ -36,11 +36,12 @@ async def test_section_title_included_in_prompt(monkeypatch):
     ]
     mock_settings = MagicMock()
     mock_settings.open_router_api_key = "test-key"
-    mock_settings.categoriser_model = "test-model"
+    mock_settings.llm_model = "test-model"
+    mock_settings.llm_provider = "openrouter"
     monkeypatch.setattr("app.utils.categoriser.settings", mock_settings)
     monkeypatch.setattr(
-        "app.utils.categoriser.openai.AsyncOpenAI",
-        lambda **kwargs: _make_mock_client(llm_results, captured),
+        "app.utils.categoriser.get_client",
+        lambda: _make_mock_client(llm_results, captured),
     )
 
     items = [
@@ -68,11 +69,12 @@ async def test_items_without_section_title_still_work(monkeypatch):
     ]
     mock_settings = MagicMock()
     mock_settings.open_router_api_key = "test-key"
-    mock_settings.categoriser_model = "test-model"
+    mock_settings.llm_model = "test-model"
+    mock_settings.llm_provider = "openrouter"
     monkeypatch.setattr("app.utils.categoriser.settings", mock_settings)
     monkeypatch.setattr(
-        "app.utils.categoriser.openai.AsyncOpenAI",
-        lambda **kwargs: _make_mock_client(llm_results),
+        "app.utils.categoriser.get_client",
+        lambda: _make_mock_client(llm_results),
     )
 
     items = [
@@ -97,11 +99,12 @@ async def test_variation_works_section_produces_is_variation_true(monkeypatch):
     ]
     mock_settings = MagicMock()
     mock_settings.open_router_api_key = "test-key"
-    mock_settings.categoriser_model = "test-model"
+    mock_settings.llm_model = "test-model"
+    mock_settings.llm_provider = "openrouter"
     monkeypatch.setattr("app.utils.categoriser.settings", mock_settings)
     monkeypatch.setattr(
-        "app.utils.categoriser.openai.AsyncOpenAI",
-        lambda **kwargs: _make_mock_client(llm_results),
+        "app.utils.categoriser.get_client",
+        lambda: _make_mock_client(llm_results),
     )
 
     items = [

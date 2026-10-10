@@ -1,32 +1,45 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessment import Assessment, AssessmentStatus, LineItemStatus
-from app.models.variation import VariationStatus
 from app.models.assessment_line_item import AssessmentLineItem
-from app.models.assessment_variation import AssessmentVariation
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+from app.models.assessment_variation import AssessmentVariation
 from app.models.user import User
-from app.repos import assessment_repo, assessment_line_item_repo, claim_repo, project_repo
-from app.repos import assessment_variation_repo, assessment_provisional_sum_repo
-from app.repos import variation_repo, provisional_sum_repo, claim_line_item_repo, wbs_code_repo
+from app.models.variation import VariationStatus
+from app.repos import (
+    assessment_line_item_repo,
+    assessment_provisional_sum_repo,
+    assessment_repo,
+    assessment_variation_repo,
+    claim_line_item_repo,
+    claim_repo,
+    project_repo,
+    provisional_sum_repo,
+    variation_repo,
+    wbs_code_repo,
+)
+from app.schemas.assessment import (
+    AssessmentCreate,
+    AssessmentLineItemUpdate,
+    AssessmentProvisionalSumUpdate,
+    AssessmentVariationUpdate,
+    ReclassifyRequest,
+)
+from app.services.claim_service import _auto_fill_dates
 from app.utils.assessment_aggregator import (
     aggregate_line_items,
-    aggregate_variations,
     aggregate_provisional_sums,
+    aggregate_variations,
     compute_assessment_totals,
 )
-from app.schemas.assessment import AssessmentCreate, AssessmentLineItemUpdate
-from app.schemas.assessment import AssessmentVariationUpdate, AssessmentProvisionalSumUpdate
-from app.schemas.assessment import ReclassifyRequest
 from app.utils.assessment_engine import calculate_retention, calculate_retention_per_tier
-from app.utils.pdf_generator import generate_payment_recommendation_pdf
 from app.utils.excel_generator import generate_payment_recommendation_excel
-from app.services.claim_service import _auto_fill_dates
+from app.utils.pdf_generator import generate_payment_recommendation_pdf
 
 
 def _fmt_date(d) -> str:
@@ -429,6 +442,8 @@ async def generate_assessment_export(
         raise HTTPException(status_code=404, detail="Assessment not found")
 
     project = await project_repo.get_by_id_with_retention(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     claim = await claim_repo.get_by_id(db, assessment.claim_id)
 
     # Fetch master records for aggregation
@@ -617,7 +632,10 @@ async def update_variation_item(
     item.updated_by = user.id
 
     await db.commit()
-    return await assessment_variation_repo.get_by_id(db, item.id, assessment_id)
+    refreshed = await assessment_variation_repo.get_by_id(db, item.id, assessment_id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Variation item not found after update")
+    return refreshed
 
 
 async def update_provisional_sum_item(
@@ -646,7 +664,10 @@ async def update_provisional_sum_item(
     item.updated_by = user.id
 
     await db.commit()
-    return await assessment_provisional_sum_repo.get_by_id(db, item.id, assessment_id)
+    refreshed = await assessment_provisional_sum_repo.get_by_id(db, item.id, assessment_id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Provisional sum item not found after update")
+    return refreshed
 
 
 async def reclassify_item(
@@ -691,16 +712,23 @@ async def reclassify_item(
                 status_code=400,
                 detail="target_wbs_code_id is required when target_type is 'line-item'",
             )
+        assert isinstance(source_row, AssessmentLineItem)
         await assessment_line_item_repo.update(db, source_row, wbs_code_id=data.target_wbs_code_id)
         await db.commit()
-        return await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+        refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="Assessment not found after reclassify")
+        return refreshed
 
     # Cross-type: delete source, create new target row
     if data.source_type == "line-item":
+        assert isinstance(source_row, AssessmentLineItem)
         await assessment_line_item_repo.delete(db, source_row)
     elif data.source_type == "variation":
+        assert isinstance(source_row, AssessmentVariation)
         await assessment_variation_repo.delete(db, source_row)
     elif data.source_type == "provisional-sum":
+        assert isinstance(source_row, AssessmentProvisionalSum)
         await assessment_provisional_sum_repo.delete(db, source_row)
     # Expire the assessment so collections are reloaded fresh
     db.expire(assessment)
@@ -809,7 +837,10 @@ async def reclassify_item(
     await db.commit()
     # Expire the assessment so the identity map doesn't return stale collections
     db.expire(assessment)
-    return await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Assessment not found after reclassify")
+    return refreshed
 
 
 async def finalise_assessment(
@@ -862,27 +893,35 @@ async def finalise_assessment(
             master.updated_by = user.id
 
     project = await project_repo.get_by_id_with_retention(db, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
     assessment.contract_sum = project.contract_sum
     assessment.approved_variation_orders = totals.approved_variation_orders
     assessment.adjustment_to_provisional_sums = totals.adjustment_to_provisional_sums
     assessment.adjusted_contract_sum = project.contract_sum + totals.approved_variation_orders + totals.adjustment_to_provisional_sums
-    assessment.total_recommended = totals.total_recommended
+    total_recommended = totals.total_recommended
+    assessment.total_recommended = total_recommended
 
     # Calculate retention and payment-to-date for use by future assessments
     retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
-    assessment.total_retention = calculate_retention(assessment.total_recommended, retention_tiers)
-    assessment.total_payment_to_date = assessment.total_recommended - assessment.total_retention
+    total_retention = calculate_retention(total_recommended, retention_tiers)
+    assessment.total_retention = total_retention
+    total_payment_to_date = total_recommended - total_retention
+    assessment.total_payment_to_date = total_payment_to_date
 
     # Calculate recommended this period
     previously_certified = assessment.previously_certified or Decimal("0")
-    assessment.recommended_this_period = assessment.total_payment_to_date - previously_certified
+    assessment.recommended_this_period = total_payment_to_date - previously_certified
 
     assessment.status = AssessmentStatus.finalised
-    assessment.finalised_at = datetime.now(timezone.utc)
+    assessment.finalised_at = datetime.now(UTC)
     assessment.updated_by = user.id
 
     await db.commit()
-    return await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Assessment not found after finalise")
+    return refreshed
 
 
 async def revert_to_draft(
@@ -910,4 +949,7 @@ async def revert_to_draft(
     assessment.updated_by = user.id
 
     await db.commit()
-    return await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="Assessment not found after revert")
+    return refreshed

@@ -75,8 +75,8 @@ async def is_in_use(db: AsyncSession, wbs_code_id: uuid.UUID) -> bool:
     if claim_ref.scalar():
         return True
 
-    from app.models.variation import Variation
     from app.models.provisional_sum import ProvisionalSum
+    from app.models.variation import Variation
 
     for col in [Variation.wbs_code_id, ProvisionalSum.wbs_code_id]:
         ref = await db.execute(select(exists().where(col == wbs_code_id)))
@@ -91,8 +91,8 @@ async def get_in_use_ids(db: AsyncSession, wbs_code_ids: list[uuid.UUID]) -> set
     if not wbs_code_ids:
         return set()
 
-    from app.models.variation import Variation
     from app.models.provisional_sum import ProvisionalSum
+    from app.models.variation import Variation
 
     # A compound (UNION ALL) select must be wrapped in a subquery before its
     # columns can be selected from; the column name comes from the first leg.

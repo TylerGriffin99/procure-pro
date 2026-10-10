@@ -1,12 +1,17 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.claim_parse_flag import ClaimParseFlag
+    from app.models.harness_workspace_file import HarnessWorkspaceFile
 
 
 class HarnessSessionStatus(str, enum.Enum):

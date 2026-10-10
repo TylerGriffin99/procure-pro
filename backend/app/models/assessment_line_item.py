@@ -1,12 +1,16 @@
 import uuid
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String, ForeignKey, Numeric, Integer, Text, Enum
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import AuditMixin, Base
-from app.models.assessment import LineItemStatus, AdjustmentType
+from app.models.assessment import AdjustmentType, LineItemStatus
+
+if TYPE_CHECKING:
+    from app.models.assessment import Assessment
 
 
 class AssessmentLineItem(AuditMixin, Base):

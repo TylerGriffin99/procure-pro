@@ -2,12 +2,18 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, Integer, Enum
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import AuditMixin, Base
+
+if TYPE_CHECKING:
+    from app.models.assessment_line_item import AssessmentLineItem
+    from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+    from app.models.assessment_variation import AssessmentVariation
 
 
 class AssessmentStatus(str, enum.Enum):

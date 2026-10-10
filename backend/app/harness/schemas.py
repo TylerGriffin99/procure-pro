@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 _Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 _ItemIndex = Annotated[int, Field(ge=0)]
@@ -19,6 +19,47 @@ _ItemIndex = Annotated[int, Field(ge=0)]
 # Decimal-ish fields arrive as strings ("$1,234.56", "(500.00)") or numbers;
 # downstream normalisation (`validate_and_normalise`) handles the conversion.
 _Numeric = str | float | int | None
+
+
+class ParsedClaimItem(BaseModel):
+    """A single line item as stored in ``parsed_claim.json`` and read by the
+    matchers. Only the fields matchers consume are declared; any other keys the
+    extraction wrote (``ref_code``, ``percentage``, ``ptd``, …) are ignored.
+
+    ``contract_value`` keeps its raw extracted form (it is forwarded verbatim to
+    the Jev decisions API and never used arithmetically here).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    item_index: _ItemIndex
+    description: str = ""
+    item_type: str = "contract_work"
+    contract_value: _Numeric = None
+
+
+class JevAnswer(BaseModel):
+    """One answer within a Jev decisions response (``answers[question_id]``)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    choice: str | None = None
+    confidence: float = 0.0
+
+
+class JevUsage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    input_tokens: int = 0
+
+
+class JevDecisionResponse(BaseModel):
+    """The decisions-endpoint response body for a single Jev call."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    answers: dict[str, JevAnswer] = Field(default_factory=dict)
+    usage: JevUsage = Field(default_factory=JevUsage)
 
 
 class WbsMatch(BaseModel):

@@ -1,5 +1,5 @@
 """Deterministic assessment calculations — no AI needed here."""
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 
 def calculate_retention(total_recommended: Decimal, tiers: list[dict]) -> Decimal:

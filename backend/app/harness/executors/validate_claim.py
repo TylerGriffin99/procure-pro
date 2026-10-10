@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.claim_parse_flag import FlagType, FlagSeverity
+from app.models.claim_parse_flag import FlagSeverity, FlagType
 from app.repos import harness_repo, project_repo
 
 logger = logging.getLogger(__name__)
@@ -99,9 +99,9 @@ async def execute_validate_claim(
     var_items = [i for i in line_items if i.get("item_type") == "variation"]
     ps_items = [i for i in line_items if i.get("item_type") == "provisional_sum"]
 
-    sum_cw = sum(_dec(i.get("contract_value")) for i in cw_items)
-    sum_var = sum(_dec(i.get("contract_value")) for i in var_items)
-    sum_ps = sum(_dec(i.get("contract_value")) for i in ps_items)
+    sum_cw = sum((_dec(i.get("contract_value")) for i in cw_items), ZERO)
+    sum_var = sum((_dec(i.get("contract_value")) for i in var_items), ZERO)
+    sum_ps = sum((_dec(i.get("contract_value")) for i in ps_items), ZERO)
 
     orig_total = _dec(summary.get("original_contract_total"))
 
@@ -128,7 +128,7 @@ async def execute_validate_claim(
         )
 
     # Total claimed exceeds revised contract total (all current + historic claims)
-    sum_claimed_ptd = sum(_dec(i.get("ptd")) for i in line_items)
+    sum_claimed_ptd = sum((_dec(i.get("ptd")) for i in line_items), ZERO)
     revised_contract = _dec(summary.get("revised_contract_total"))
     if revised_contract > ZERO and sum_claimed_ptd > revised_contract + TOLERANCE:
         await _flag(

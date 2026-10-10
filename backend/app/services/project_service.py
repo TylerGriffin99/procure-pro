@@ -3,12 +3,18 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.project import Project
 from app.models.user import User
 from app.models.wbs_code import WBSCode, WBSLevel
-from app.models.project import Project
 from app.repos import (
-    project_repo, wbs_code_repo, retention_tier_repo, harness_repo,
-    assessment_repo, claim_repo, variation_repo, provisional_sum_repo,
+    assessment_repo,
+    claim_repo,
+    harness_repo,
+    project_repo,
+    provisional_sum_repo,
+    retention_tier_repo,
+    variation_repo,
+    wbs_code_repo,
 )
 from app.schemas.project import ProjectCreate, ProjectUpdate, WBSCodeCreate, WBSCodeUpdate
 
@@ -167,7 +173,10 @@ async def create_wbs_code(
     )
     await db.commit()
 
-    return await wbs_code_repo.get_by_id_with_children(db, wbs.id)
+    refreshed = await wbs_code_repo.get_by_id_with_children(db, wbs.id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="WBS code not found after create")
+    return refreshed
 
 
 async def update_wbs_code(
@@ -204,4 +213,7 @@ async def update_wbs_code(
     wbs = await wbs_code_repo.update(db, wbs, **update_data)
     await db.commit()
 
-    return await wbs_code_repo.get_by_id_with_children(db, wbs.id)
+    refreshed = await wbs_code_repo.get_by_id_with_children(db, wbs.id)
+    if refreshed is None:
+        raise HTTPException(status_code=404, detail="WBS code not found after update")
+    return refreshed
