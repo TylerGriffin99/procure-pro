@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import app.harness.definitions  # noqa: F401 — triggers registration
 from app.database import async_session
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.harness.engine import HarnessEngine
+from app.harness.engine import HarnessEngine, describe_error
 from app.harness.models import HarnessDefinition, HarnessErrorEvent, HarnessEvent, HarnessType
 from app.harness.registry import harness_registry
 from app.models.harness_session import HarnessSession, HarnessSessionStatus
@@ -94,11 +94,11 @@ async def stream_events(
         except Exception as e:
             logger.exception("harness_stream.error")
             try:
-                await engine.set_failed(str(e))
+                await engine.set_failed(describe_error(e))
             except Exception:
                 # Best-effort status update; the stream error below is the primary signal.
                 logger.exception("harness_stream.set_failed_error")
-            yield sse(HarnessErrorEvent(session_id=session_id, error=str(e)))
+            yield sse(HarnessErrorEvent(session_id=session_id, error=describe_error(e)))
             yield "data: [DONE]\n\n"
 
 

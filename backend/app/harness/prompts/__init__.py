@@ -27,6 +27,6 @@ def load_playbook(fmt: str) -> str:
 
 
 def read_markdown(path: Path) -> str:
-    if not path.is_file():
-        raise FileNotFoundError(f"Prompt file not found: {path}")
+    """Return the text at ``path``. OS errors propagate as-is; FileNotFoundError names
+    the path."""
     return path.read_text()

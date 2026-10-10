@@ -36,6 +36,12 @@ from app.repos import harness_repo
 logger = logging.getLogger(__name__)
 
 
+def describe_error(exc: BaseException) -> str:
+    """``"<ExceptionType>: <message>"``, or just the type name when the message is empty."""
+    text = str(exc)
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 @dataclass
 class HarnessEngine:
     """Walks through phases, dispatching by type, yielding SSE events."""
@@ -88,13 +94,13 @@ class HarnessEngine:
                     yield event
             except Exception as e:
                 logger.exception("harness_engine.phase_error")
-                await self.set_failed(f"Phase '{phase_def.name}' failed: {e}")
+                await self.set_failed(f"Phase '{phase_def.name}' failed: {describe_error(e)}")
                 yield HarnessPhaseErrorEvent(
                     phase_index=phase_index,
                     phase_name=phase_def.name,
-                    error=str(e),
+                    error=describe_error(e),
                 )
-                yield HarnessErrorEvent(session_id=self.session_id, error=str(e))
+                yield HarnessErrorEvent(session_id=self.session_id, error=describe_error(e))
                 return
 
         # All phases complete
@@ -295,6 +301,9 @@ class HarnessEngine:
         )
 
     async def set_failed(self, error: str) -> None:
+        """Roll back any failed transaction first, so the status write cannot hit
+        PendingRollbackError."""
+        await self.db.rollback()
         await harness_repo.set_status(
             self.db, self.session_id, HarnessSessionStatus.failed, error_message=error
         )
