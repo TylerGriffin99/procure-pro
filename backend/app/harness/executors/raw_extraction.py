@@ -1,6 +1,7 @@
 """Phase 0: Extract raw text and tables from PDF using pdfplumber."""
 
 import logging
+import re
 import uuid
 from io import BytesIO
 from typing import Any
@@ -69,8 +70,6 @@ async def execute_raw_extraction(
 
 def _extract_metadata(text: str) -> dict[str, str]:
     """Extract basic metadata from first page text via simple pattern matching."""
-    import re
-
     metadata = {}
 
     patterns = {

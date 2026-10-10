@@ -5,7 +5,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.assessment import Assessment, AssessmentStatus, LineItemStatus
+from app.models.assessment import AdjustmentType, Assessment, AssessmentStatus, LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.assessment_variation import AssessmentVariation
@@ -302,8 +302,6 @@ async def create_interim_adjustment(
     user: User,
 ) -> dict:
     """Create an interim adjustment child row under the specified parent."""
-    from app.models.assessment import AdjustmentType
-
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
         raise HTTPException(status_code=404, detail="Assessment not found")

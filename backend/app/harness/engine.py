@@ -11,6 +11,9 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.harness.agent_runner import build_model, run_structured
+from app.harness.matchers.base import get_matcher
 from app.harness.models import (
     HarnessCompleteEvent,
     HarnessDefinition,
@@ -26,6 +29,7 @@ from app.harness.models import (
     UsageEvent,
 )
 from app.harness.phase_context import build_phase_context, render_system_prompt
+from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
@@ -101,8 +105,6 @@ class HarnessEngine:
                 return
 
         # All phases complete
-        from app.models.harness_session import HarnessSessionStatus
-
         await harness_repo.set_status(self.db, self.session_id, HarnessSessionStatus.completed)
         await self.db.commit()
 
@@ -186,8 +188,6 @@ class HarnessEngine:
         phase_def: PhaseDefinition,
         session_config: dict[str, Any],
     ) -> AsyncGenerator[HarnessEvent, None]:
-        from app.harness.agent_runner import build_model, run_structured
-
         if phase_def.output_schema is None:
             raise ValueError(
                 f"LLM_SINGLE phase '{phase_def.name}' has no output_schema; "
@@ -247,9 +247,6 @@ class HarnessEngine:
         phase_def: PhaseDefinition,
         session_config: dict[str, Any],
     ) -> AsyncGenerator[HarnessEvent, None]:
-        from app.config import settings
-        from app.harness.matchers.base import get_matcher
-
         if phase_def.output_schema is None:
             raise ValueError(f"LLM_BATCH_AGENTS phase '{phase_def.name}' has no output_schema.")
 
@@ -305,8 +302,6 @@ class HarnessEngine:
         )
 
     async def _set_failed(self, error: str) -> None:
-        from app.models.harness_session import HarnessSessionStatus
-
         await harness_repo.set_status(
             self.db, self.session_id, HarnessSessionStatus.failed, error_message=error
         )
