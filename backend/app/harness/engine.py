@@ -78,7 +78,7 @@ class HarnessEngine:
 
         for phase_index in range(current_phase, len(self.definition.phases)):
             if self.cancel_event.is_set():
-                await self._set_failed("Cancelled by user")
+                await self.set_failed("Cancelled by user")
                 yield HarnessErrorEvent(session_id=self.session_id, error="Cancelled")
                 return
 
@@ -95,7 +95,7 @@ class HarnessEngine:
                     yield event
             except Exception as e:
                 logger.exception("harness_engine.phase_error")
-                await self._set_failed(f"Phase '{phase_def.name}' failed: {e}")
+                await self.set_failed(f"Phase '{phase_def.name}' failed: {e}")
                 yield HarnessPhaseErrorEvent(
                     phase_index=phase_index,
                     phase_name=phase_def.name,
@@ -301,7 +301,7 @@ class HarnessEngine:
             detail=f"matcher={name} {counts}",
         )
 
-    async def _set_failed(self, error: str) -> None:
+    async def set_failed(self, error: str) -> None:
         await harness_repo.set_status(
             self.db, self.session_id, HarnessSessionStatus.failed, error_message=error
         )

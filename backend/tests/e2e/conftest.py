@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from testcontainers.postgres import PostgresContainer
 
 import app.database as database_module
-import app.routers.harness as harness_module
+import app.services.harness_service as harness_module
 from app.database import Base, get_db
 from app.main import app
 from app.models.harness_session import HarnessSession  # noqa: F401
@@ -72,8 +72,8 @@ async def db_session(test_db_url: str) -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    # Patch async_session in both database module AND harness router
-    # (the router imports async_session at module load time)
+    # Patch async_session in both database module AND harness service
+    # (the service imports async_session at module load time)
     orig_db = database_module.async_session
     orig_harness = harness_module.async_session
     database_module.async_session = async_session_test

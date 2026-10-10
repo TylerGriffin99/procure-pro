@@ -225,6 +225,18 @@ async def resolve_flag(
     return flag
 
 
+async def unresolve_flag(db: AsyncSession, flag_id: uuid.UUID) -> ClaimParseFlag | None:
+    result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
+    flag = result.scalar_one_or_none()
+    if flag is None:
+        return None
+    flag.resolved = False
+    flag.resolved_by = None
+    flag.resolved_at = None
+    await db.flush()
+    return flag
+
+
 async def delete_sessions_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> None:
     """Delete all harness sessions linked to a claim (cascades to workspace_files & flags)."""
     result = await db.execute(select(HarnessSession).where(HarnessSession.claim_id == claim_id))
