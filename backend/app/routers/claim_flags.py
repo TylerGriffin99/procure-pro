@@ -3,10 +3,12 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.models.claim_parse_flag import ClaimParseFlag
 from app.models.user import User
 from app.repos import harness_repo
 from app.schemas.claim_flag import ClaimParseFlagResponse, ResolveFlagRequest
@@ -40,10 +42,6 @@ async def resolve_flag(
         flag = await harness_repo.resolve_flag(db, flag_id, user.id)
     else:
         # Unresolve — reset resolved fields
-        from sqlalchemy import select
-
-        from app.models.claim_parse_flag import ClaimParseFlag
-
         result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
         flag = result.scalar_one_or_none()
         if flag:

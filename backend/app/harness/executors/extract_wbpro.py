@@ -90,7 +90,8 @@ def map_row_to_item(
         [ref, description, contract_value, percentage, ptd, previous, current, balance]
 
     Variations (9 cols):
-        [ctc_ref, description, client_ref, contract_value, percentage, ptd, previous, current, balance]
+        [ctc_ref, description, client_ref, contract_value, percentage, ptd, previous,
+         current, balance]
     """
     ncols = len(row)
 

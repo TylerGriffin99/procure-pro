@@ -272,7 +272,10 @@ def aggregate_variations(
     rows: Sequence[VariationItemLike],
     variations: Sequence[VariationLike],
 ) -> list[AggregatedVariationGroup]:
-    """Group variation items by variation_id, compute totals, source contractor_submission from master."""
+    """Group variation items by variation_id, compute totals.
+
+    Source contractor_submission from master.
+    """
     var_map: dict[uuid.UUID, VariationLike] = {v.id: v for v in variations}
 
     groups: dict[uuid.UUID, dict] = {}

@@ -38,5 +38,6 @@ def get_client() -> openai.AsyncOpenAI:
         )
 
     raise ValueError(
-        f"Unknown LLM_PROVIDER: {provider!r}. Use 'anthropic', 'openai', 'openrouter', or 'deepseek'."
+        f"Unknown LLM_PROVIDER: {provider!r}. "
+        "Use 'anthropic', 'openai', 'openrouter', or 'deepseek'."
     )

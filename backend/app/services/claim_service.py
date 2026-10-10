@@ -1,11 +1,16 @@
+import asyncio
 import logging
 import uuid
 from datetime import date, timedelta
+from io import BytesIO
 
+import pdfplumber
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+from app.models.assessment_variation import AssessmentVariation
 from app.models.claim import Claim, ClaimItemType
 from app.models.claim_line_item import ClaimLineItem
 from app.models.user import User
@@ -13,12 +18,14 @@ from app.models.wbs_code import WBSLevel
 from app.repos import (
     assessment_repo,
     claim_repo,
+    document_repo,
     harness_repo,
     provisional_sum_repo,
     variation_repo,
     wbs_code_repo,
 )
 from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimSummaryResponse, ClaimUpdate
+from app.services.guardrails import screen_text
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +73,6 @@ def _extract_screenable_text(content: bytes) -> str:
     Mirrors what raw_extraction feeds the LLM phases (text and tables) so the
     screen covers the same surface. Raises if the PDF cannot be read.
     """
-    from io import BytesIO
-
-    import pdfplumber
-
     parts: list[str] = []
     with pdfplumber.open(BytesIO(content)) as pdf:
         if len(pdf.pages) == 0:
@@ -91,8 +94,6 @@ def _screen_pdf_content(content: bytes) -> None:
     than stored unscreened, because the screen and a downstream reader are not
     guaranteed to fail on the same inputs.
     """
-    from app.services.guardrails import screen_text
-
     try:
         text = _extract_screenable_text(content)
     except Exception as e:
@@ -122,8 +123,6 @@ def _screen_pdf_content(content: bytes) -> None:
 
 async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, file: UploadFile):
     """Validate an uploaded PDF and persist it as a Document. Returns the Document."""
-    from app.repos import document_repo
-
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
     content = await file.read()
@@ -131,7 +130,6 @@ async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, f
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail="File exceeds the 25MB limit")
-    import asyncio
 
     await asyncio.to_thread(_screen_pdf_content, content)  # PDF parse is blocking
     return await document_repo.create_document(
@@ -284,9 +282,6 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
 
     # Clean up orphaned Variation/PS masters created by reclassification
     # (project-scoped records that may no longer have any assessment rows)
-    from app.models.assessment_provisional_sum import AssessmentProvisionalSum
-    from app.models.assessment_variation import AssessmentVariation
-
     all_variations = await variation_repo.get_by_project(db, project_id)
     for var in all_variations:
         has_rows = await db.execute(
@@ -316,8 +311,6 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
 
     # Delete the source Document (cascades away any remaining sessions on it).
     if document_id is not None:
-        from app.repos import document_repo
-
         document = await document_repo.get_document(db, document_id)
         if document is not None:
             await db.delete(document)

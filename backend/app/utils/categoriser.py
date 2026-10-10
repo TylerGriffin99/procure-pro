@@ -72,7 +72,8 @@ async def categorise_claim_items(
         subcategories_text = "(none yet — you must create new subcategories for all items)"
 
     items_text = "\n".join(
-        f'- ref_code="{item["ref_code"]}" [section: {item.get("section_title") or "Unknown"}]: {item["description"]}'
+        f'- ref_code="{item["ref_code"]}" '
+        f"[section: {item.get('section_title') or 'Unknown'}]: {item['description']}"
         for item in claim_items
     )
 

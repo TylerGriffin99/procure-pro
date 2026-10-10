@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal
 
+from sqlalchemy import func as sa_func
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -213,8 +214,6 @@ async def resolve_flag(
     flag_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> ClaimParseFlag | None:
-    from sqlalchemy import func as sa_func
-
     result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
     flag = result.scalar_one_or_none()
     if flag is None:

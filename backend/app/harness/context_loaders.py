@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.wbs_code import WBSLevel
-from app.repos import harness_repo, wbs_code_repo
+from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,8 @@ async def load_wbs_context(
     if subcategories:
         parent_map = {w.id: w.code for w in parent_categories}
         subcategories_text = "\n".join(
-            f"- id={w.id} | code={w.code}: {w.description} (parent: {parent_map.get(w.parent_id, '?')}) | contract_sum={w.contract_sum or 'N/A'}"
+            f"- id={w.id} | code={w.code}: {w.description} "
+            f"(parent: {parent_map.get(w.parent_id, '?')}) | contract_sum={w.contract_sum or 'N/A'}"
             for w in subcategories
         )
     else:
@@ -59,14 +60,14 @@ async def load_variations_context(
     session_id: uuid.UUID,
 ) -> dict[str, str]:
     """Load existing variations and provisional sums for the matching prompt."""
-    from app.repos import provisional_sum_repo, variation_repo
-
     variations = await variation_repo.get_by_project(db, project_id)
     provisional_sums = await provisional_sum_repo.get_by_project(db, project_id)
 
     if variations:
         variations_text = "\n".join(
-            f'- id={v.id} | ci_number={v.ci_number} | contractor_ref="{v.contractor_ref or ""}" | description="{v.description}" | submission={v.contractor_submission} | approved={v.approved_amount or "N/A"} | status={v.status.value}'
+            f'- id={v.id} | ci_number={v.ci_number} | contractor_ref="{v.contractor_ref or ""}" '
+            f'| description="{v.description}" | submission={v.contractor_submission} '
+            f"| approved={v.approved_amount or 'N/A'} | status={v.status.value}"
             for v in variations
         )
     else:
@@ -74,7 +75,8 @@ async def load_variations_context(
 
     if provisional_sums:
         ps_text = "\n".join(
-            f'- id={ps.id} | ps_number={ps.ps_number} | description="{ps.description}" | contract_sum={ps.contract_sum} | approved={ps.approved_amount or "N/A"}'
+            f'- id={ps.id} | ps_number={ps.ps_number} | description="{ps.description}" '
+            f"| contract_sum={ps.contract_sum} | approved={ps.approved_amount or 'N/A'}"
             for ps in provisional_sums
         )
     else:

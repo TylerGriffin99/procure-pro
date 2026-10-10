@@ -212,7 +212,10 @@ async def update_wbs_code(
         if attempted:
             raise HTTPException(
                 status_code=422,
-                detail=f"Cannot update {', '.join(attempted)} on a WBS code that is in use by claim/assessment data",
+                detail=(
+                    f"Cannot update {', '.join(attempted)} on a WBS code "
+                    "that is in use by claim/assessment data"
+                ),
             )
 
     if "code" in update_data and update_data["code"] != wbs.code:

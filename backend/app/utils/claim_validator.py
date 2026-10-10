@@ -29,7 +29,8 @@ def _validate_line_item(item: ParsedLineItem) -> list[str]:
 
     if item.current > ZERO and item.contract_value > ZERO and item.current > item.contract_value:
         warnings.append(
-            f"Current claim (${item.current:,.2f}) exceeds contract value (${item.contract_value:,.2f})"
+            f"Current claim (${item.current:,.2f}) exceeds "
+            f"contract value (${item.contract_value:,.2f})"
         )
 
     if item.ptd > ZERO and item.contract_value > ZERO and item.ptd > item.contract_value:

@@ -85,7 +85,10 @@ claim_parse_definition = HarnessDefinition(
         # Phase 5: Variation & PS Matching
         PhaseDefinition(
             name="Variation Matching",
-            description="Match variations and provisional sums to existing records (Jev decision model, LLM fallback)",
+            description=(
+                "Match variations and provisional sums to existing records "
+                "(Jev decision model, LLM fallback)"
+            ),
             phase_type=PhaseType.LLM_BATCH_AGENTS,
             matcher="jev",
             workspace_output="vps_matches.json",

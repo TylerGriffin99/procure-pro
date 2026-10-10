@@ -245,7 +245,8 @@ async def execute_create_records(
                         existing_var.contractor_submission = new_submission
                 else:
                     logger.warning(
-                        "VPS match item_index=%s: matched_id %s not found in existing variations, treating as unmatched",
+                        "VPS match item_index=%s: matched_id %s not found in existing "
+                        "variations, treating as unmatched",
                         item_idx,
                         mid,
                     )
@@ -266,7 +267,8 @@ async def execute_create_records(
                         existing_ps_rec.contract_sum = new_sum
                 else:
                     logger.warning(
-                        "VPS match item_index=%s: matched_id %s not found in existing provisional sums, treating as unmatched",
+                        "VPS match item_index=%s: matched_id %s not found in existing "
+                        "provisional sums, treating as unmatched",
                         item_idx,
                         mid,
                     )

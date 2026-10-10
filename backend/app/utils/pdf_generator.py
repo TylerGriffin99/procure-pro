@@ -22,6 +22,7 @@ def generate_payment_recommendation_pdf(data: dict) -> bytes:
     Returns:
         PDF file contents as bytes
     """
+    # Lazy on purpose: weasyprint pulls in cairo/pango natively and is only needed for PDF export.
     from weasyprint import HTML
 
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
