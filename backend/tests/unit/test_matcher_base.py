@@ -1,5 +1,6 @@
 import pytest
-from app.harness.matchers.base import MatchOutcome, get_matcher
+from app.harness.matchers.base import get_matcher
+from app.harness.schemas import MatchOutcome
 
 
 def test_match_outcome_defaults():

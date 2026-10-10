@@ -2,8 +2,7 @@
 import json
 import pytest
 from app.harness.matchers.jev import JevMatcher, NONE_OPTION
-from app.harness.matchers.base import MatchOutcome
-from app.harness.matchers.data import Subcat
+from app.harness.schemas import MatchOutcome, Subcat
 from app.harness.schemas import WbsMatch
 
 

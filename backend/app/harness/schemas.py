@@ -10,9 +10,11 @@ contract is unchanged — only now it is typed and validated at the source.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import StrictModel
 
 _Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 _ItemIndex = Annotated[int, Field(ge=0)]
@@ -86,6 +88,49 @@ class VpsMatch(BaseModel):
     item_type: Literal["variation", "provisional_sum"]
     matched_id: str | None = None
     confidence: _Confidence
+
+
+class Subcat(StrictModel):
+    """A WBS subcategory offered to the matcher as a choice."""
+
+    id: str
+    code: str
+    description: str
+    parent_code: str
+    contract_sum: float | None
+
+
+class VpsRecord(StrictModel):
+    """An existing variation / provisional-sum record offered to the matcher as a choice."""
+
+    id: str
+    description: str
+    value: float | None
+    item_type: Literal["variation", "provisional_sum"]
+
+
+class ItemDecision(StrictModel):
+    """One Jev answer for one line item. ``failed`` means the call failed non-fatally
+    and the caller should treat the item as unmatched."""
+
+    item_index: int
+    choice: str | None = None
+    confidence: float = 0.0
+    input_tokens: int = 0
+    failed: bool = False
+
+
+class MatchOutcome(StrictModel):
+    """Result of a matcher run: the typed list, its serialized form, and usage counters."""
+
+    output: list[Any]  # list[WbsMatch] or list[VpsMatch]
+    output_json: str  # bare JSON array matching the phase output_schema
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+    fell_back: int = 0  # items that fell back after a Jev failure
+    residue: int = 0  # items routed to the LLM (none / low confidence)
+    out_of_criteria: int = 0  # the model named an option that was never offered
 
 
 class GenericMetadata(BaseModel):

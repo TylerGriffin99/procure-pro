@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from app.harness.agent_runner import build_model, run_structured
-from app.harness.matchers.base import MatchOutcome
 from app.harness.phase_context import build_phase_context, render_system_prompt
+from app.harness.schemas import MatchOutcome
 
 
 async def run_llm_matches(*, phase_def, db, project_id, session_id) -> MatchOutcome:

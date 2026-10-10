@@ -2,8 +2,7 @@ import json
 import pytest
 from pydantic import TypeAdapter
 from app.harness.matchers.jev import JevMatcher, NONE_OPTION
-from app.harness.matchers.data import Subcat
-from app.harness.matchers.base import MatchOutcome
+from app.harness.schemas import MatchOutcome, Subcat
 from app.harness.schemas import WbsMatch
 
 
@@ -27,7 +26,7 @@ async def test_none_and_lowconf_items_routed_to_llm(monkeypatch):
     monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
-                        lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
+                        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]))
 
     async def fake_decide(*, state, questions, **k):
         qid = next(iter(questions))
@@ -61,7 +60,7 @@ async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplo
     monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
-                        lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
+                        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]))
 
     async def fake_decide(*, state, questions, **k):
         qid = next(iter(questions))
@@ -89,7 +88,7 @@ async def test_residue_tokens_and_counts_accumulate(monkeypatch):
     monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
-                        lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
+                        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]))
 
     async def fake_decide(*, state, questions, **k):
         qid = next(iter(questions))

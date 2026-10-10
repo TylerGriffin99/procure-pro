@@ -1,7 +1,7 @@
 import json
 import pytest
 from app.harness.matchers.jev import JevMatcher, NONE_OPTION
-from app.harness.matchers.data import VpsRecord
+from app.harness.schemas import VpsRecord
 from app.harness.schemas import VpsMatch
 
 
@@ -15,8 +15,8 @@ PARSED = {"line_items": [
     {"item_index": 1, "description": "PS lift", "contract_value": "5000", "item_type": "provisional_sum"},
     {"item_index": 2, "description": "work", "contract_value": "1", "item_type": "contract_work"},
 ]}
-RECORDS = [VpsRecord("v1", "Variation one", 900.0, "variation"),
-           VpsRecord("v2", "No value record", None, "provisional_sum")]
+RECORDS = [VpsRecord(id="v1", description="Variation one", value=900.0, item_type="variation"),
+           VpsRecord(id="v2", description="No value record", value=None, item_type="provisional_sum")]
 
 
 def _matcher(monkeypatch, answers, parsed=PARSED, seen=None):

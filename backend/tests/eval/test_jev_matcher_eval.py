@@ -41,7 +41,7 @@ from httpx import AsyncClient
 import app.harness.matchers.jev as jev_module
 from app.config import settings
 from app.harness.definitions.claim_parse import claim_parse_definition
-from app.harness.matchers.base import MatchOutcome
+from app.harness.schemas import MatchOutcome
 from app.harness.matchers.jev import JevMatcher
 from app.repos import harness_repo
 from tests.e2e.fixtures import gilmours_claim1 as c1

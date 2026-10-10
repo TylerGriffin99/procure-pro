@@ -4,8 +4,8 @@ import httpx
 import pytest
 from pydantic import TypeAdapter
 
-from app.harness.matchers.base import MatchOutcome
-from app.harness.matchers.data import Subcat, VpsRecord, read_parsed_items
+from app.harness.matchers.data import read_parsed_items
+from app.harness.schemas import MatchOutcome, Subcat, VpsRecord
 from app.harness.matchers.jev import JevMatcher
 from app.harness.schemas import VpsMatch, WbsMatch
 
@@ -37,7 +37,7 @@ def _setup(monkeypatch, n_items=1, item_type="contract_work"):
     monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
                         lambda db, sid, path: _async(json.dumps(parsed)))
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
-                        lambda **k: _async([Subcat("u1", "DM-01", "d", "DM", 1.0)]))
+                        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]))
 
     async def no_sleep(*a, **k):
         return None
@@ -129,7 +129,7 @@ async def test_total_outage_all_fall_back_loudly(monkeypatch, caplog):
 async def test_vps_terminal_failure_defaults_to_new_record(monkeypatch, caplog):
     _setup(monkeypatch, n_items=1, item_type="variation")
     monkeypatch.setattr("app.harness.matchers.jev.vps_records",
-                        lambda **k: _async([VpsRecord("r1", "rec", 10.0, "variation")]))
+                        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]))
 
     async def always_529(*, state, questions, **k):
         raise _err(529)
@@ -143,7 +143,7 @@ async def test_vps_terminal_failure_defaults_to_new_record(monkeypatch, caplog):
 @pytest.mark.asyncio
 async def test_32k_guard_wbs(monkeypatch):
     _setup(monkeypatch)
-    big = [Subcat(f"u{i}", f"C-{i}", "d" * 200, "C", 1.0) for i in range(1000)]
+    big = [Subcat(id=f"u{i}", code=f"C-{i}", description="d" * 200, parent_code="C", contract_sum=1.0) for i in range(1000)]
     monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories", lambda **k: _async(big))
 
     async def decide(**k):
@@ -156,7 +156,7 @@ async def test_32k_guard_wbs(monkeypatch):
 async def test_vps_total_outage_summary(monkeypatch, caplog):
     _setup(monkeypatch, n_items=2, item_type="variation")
     monkeypatch.setattr("app.harness.matchers.jev.vps_records",
-                        lambda **k: _async([VpsRecord("r1", "rec", 10.0, "variation")]))
+                        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]))
 
     async def always_529(*, state, questions, **k):
         raise _err(529)
@@ -192,7 +192,7 @@ async def test_wbs_malformed_answer_falls_back(monkeypatch, caplog, bad):
 async def test_vps_malformed_answer_falls_back(monkeypatch, caplog):
     _setup(monkeypatch, n_items=1, item_type="variation")
     monkeypatch.setattr("app.harness.matchers.jev.vps_records",
-                        lambda **k: _async([VpsRecord("r1", "rec", 10.0, "variation")]))
+                        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]))
 
     async def decide(*, state, questions, **k):
         return {"answers": {next(iter(questions)): None}}
@@ -208,7 +208,7 @@ async def test_vps_malformed_answer_falls_back(monkeypatch, caplog):
 async def test_vps_fatal_raises(monkeypatch, code):
     _setup(monkeypatch, n_items=1, item_type="variation")
     monkeypatch.setattr("app.harness.matchers.jev.vps_records",
-                        lambda **k: _async([VpsRecord("r1", "rec", 10.0, "variation")]))
+                        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]))
 
     async def decide(**k):
         raise _err(code)

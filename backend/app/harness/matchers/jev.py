@@ -8,8 +8,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from pydantic import TypeAdapter
 
 from app.config import settings
-from app.harness.matchers.base import MatchOutcome
-from app.harness.matchers.data import Subcat, read_parsed_items, vps_records, wbs_subcategories
+from app.harness.matchers.data import read_parsed_items, vps_records, wbs_subcategories
 from app.harness.matchers.jev_client import (
     DecideFn,
     call_decisions,
@@ -19,7 +18,7 @@ from app.harness.matchers.jev_client import (
     item_state,
 )
 from app.harness.matchers.llm import run_llm_matches
-from app.harness.schemas import ParsedClaimItem, VpsMatch, WbsMatch
+from app.harness.schemas import MatchOutcome, ParsedClaimItem, Subcat, VpsMatch, WbsMatch
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession

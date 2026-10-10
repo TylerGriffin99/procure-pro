@@ -7,32 +7,14 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
-from app.harness.schemas import ParsedClaimItem
+from app.harness.schemas import ParsedClaimItem, Subcat, VpsRecord
 from app.models.wbs_code import WBSLevel
 from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-
-@dataclass(eq=True)
-class Subcat:
-    id: str
-    code: str
-    description: str
-    parent_code: str
-    contract_sum: float | None
-
-
-@dataclass(eq=True)
-class VpsRecord:
-    id: str
-    description: str
-    value: float | None
-    item_type: Literal["variation", "provisional_sum"]
 
 
 def _num(v) -> float | None:

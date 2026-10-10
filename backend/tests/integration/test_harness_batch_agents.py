@@ -7,7 +7,7 @@ from pydantic import TypeAdapter
 
 from app.config import settings
 from app.harness.engine import HarnessEngine
-from app.harness.matchers.base import MatchOutcome
+from app.harness.schemas import MatchOutcome
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
 from app.harness.schemas import WbsMatch
 from app.repos import harness_repo
@@ -103,7 +103,7 @@ async def test_unconfigured_jev_warns_and_falls_back_to_llm(client, db_session, 
 @pytest.mark.asyncio
 async def test_phase4_jev_end_to_end_with_fake_decisions(client, db_session, monkeypatch):
     """Phase 4 as LLM_BATCH_AGENTS/jev yields a valid list[WbsMatch] via a fake decisions endpoint."""
-    from app.harness.matchers.data import Subcat
+    from app.harness.schemas import Subcat
 
     monkeypatch.setattr(settings, "open_router_api_key", "test-key")
 
