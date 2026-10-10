@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import BadRequestError
 from app.models.assessment import Assessment, AssessmentStatus, LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_variation import AssessmentVariation
@@ -227,8 +228,7 @@ async def test_reclassify_rejects_history_row(db_session: AsyncSession):
         new_record=ReclassifyNewRecord(description="Should fail"),
     )
 
-    from fastapi import HTTPException
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(BadRequestError) as exc_info:
         await assessment_service.reclassify_item(
             db_session, project.id, assessment.id, req, user,
         )

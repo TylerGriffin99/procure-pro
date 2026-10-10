@@ -1,6 +1,7 @@
 import uuid
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -175,12 +176,10 @@ async def get_assessment(
 async def download_pr_export(
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,
-    format: str = "pdf",
+    format: Literal["pdf", "excel"] = "pdf",
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if format not in ("pdf", "excel"):
-        raise HTTPException(status_code=400, detail="format must be 'pdf' or 'excel'")
     export_bytes, media_type = await assessment_service.generate_assessment_export(
         db, project_id, assessment_id, format
     )

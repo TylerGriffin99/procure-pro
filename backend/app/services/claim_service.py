@@ -5,10 +5,11 @@ from datetime import date, timedelta
 from io import BytesIO
 
 import pdfplumber
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import BadRequestError, NotFoundError
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.assessment_variation import AssessmentVariation
 from app.models.claim import Claim, ClaimItemType
@@ -50,7 +51,7 @@ def _payment_due_20th(reference: date) -> date:
     return reference.replace(month=reference.month + 1, day=20)
 
 
-def _auto_fill_dates(claim_received: date | None) -> dict[str, date | None]:
+def auto_fill_dates(claim_received: date | None) -> dict[str, date | None]:
     """Derive schedule dates from claim_received using 5 working-day offsets."""
     if not claim_received:
         return {}
@@ -98,13 +99,13 @@ def _screen_pdf_content(content: bytes) -> None:
         text = _extract_screenable_text(content)
     except Exception as e:
         logger.warning("Rejected upload: PDF could not be read for screening", exc_info=True)
-        raise HTTPException(status_code=400, detail="Could not read the PDF to screen it") from e
+        raise BadRequestError("Could not read the PDF to screen it") from e
 
     if not text.strip():
         # Parsed, but yielded no text/tables to screen (e.g. an image-only scan).
         # Fail closed: we can't vouch for content we couldn't extract.
         logger.warning("Rejected upload: PDF has no extractable text to screen")
-        raise HTTPException(status_code=400, detail="PDF has no extractable text to screen")
+        raise BadRequestError("PDF has no extractable text to screen")
 
     violations = screen_text(text)
     if violations:
@@ -115,21 +116,20 @@ def _screen_pdf_content(content: bytes) -> None:
         logger.warning(
             "Rejected upload: disallowed content [%s] — %s", ", ".join(categories), snippets
         )
-        raise HTTPException(
-            status_code=400,
-            detail=f"Document rejected: it contains disallowed content ({', '.join(categories)})",
+        raise BadRequestError(
+            f"Document rejected: it contains disallowed content ({', '.join(categories)})",
         )
 
 
 async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, file: UploadFile):
     """Validate an uploaded PDF and persist it as a Document. Returns the Document."""
     if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+        raise BadRequestError("Only PDF uploads are supported")
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        raise BadRequestError("Uploaded file is empty")
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="File exceeds the 25MB limit")
+        raise BadRequestError("File exceeds the 25MB limit")
 
     await asyncio.to_thread(_screen_pdf_content, content)  # PDF parse is blocking
     return await document_repo.create_document(
@@ -173,7 +173,7 @@ def _build_claim_response(
 async def create_claim(
     db: AsyncSession, project_id: uuid.UUID, data: ClaimCreate, user: User
 ) -> ClaimResponse:
-    auto_dates = _auto_fill_dates(data.claim_received)
+    auto_dates = auto_fill_dates(data.claim_received)
     claim = Claim(
         project_id=project_id,
         claim_number=data.claim_number,
@@ -226,7 +226,7 @@ async def list_claims(db: AsyncSession, project_id: uuid.UUID) -> list[ClaimResp
 async def get_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> ClaimResponse:
     claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise NotFoundError("Claim not found")
     return _build_claim_response(claim)
 
 
@@ -238,13 +238,13 @@ async def update_claim(
 ) -> ClaimResponse:
     claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise NotFoundError("Claim not found")
 
     updates = data.model_dump(exclude_unset=True)
 
     # If claim_received changed, auto-fill derived dates unless explicitly provided
     if updates.get("claim_received"):
-        auto = _auto_fill_dates(updates["claim_received"])
+        auto = auto_fill_dates(updates["claim_received"])
         for key, val in auto.items():
             if key not in updates:
                 updates[key] = val
@@ -260,7 +260,7 @@ async def update_claim(
 async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> None:
     claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise NotFoundError("Claim not found")
 
     # Capture the source Document behind this claim before its sessions are removed.
     claim_session = await harness_repo.get_session_by_claim(db, claim_id)

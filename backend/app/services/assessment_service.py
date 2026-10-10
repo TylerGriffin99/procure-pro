@@ -2,9 +2,9 @@ import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models.assessment import AdjustmentType, Assessment, AssessmentStatus, LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
@@ -30,7 +30,7 @@ from app.schemas.assessment import (
     AssessmentVariationUpdate,
     ReclassifyRequest,
 )
-from app.services.claim_service import _auto_fill_dates
+from app.services.claim_service import auto_fill_dates
 from app.utils.assessment_aggregator import (
     aggregate_line_items,
     aggregate_provisional_sums,
@@ -67,7 +67,7 @@ def _resolve_claim_dates(claim) -> dict[str, str]:
         claim_received = (
             claim.created_at.date() if hasattr(claim.created_at, "date") else claim.created_at
         )
-        auto = _auto_fill_dates(claim_received)
+        auto = auto_fill_dates(claim_received)
         return {
             "claim_received": _fmt_date(claim_received),
             "provisional_payment_schedule_due": _fmt_date(auto["provisional_payment_schedule_due"]),
@@ -80,7 +80,7 @@ def _resolve_claim_dates(claim) -> dict[str, str]:
     payment = claim.payment_due
 
     if claim_received and (not provisional or not schedule or not payment):
-        auto = _auto_fill_dates(claim_received)
+        auto = auto_fill_dates(claim_received)
         provisional = provisional or auto.get("provisional_payment_schedule_due")
         schedule = schedule or auto.get("payment_schedule_due")
         payment = payment or auto.get("payment_due")
@@ -102,7 +102,7 @@ async def create_assessment(
     # Load claim with line items
     claim = await claim_repo.get_by_id(db, data.claim_id)
     if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
+        raise NotFoundError("Claim not found")
 
     # Get previously certified amount from latest finalised assessment
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
@@ -154,7 +154,7 @@ async def get_latest_by_claim(
 ) -> Assessment:
     assessment = await assessment_repo.get_latest_by_claim(db, claim_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
     return assessment
 
 
@@ -167,7 +167,7 @@ async def update_line_item(
 ) -> AssessmentLineItem:
     item = await assessment_line_item_repo.get_by_id(db, line_item_id, assessment_id)
     if not item:
-        raise HTTPException(status_code=404, detail="Line item not found")
+        raise NotFoundError("Line item not found")
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
@@ -200,7 +200,7 @@ async def get_aggregated_assessment(
     """Fetch assessment and return it with pre-aggregated groups."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
 
     all_wbs = await wbs_code_repo.get_by_project(db, project_id)
     all_variations = await variation_repo.get_by_project(db, project_id)
@@ -295,11 +295,9 @@ async def create_interim_adjustment(
     """Create an interim adjustment child row under the specified parent."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
     if assessment.status != AssessmentStatus.draft:
-        raise HTTPException(
-            status_code=400, detail="Assessment must be in draft to add adjustments"
-        )
+        raise BadRequestError("Assessment must be in draft to add adjustments")
 
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
     source_id = (
@@ -408,7 +406,7 @@ async def create_interim_adjustment(
         )
         db.add(new_item)
     else:
-        raise HTTPException(status_code=400, detail=f"Invalid item_type: {data.item_type}")
+        raise BadRequestError(f"Invalid item_type: {data.item_type}")
 
     await db.commit()
     return await get_aggregated_assessment(db, project_id, assessment_id)
@@ -424,11 +422,9 @@ async def close_out_item(
     """Close out an interim item — sets all rows for this parent to 'approved' status."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
     if assessment.status != AssessmentStatus.draft:
-        raise HTTPException(
-            status_code=400, detail="Assessment must be in draft to close out items"
-        )
+        raise BadRequestError("Assessment must be in draft to close out items")
 
     def _update_comment(item):
         """Update comment prefix from Interim to Closed Out (idempotent)."""
@@ -469,7 +465,7 @@ async def close_out_item(
             _update_comment(item)
             item.updated_by = user.id
     else:
-        raise HTTPException(status_code=400, detail=f"Invalid item_type: {data.item_type}")
+        raise BadRequestError(f"Invalid item_type: {data.item_type}")
 
     await db.commit()
     return await get_aggregated_assessment(db, project_id, assessment_id)
@@ -483,11 +479,11 @@ async def generate_assessment_export(
 ) -> tuple[bytes, str]:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
 
     project = await project_repo.get_by_id_with_retention(db, project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundError("Project not found")
     claim = await claim_repo.get_by_id(db, assessment.claim_id)
 
     # Fetch master records for aggregation
@@ -683,7 +679,7 @@ async def update_variation_item(
 ) -> AssessmentVariation:
     item = await assessment_variation_repo.get_by_id(db, item_id, assessment_id)
     if not item:
-        raise HTTPException(status_code=404, detail="Variation item not found")
+        raise NotFoundError("Variation item not found")
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
@@ -704,7 +700,7 @@ async def update_variation_item(
     await db.commit()
     refreshed = await assessment_variation_repo.get_by_id(db, item.id, assessment_id)
     if refreshed is None:
-        raise HTTPException(status_code=404, detail="Variation item not found after update")
+        raise NotFoundError("Variation item not found after update")
     return refreshed
 
 
@@ -717,7 +713,7 @@ async def update_provisional_sum_item(
 ) -> AssessmentProvisionalSum:
     item = await assessment_provisional_sum_repo.get_by_id(db, item_id, assessment_id)
     if not item:
-        raise HTTPException(status_code=404, detail="Provisional sum item not found")
+        raise NotFoundError("Provisional sum item not found")
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
@@ -738,7 +734,7 @@ async def update_provisional_sum_item(
     await db.commit()
     refreshed = await assessment_provisional_sum_repo.get_by_id(db, item.id, assessment_id)
     if refreshed is None:
-        raise HTTPException(status_code=404, detail="Provisional sum item not found after update")
+        raise NotFoundError("Provisional sum item not found after update")
     return refreshed
 
 
@@ -751,7 +747,7 @@ async def reclassify_item(
 ) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
 
     # Find source row in the appropriate list
     source_row = None
@@ -769,11 +765,10 @@ async def reclassify_item(
         )
 
     if not source_row:
-        raise HTTPException(status_code=404, detail="Source item not found")
+        raise NotFoundError("Source item not found")
     if source_row.claim_line_item_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot reclassify a history row without a linked claim line item",
+        raise BadRequestError(
+            "Cannot reclassify a history row without a linked claim line item",
         )
 
     # Capture carried values
@@ -789,16 +784,15 @@ async def reclassify_item(
     # WBS-to-WBS: same type, just update the wbs_code_id
     if data.source_type == "line-item" and data.target_type == "line-item":
         if not data.target_wbs_code_id:
-            raise HTTPException(
-                status_code=400,
-                detail="target_wbs_code_id is required when target_type is 'line-item'",
+            raise BadRequestError(
+                "target_wbs_code_id is required when target_type is 'line-item'",
             )
         assert isinstance(source_row, AssessmentLineItem)
         await assessment_line_item_repo.update(db, source_row, wbs_code_id=data.target_wbs_code_id)
         await db.commit()
         refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
         if refreshed is None:
-            raise HTTPException(status_code=404, detail="Assessment not found after reclassify")
+            raise NotFoundError("Assessment not found after reclassify")
         return refreshed
 
     # Cross-type: delete source, create new target row
@@ -821,7 +815,7 @@ async def reclassify_item(
             existing_variations = await variation_repo.get_by_project(db, project_id)
             variation = next((v for v in existing_variations if v.id == data.target_id), None)
             if not variation:
-                raise HTTPException(status_code=404, detail="Target variation not found")
+                raise NotFoundError("Target variation not found")
         else:
             max_ci = await variation_repo.get_max_ci_number(db, project_id)
             new_desc = data.new_record.description if data.new_record else description
@@ -857,7 +851,7 @@ async def reclassify_item(
             existing_ps = await provisional_sum_repo.get_by_project(db, project_id)
             ps = next((p for p in existing_ps if p.id == data.target_id), None)
             if not ps:
-                raise HTTPException(status_code=404, detail="Target provisional sum not found")
+                raise NotFoundError("Target provisional sum not found")
         else:
             max_ps = await provisional_sum_repo.get_max_ps_number(db, project_id)
             new_desc = data.new_record.description if data.new_record else description
@@ -889,9 +883,8 @@ async def reclassify_item(
 
     elif data.target_type == "line-item":
         if not data.target_wbs_code_id:
-            raise HTTPException(
-                status_code=400,
-                detail="target_wbs_code_id is required when target_type is 'line-item'",
+            raise BadRequestError(
+                "target_wbs_code_id is required when target_type is 'line-item'",
             )
         # From variation/PS back to line-item
         # Use explicit query instead of assessment.line_items to avoid MissingGreenlet
@@ -920,7 +913,7 @@ async def reclassify_item(
     db.expire(assessment)
     refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if refreshed is None:
-        raise HTTPException(status_code=404, detail="Assessment not found after reclassify")
+        raise NotFoundError("Assessment not found after reclassify")
     return refreshed
 
 
@@ -932,7 +925,7 @@ async def finalise_assessment(
 ) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
 
     # Calculate summary totals via aggregator
     all_wbs = await wbs_code_repo.get_by_project(db, project_id)
@@ -978,7 +971,7 @@ async def finalise_assessment(
 
     project = await project_repo.get_by_id_with_retention(db, project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundError("Project not found")
     assessment.contract_sum = project.contract_sum
     assessment.approved_variation_orders = totals.approved_variation_orders
     assessment.adjustment_to_provisional_sums = totals.adjustment_to_provisional_sums
@@ -1011,7 +1004,7 @@ async def finalise_assessment(
     await db.commit()
     refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if refreshed is None:
-        raise HTTPException(status_code=404, detail="Assessment not found after finalise")
+        raise NotFoundError("Assessment not found after finalise")
     return refreshed
 
 
@@ -1023,19 +1016,18 @@ async def revert_to_draft(
 ) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
+        raise NotFoundError("Assessment not found")
     if assessment.status != AssessmentStatus.finalised:
-        raise HTTPException(status_code=400, detail="Assessment is not finalised")
+        raise BadRequestError("Assessment is not finalised")
 
     # Block revert if a subsequent claim exists
     claims = await claim_repo.get_by_project(db, project_id)
     current_claim = next((c for c in claims if c.id == assessment.claim_id), None)
     if not current_claim:
-        raise HTTPException(status_code=404, detail="Associated claim not found")
+        raise NotFoundError("Associated claim not found")
     if any(c.claim_number > current_claim.claim_number for c in claims):
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot revert: a subsequent claim exists for this project",
+        raise ConflictError(
+            "Cannot revert: a subsequent claim exists for this project",
         )
 
     assessment.status = AssessmentStatus.draft
@@ -1045,5 +1037,5 @@ async def revert_to_draft(
     await db.commit()
     refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if refreshed is None:
-        raise HTTPException(status_code=404, detail="Assessment not found after revert")
+        raise NotFoundError("Assessment not found after revert")
     return refreshed

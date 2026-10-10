@@ -1,8 +1,8 @@
 import uuid
 
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import NotFoundError, UnprocessableError
 from app.models.project import Project
 from app.models.user import User
 from app.models.wbs_code import WBSCode, WBSLevel
@@ -99,7 +99,7 @@ async def list_projects(db: AsyncSession):
 async def get_project(db: AsyncSession, project_id: uuid.UUID):
     project = await project_repo.get_by_id(db, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundError("Project not found")
 
     # Populate in_use flag for each WBS code (single batch query)
     all_wbs = await wbs_code_repo.get_by_project(db, project_id)
@@ -118,7 +118,7 @@ async def update_project(
 ) -> Project:
     project = await project_repo.get_by_id(db, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundError("Project not found")
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -133,7 +133,7 @@ async def update_project(
 async def delete_project(db: AsyncSession, project_id: uuid.UUID) -> None:
     project = await project_repo.get_by_id(db, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundError("Project not found")
 
     await harness_repo.delete_sessions_by_project(db, project_id)
     await assessment_repo.delete_by_project(db, project_id)
@@ -153,21 +153,19 @@ async def create_wbs_code(
 ) -> WBSCode:
     project = await project_repo.get_by_id(db, project_id)
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise NotFoundError("Project not found")
 
     existing = await wbs_code_repo.get_by_project(db, project_id)
     if any(w.code == data.code for w in existing):
-        raise HTTPException(
-            status_code=422, detail=f"WBS code '{data.code}' already exists in this project"
-        )
+        raise UnprocessableError(f"WBS code '{data.code}' already exists in this project")
 
     if data.level == "subcategory":
         parent_id = data.parent_id
         if not parent_id:
-            raise HTTPException(status_code=422, detail="Subcategory requires a parent_id")
+            raise UnprocessableError("Subcategory requires a parent_id")
         parent = await wbs_code_repo.get_by_id(db, parent_id)
         if not parent or parent.project_id != project_id:
-            raise HTTPException(status_code=422, detail="Invalid parent_id")
+            raise UnprocessableError("Invalid parent_id")
     else:
         parent_id = None
 
@@ -186,7 +184,7 @@ async def create_wbs_code(
 
     refreshed = await wbs_code_repo.get_by_id_with_children(db, wbs.id)
     if refreshed is None:
-        raise HTTPException(status_code=404, detail="WBS code not found after create")
+        raise NotFoundError("WBS code not found after create")
     return refreshed
 
 
@@ -199,7 +197,7 @@ async def update_wbs_code(
 ) -> WBSCode:
     wbs = await wbs_code_repo.get_by_id(db, wbs_code_id)
     if not wbs or wbs.project_id != project_id:
-        raise HTTPException(status_code=404, detail="WBS code not found")
+        raise NotFoundError("WBS code not found")
 
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
@@ -210,20 +208,16 @@ async def update_wbs_code(
         restricted_fields = {"code", "level", "parent_id"}
         attempted = set(update_data.keys()) & restricted_fields
         if attempted:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Cannot update {', '.join(attempted)} on a WBS code "
-                    "that is in use by claim/assessment data"
-                ),
+            raise UnprocessableError(
+                f"Cannot update {', '.join(attempted)} on a WBS code "
+                "that is in use by claim/assessment data"
             )
 
     if "code" in update_data and update_data["code"] != wbs.code:
         existing = await wbs_code_repo.get_by_project(db, project_id)
         if any(w.code == update_data["code"] and w.id != wbs_code_id for w in existing):
-            raise HTTPException(
-                status_code=422,
-                detail=f"WBS code '{update_data['code']}' already exists in this project",
+            raise UnprocessableError(
+                f"WBS code '{update_data['code']}' already exists in this project",
             )
 
     if "level" in update_data and update_data["level"] is not None:
@@ -235,5 +229,5 @@ async def update_wbs_code(
 
     refreshed = await wbs_code_repo.get_by_id_with_children(db, wbs.id)
     if refreshed is None:
-        raise HTTPException(status_code=404, detail="WBS code not found after update")
+        raise NotFoundError("WBS code not found after update")
     return refreshed

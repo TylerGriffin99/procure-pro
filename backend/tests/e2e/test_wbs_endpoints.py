@@ -7,6 +7,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user
+from app.exceptions import UnprocessableError
 from app.main import app
 from app.models.user import User
 from app.models.wbs_code import WBSLevel
@@ -87,8 +88,7 @@ async def test_create_wbs_code_subcategory(db_session: AsyncSession, project_wit
 async def test_create_wbs_code_duplicate_code_fails(db_session: AsyncSession, project_with_wbs, user):
     project = project_with_wbs
     data = WBSCodeCreate(code="DM", description="Duplicate", level="category", sort_order=99)
-    from fastapi import HTTPException
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(UnprocessableError) as exc_info:
         await project_service.create_wbs_code(db_session, project.id, data, user)
     assert exc_info.value.status_code == 422
 
@@ -146,9 +146,8 @@ async def test_update_wbs_code_in_use_restricts_code_change(db_session: AsyncSes
     db_session.add(ali)
     await db_session.flush()
 
-    from fastapi import HTTPException
     data = WBSCodeUpdate(code="DM-CHANGED")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(UnprocessableError) as exc_info:
         await project_service.update_wbs_code(db_session, project.id, dm_sub.id, data, user)
     assert exc_info.value.status_code == 422
 
