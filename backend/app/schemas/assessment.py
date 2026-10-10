@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
 
 from app.models.assessment import AssessmentStatus, LineItemStatus
 from app.schemas.assessment_aggregate import AssessmentAggregate
+
+if TYPE_CHECKING:
+    from app.models.assessment_line_item import AssessmentLineItem
+    from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+    from app.models.assessment_variation import AssessmentVariation
+
+    InterimItem = AssessmentLineItem | AssessmentVariation | AssessmentProvisionalSum
 
 
 class AssessmentCreate(BaseModel):
@@ -226,6 +234,27 @@ class AggregatedAssessmentResponse(BaseModel):
             variation_items=a.variation_items,
             provisional_sum_items=a.provisional_sum_items,
         )
+
+
+class PriorInterimResponse(BaseModel):
+    parent_id: uuid.UUID
+    previously_paid: Decimal
+    comments: str | None
+
+    @classmethod
+    def from_group(cls, parent_id: uuid.UUID, items: Sequence[InterimItem]) -> PriorInterimResponse:
+        """Sum the group's recommended totals; take the first non-empty comment."""
+        return cls(
+            parent_id=parent_id,
+            previously_paid=sum((item.total_recommended for item in items), Decimal(0)),
+            comments=next((item.comments for item in items if item.comments), None),
+        )
+
+
+class PriorInterimsResponse(BaseModel):
+    wbs_interims: list[PriorInterimResponse] = []
+    variation_interims: list[PriorInterimResponse] = []
+    ps_interims: list[PriorInterimResponse] = []
 
 
 class ReclassifyNewRecord(BaseModel):

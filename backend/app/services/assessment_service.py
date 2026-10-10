@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -28,6 +29,8 @@ from app.schemas.assessment import (
     AssessmentLineItemUpdate,
     AssessmentProvisionalSumUpdate,
     AssessmentVariationUpdate,
+    PriorInterimResponse,
+    PriorInterimsResponse,
     ReclassifyRequest,
 )
 from app.schemas.assessment_aggregate import AssessmentAggregate
@@ -41,6 +44,8 @@ from app.utils.assessment_aggregator import (
 from app.utils.assessment_engine import calculate_retention, calculate_retention_per_tier
 from app.utils.excel_generator import generate_payment_recommendation_excel
 from app.utils.pdf_generator import generate_payment_recommendation_pdf
+
+InterimItem = AssessmentLineItem | AssessmentVariation | AssessmentProvisionalSum
 
 
 def _fmt_date(d) -> str:
@@ -159,6 +164,16 @@ async def get_latest_by_claim(
     return assessment
 
 
+async def get_aggregated_by_claim(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    claim_id: uuid.UUID,
+) -> AssessmentAggregate:
+    """The latest assessment for ``claim_id``, aggregated."""
+    assessment = await get_latest_by_claim(db, project_id, claim_id)
+    return await get_aggregated_assessment(db, project_id, assessment.id)
+
+
 async def update_line_item(
     db: AsyncSession,
     assessment_id: uuid.UUID,
@@ -223,67 +238,42 @@ async def get_prior_interims(
     db: AsyncSession,
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,
-) -> dict:
+) -> PriorInterimsResponse:
     """Find items from the previous finalised assessment that have status='interim'."""
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
     if not prev_assessment or prev_assessment.id == assessment_id:
-        return {"wbs_interims": [], "variation_interims": [], "ps_interims": []}
+        return PriorInterimsResponse()
 
-    wbs_interims = []
-    wbs_groups: dict[uuid.UUID, list] = {}
+    wbs_groups: dict[uuid.UUID, list[AssessmentLineItem]] = {}
     for item in prev_assessment.line_items:
         wbs_id = item.wbs_code_id
         if wbs_id:
             wbs_groups.setdefault(wbs_id, []).append(item)
-    for wbs_id, items in wbs_groups.items():
-        if any(item.status == LineItemStatus.interim for item in items):
-            total_rec = sum(item.total_recommended for item in items)
-            comments = next((item.comments for item in items if item.comments), None)
-            wbs_interims.append(
-                {
-                    "parent_id": str(wbs_id),
-                    "previously_paid": str(total_rec),
-                    "comments": comments,
-                }
-            )
 
-    variation_interims = []
-    var_groups: dict[uuid.UUID, list] = {}
+    var_groups: dict[uuid.UUID, list[AssessmentVariation]] = {}
     for item in prev_assessment.variation_items:
         var_groups.setdefault(item.variation_id, []).append(item)
-    for var_id, items in var_groups.items():
-        if any(item.status == LineItemStatus.interim for item in items):
-            total_rec = sum(item.total_recommended for item in items)
-            comments = next((item.comments for item in items if item.comments), None)
-            variation_interims.append(
-                {
-                    "parent_id": str(var_id),
-                    "previously_paid": str(total_rec),
-                    "comments": comments,
-                }
-            )
 
-    ps_interims = []
-    ps_groups_dict: dict[uuid.UUID, list] = {}
+    ps_groups: dict[uuid.UUID, list[AssessmentProvisionalSum]] = {}
     for item in prev_assessment.provisional_sum_items:
-        ps_groups_dict.setdefault(item.provisional_sum_id, []).append(item)
-    for ps_id, items in ps_groups_dict.items():
-        if any(item.status == LineItemStatus.interim for item in items):
-            total_rec = sum(item.total_recommended for item in items)
-            comments = next((item.comments for item in items if item.comments), None)
-            ps_interims.append(
-                {
-                    "parent_id": str(ps_id),
-                    "previously_paid": str(total_rec),
-                    "comments": comments,
-                }
-            )
+        ps_groups.setdefault(item.provisional_sum_id, []).append(item)
 
-    return {
-        "wbs_interims": wbs_interims,
-        "variation_interims": variation_interims,
-        "ps_interims": ps_interims,
-    }
+    return PriorInterimsResponse(
+        wbs_interims=_interim_groups(wbs_groups),
+        variation_interims=_interim_groups(var_groups),
+        ps_interims=_interim_groups(ps_groups),
+    )
+
+
+def _interim_groups(
+    groups: Mapping[uuid.UUID, Sequence[InterimItem]],
+) -> list[PriorInterimResponse]:
+    """One entry per parent whose group holds at least one interim-status item."""
+    return [
+        PriorInterimResponse.from_group(parent_id, items)
+        for parent_id, items in groups.items()
+        if any(item.status == LineItemStatus.interim for item in items)
+    ]
 
 
 async def create_interim_adjustment(

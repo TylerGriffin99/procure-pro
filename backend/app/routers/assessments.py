@@ -20,6 +20,7 @@ from app.schemas.assessment import (
     AssessmentVariationUpdate,
     CloseOutRequest,
     InterimAdjustRequest,
+    PriorInterimsResponse,
     ReclassifyRequest,
 )
 from app.services import assessment_service
@@ -44,8 +45,7 @@ async def get_assessment_by_claim(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    assessment = await assessment_service.get_latest_by_claim(db, project_id, claim_id)
-    result = await assessment_service.get_aggregated_assessment(db, project_id, assessment.id)
+    result = await assessment_service.get_aggregated_by_claim(db, project_id, claim_id)
     return AggregatedAssessmentResponse.from_aggregate(result)
 
 
@@ -154,7 +154,7 @@ async def download_pr_export(
     return Response(content=export_bytes, media_type=media_type)
 
 
-@router.get("/{assessment_id}/prior-interims")
+@router.get("/{assessment_id}/prior-interims", response_model=PriorInterimsResponse)
 async def get_prior_interims(
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,

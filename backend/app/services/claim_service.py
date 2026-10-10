@@ -10,6 +10,7 @@ from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import BadRequestError, NotFoundError
+from app.harness.models import HarnessType
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.assessment_variation import AssessmentVariation
 from app.models.claim import Claim, ClaimItemType
@@ -25,7 +26,7 @@ from app.repos import (
     variation_repo,
     wbs_code_repo,
 )
-from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate
+from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate, ClaimUploadResponse
 from app.services.guardrails import screen_text
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,23 @@ async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, f
         file.content_type,
         content,
     )
+
+
+async def upload_claim(
+    db: AsyncSession, project_id: uuid.UUID, file: UploadFile, user: User
+) -> ClaimUploadResponse:
+    """Store the screened PDF and open a CLAIM_PARSE harness session on it."""
+    document = await create_document_from_upload(db, project_id, file)
+    session = await harness_repo.create_session(
+        db=db,
+        user_id=user.id,
+        project_id=project_id,
+        harness_type=HarnessType.CLAIM_PARSE,
+        document_id=document.id,
+        config={"document_id": str(document.id)},
+    )
+    await db.commit()
+    return ClaimUploadResponse(harness_session_id=session.id)
 
 
 async def create_claim(

@@ -90,6 +90,10 @@ class ClaimResponse(BaseModel):
         )
 
 
+class ClaimUploadResponse(BaseModel):
+    harness_session_id: uuid.UUID
+
+
 class ClaimLineItemCreate(BaseModel):
     ref_code: str | None = None
     description: str
