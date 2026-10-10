@@ -7,7 +7,8 @@ against obfuscated attacks. Once a document is persisted it is treated as clean.
 
 import re
 import unicodedata
-from dataclasses import dataclass
+
+from app.schemas.guardrails import Violation
 
 # Phrases that attempt to override or hijack an LLM's instructions. Kept specific
 # enough that ordinary construction-claim prose does not trip them.
@@ -46,12 +47,6 @@ _CODE_RE = [re.compile(p, re.IGNORECASE) for p in _CODE_PATTERNS]
 _ZERO_WIDTH = dict.fromkeys(map(ord, "​‌‍⁠﻿"), None)
 
 
-@dataclass(frozen=True)
-class Violation:
-    category: str  # "prompt_injection" | "code"
-    snippet: str  # the matched text, for the server-side log
-
-
 def screen_text(text: str) -> list[Violation]:
     """Return violations found in `text`; an empty list means the text is clean.
 
@@ -64,9 +59,9 @@ def screen_text(text: str) -> list[Violation]:
     for rx in _INJECTION_RE:
         m = rx.search(text)
         if m:
-            violations.append(Violation("prompt_injection", m.group(0).strip()))
+            violations.append(Violation(category="prompt_injection", snippet=m.group(0).strip()))
     for rx in _CODE_RE:
         m = rx.search(text)
         if m:
-            violations.append(Violation("code", m.group(0).strip()))
+            violations.append(Violation(category="code", snippet=m.group(0).strip()))
     return violations

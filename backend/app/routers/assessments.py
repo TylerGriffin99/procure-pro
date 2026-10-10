@@ -27,38 +27,6 @@ from app.services import assessment_service
 router = APIRouter(prefix="/api/projects/{project_id}/assessments", tags=["assessments"])
 
 
-def _build_aggregated_response(result: dict) -> dict:
-    """Build a flat dict suitable for AggregatedAssessmentResponse from the aggregator result."""
-    assessment = result["assessment"]
-    return {
-        "id": assessment.id,
-        "claim_id": assessment.claim_id,
-        "project_id": assessment.project_id,
-        "version": assessment.version,
-        "status": assessment.status,
-        "previously_certified": assessment.previously_certified,
-        "contract_sum": assessment.contract_sum,
-        "approved_variation_orders": assessment.approved_variation_orders,
-        "adjustment_to_provisional_sums": assessment.adjustment_to_provisional_sums,
-        "adjusted_contract_sum": assessment.adjusted_contract_sum,
-        "value_claimed_to_date": assessment.value_claimed_to_date,
-        "adjustments": assessment.adjustments,
-        "total_recommended": assessment.total_recommended,
-        "total_retention": assessment.total_retention,
-        "total_payment_to_date": assessment.total_payment_to_date,
-        "recommended_this_period": assessment.recommended_this_period,
-        "gst_amount": assessment.gst_amount,
-        "total_including_gst": assessment.total_including_gst,
-        "finalised_at": assessment.finalised_at.isoformat() if assessment.finalised_at else None,
-        "wbs_groups": result["wbs_groups"],
-        "variation_groups": result["var_groups"],
-        "ps_groups": result["ps_groups"],
-        "line_items": assessment.line_items,
-        "variation_items": assessment.variation_items,
-        "provisional_sum_items": assessment.provisional_sum_items,
-    }
-
-
 @router.post("", response_model=AssessmentResponse, status_code=201)
 async def create_assessment(
     project_id: uuid.UUID,
@@ -78,7 +46,7 @@ async def get_assessment_by_claim(
 ):
     assessment = await assessment_service.get_latest_by_claim(db, project_id, claim_id)
     result = await assessment_service.get_aggregated_assessment(db, project_id, assessment.id)
-    return _build_aggregated_response(result)
+    return AggregatedAssessmentResponse.from_aggregate(result)
 
 
 @router.patch(
@@ -138,7 +106,7 @@ async def reclassify_item(
 ):
     await assessment_service.reclassify_item(db, project_id, assessment_id, body, user)
     result = await assessment_service.get_aggregated_assessment(db, project_id, assessment_id)
-    return _build_aggregated_response(result)
+    return AggregatedAssessmentResponse.from_aggregate(result)
 
 
 @router.post("/{assessment_id}/finalise", response_model=AssessmentResponse)
@@ -169,7 +137,7 @@ async def get_assessment(
     user: User = Depends(get_current_user),
 ):
     result = await assessment_service.get_aggregated_assessment(db, project_id, assessment_id)
-    return _build_aggregated_response(result)
+    return AggregatedAssessmentResponse.from_aggregate(result)
 
 
 @router.get("/{assessment_id}/export")
@@ -207,7 +175,7 @@ async def create_interim_adjustment(
     result = await assessment_service.create_interim_adjustment(
         db, project_id, assessment_id, body, user
     )
-    return _build_aggregated_response(result)
+    return AggregatedAssessmentResponse.from_aggregate(result)
 
 
 @router.post("/{assessment_id}/close-out", response_model=AggregatedAssessmentResponse)
@@ -219,4 +187,4 @@ async def close_out_item(
     user: User = Depends(get_current_user),
 ):
     result = await assessment_service.close_out_item(db, project_id, assessment_id, body, user)
-    return _build_aggregated_response(result)
+    return AggregatedAssessmentResponse.from_aggregate(result)

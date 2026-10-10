@@ -25,7 +25,7 @@ from app.repos import (
     variation_repo,
     wbs_code_repo,
 )
-from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimSummaryResponse, ClaimUpdate
+from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate
 from app.services.guardrails import screen_text
 
 logger = logging.getLogger(__name__)
@@ -141,35 +141,6 @@ async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, f
     )
 
 
-def _build_claim_response(
-    claim: Claim,
-    assessment_id: uuid.UUID | None = None,
-    assessment_status: str | None = None,
-) -> ClaimResponse:
-    return ClaimResponse(
-        id=claim.id,
-        project_id=claim.project_id,
-        claim_number=claim.claim_number,
-        period_from=claim.period_from,
-        period_to=claim.period_to,
-        payment_due=claim.payment_due,
-        claim_received=claim.claim_received,
-        provisional_payment_schedule_due=claim.provisional_payment_schedule_due,
-        payment_schedule_due=claim.payment_schedule_due,
-        parsed_at=claim.parsed_at,
-        assessment_id=assessment_id,
-        assessment_status=assessment_status,
-        line_items=claim.line_items,
-        summary=ClaimSummaryResponse(
-            original_contract_total=claim.original_contract_total,
-            variations_total=claim.variations_total,
-            revised_contract_total=claim.revised_contract_total,
-            retention_amount=claim.retention_amount,
-            claimed_amount=claim.claimed_amount,
-        ),
-    )
-
-
 async def create_claim(
     db: AsyncSession, project_id: uuid.UUID, data: ClaimCreate, user: User
 ) -> ClaimResponse:
@@ -205,7 +176,7 @@ async def create_claim(
     db.add(claim)
     await db.commit()
     await db.refresh(claim, ["line_items"])
-    return _build_claim_response(claim)
+    return ClaimResponse.from_claim(claim)
 
 
 async def list_claims(db: AsyncSession, project_id: uuid.UUID) -> list[ClaimResponse]:
@@ -214,7 +185,7 @@ async def list_claims(db: AsyncSession, project_id: uuid.UUID) -> list[ClaimResp
     for c in claims:
         latest = await assessment_repo.get_latest_by_claim(db, c.id, project_id=project_id)
         results.append(
-            _build_claim_response(
+            ClaimResponse.from_claim(
                 c,
                 assessment_id=latest.id if latest else None,
                 assessment_status=latest.status.value if latest else None,
@@ -227,7 +198,7 @@ async def get_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID
     claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
     if not claim:
         raise NotFoundError("Claim not found")
-    return _build_claim_response(claim)
+    return ClaimResponse.from_claim(claim)
 
 
 async def update_claim(
@@ -254,7 +225,7 @@ async def update_claim(
 
     await db.commit()
     await db.refresh(claim, ["line_items"])
-    return _build_claim_response(claim)
+    return ClaimResponse.from_claim(claim)
 
 
 async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> None:

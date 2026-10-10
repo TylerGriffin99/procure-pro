@@ -12,9 +12,15 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Protocol
+
+from app.schemas.assessment_aggregate import (
+    AggregatedPSGroup,
+    AggregatedVariationGroup,
+    AggregatedWBSGroup,
+    AssessmentTotals,
+)
 
 ZERO = Decimal("0.00")
 
@@ -132,67 +138,6 @@ class PSLike(Protocol):
     def description(self) -> str: ...
     @property
     def contract_sum(self) -> Decimal: ...
-
-
-# ── Output dataclasses ───────────────────────────────────────────────────
-
-
-@dataclass
-class AggregatedWBSGroup:
-    wbs_code_id: uuid.UUID | None
-    description: str
-    contract_sum: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    total_recommended: Decimal
-    contractor_claim_to_date: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    history_row: Any | None
-    child_rows: list[Any] = field(default_factory=list)
-
-
-@dataclass
-class AggregatedVariationGroup:
-    variation_id: uuid.UUID
-    ci_number: int
-    contractor_ref: str
-    description: str
-    contractor_submission: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    total_recommended: Decimal
-    contractor_claim_to_date: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    history_row: Any | None
-    child_rows: list[Any] = field(default_factory=list)
-
-
-@dataclass
-class AggregatedPSGroup:
-    provisional_sum_id: uuid.UUID
-    ps_number: int
-    description: str
-    contract_sum: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    total_recommended: Decimal
-    contractor_claim_to_date: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    history_row: Any | None
-    child_rows: list[Any] = field(default_factory=list)
-
-
-@dataclass
-class AssessmentTotals:
-    sub_contract_works: Decimal
-    approved_variation_orders: Decimal
-    adjustment_to_provisional_sums: Decimal
-    total_recommended: Decimal
-    value_claimed_to_date: Decimal
-    adjustments: Decimal
 
 
 # ── Aggregation functions ────────────────────────────────────────────────

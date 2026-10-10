@@ -30,6 +30,7 @@ from app.schemas.assessment import (
     AssessmentVariationUpdate,
     ReclassifyRequest,
 )
+from app.schemas.assessment_aggregate import AssessmentAggregate
 from app.services.claim_service import auto_fill_dates
 from app.utils.assessment_aggregator import (
     aggregate_line_items,
@@ -196,7 +197,7 @@ async def get_aggregated_assessment(
     db: AsyncSession,
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,
-) -> dict:
+) -> AssessmentAggregate:
     """Fetch assessment and return it with pre-aggregated groups."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -210,12 +211,12 @@ async def get_aggregated_assessment(
     var_groups = aggregate_variations(assessment.variation_items, all_variations)
     ps_groups = aggregate_provisional_sums(assessment.provisional_sum_items, all_ps)
 
-    return {
-        "assessment": assessment,
-        "wbs_groups": wbs_groups,
-        "var_groups": var_groups,
-        "ps_groups": ps_groups,
-    }
+    return AssessmentAggregate(
+        assessment=assessment,
+        wbs_groups=wbs_groups,
+        variation_groups=var_groups,
+        ps_groups=ps_groups,
+    )
 
 
 async def get_prior_interims(
@@ -291,7 +292,7 @@ async def create_interim_adjustment(
     assessment_id: uuid.UUID,
     data,
     user: User,
-) -> dict:
+) -> AssessmentAggregate:
     """Create an interim adjustment child row under the specified parent."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -418,7 +419,7 @@ async def close_out_item(
     assessment_id: uuid.UUID,
     data,
     user: User,
-) -> dict:
+) -> AssessmentAggregate:
     """Close out an interim item — sets all rows for this parent to 'approved' status."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:

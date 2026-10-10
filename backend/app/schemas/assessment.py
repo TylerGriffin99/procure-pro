@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from decimal import Decimal
 from typing import Literal
@@ -5,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.models.assessment import AssessmentStatus, LineItemStatus
+from app.schemas.assessment_aggregate import AssessmentAggregate
 
 
 class AssessmentCreate(BaseModel):
@@ -192,6 +195,37 @@ class AggregatedAssessmentResponse(BaseModel):
     variation_items: list[AssessmentVariationResponse] = []
     provisional_sum_items: list[AssessmentProvisionalSumResponse] = []
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_aggregate(cls, agg: AssessmentAggregate) -> AggregatedAssessmentResponse:
+        a = agg.assessment
+        return cls(
+            id=a.id,
+            claim_id=a.claim_id,
+            project_id=a.project_id,
+            version=a.version,
+            status=a.status,
+            previously_certified=a.previously_certified,
+            contract_sum=a.contract_sum,
+            approved_variation_orders=a.approved_variation_orders,
+            adjustment_to_provisional_sums=a.adjustment_to_provisional_sums,
+            adjusted_contract_sum=a.adjusted_contract_sum,
+            value_claimed_to_date=a.value_claimed_to_date,
+            adjustments=a.adjustments,
+            total_recommended=a.total_recommended,
+            total_retention=a.total_retention,
+            total_payment_to_date=a.total_payment_to_date,
+            recommended_this_period=a.recommended_this_period,
+            gst_amount=a.gst_amount,
+            total_including_gst=a.total_including_gst,
+            finalised_at=a.finalised_at.isoformat() if a.finalised_at else None,
+            wbs_groups=agg.wbs_groups,
+            variation_groups=agg.variation_groups,
+            ps_groups=agg.ps_groups,
+            line_items=a.line_items,
+            variation_items=a.variation_items,
+            provisional_sum_items=a.provisional_sum_items,
+        )
 
 
 class ReclassifyNewRecord(BaseModel):
