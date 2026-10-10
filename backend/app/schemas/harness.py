@@ -6,11 +6,6 @@ from pydantic import BaseModel
 from app.harness.models import HarnessType
 
 
-class HarnessSessionCreate(BaseModel):
-    harness_type: HarnessType = HarnessType.CLAIM_PARSE
-    config: dict = {}
-
-
 class HarnessPhaseInfo(BaseModel):
     index: int
     name: str

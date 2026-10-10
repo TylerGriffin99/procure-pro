@@ -147,15 +147,6 @@ async def create_assessment(
     return assessment
 
 
-async def get_assessment(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID
-) -> Assessment:
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise HTTPException(status_code=404, detail="Assessment not found")
-    return assessment
-
-
 async def get_latest_by_claim(
     db: AsyncSession,
     project_id: uuid.UUID,

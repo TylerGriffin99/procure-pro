@@ -23,16 +23,6 @@ async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[WBSCod
     return list(result.scalars().all())
 
 
-async def get_top_level_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[WBSCode]:
-    result = await db.execute(
-        select(WBSCode).where(
-            WBSCode.project_id == project_id,
-            WBSCode.parent_id.is_(None),
-        )
-    )
-    return list(result.scalars().all())
-
-
 async def get_by_id(db: AsyncSession, wbs_code_id: uuid.UUID) -> WBSCode | None:
     return await db.get(WBSCode, wbs_code_id)
 
