@@ -55,7 +55,7 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # ── 1. Create project ──────────────────────────────────────────────────
-    project_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    project_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     assert project_resp.status_code == 201, project_resp.text
     project_id = project_resp.json()["id"]
     print(f"\n  Project created: {project_id}")
@@ -67,7 +67,7 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
 
     # ── 3. Verify claim number ─────────────────────────────────────────────
     claim_resp = await client.get(
-        f"/api/projects/{project_id}/claims/{claim_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers,
     )
     assert claim_resp.status_code == 200
     claim = claim_resp.json()
@@ -77,7 +77,7 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
 
     # ── 4. Get assessment ──────────────────────────────────────────────────
     assessment_resp = await client.get(
-        f"/api/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers,
     )
     assert assessment_resp.status_code == 200
     assessment = assessment_resp.json()
@@ -119,7 +119,7 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
 
     # ── 8. Finalise ────────────────────────────────────────────────────────
     finalise_resp = await client.post(
-        f"/api/projects/{project_id}/assessments/{assessment_id}/finalise",
+        f"/api/v1/projects/{project_id}/assessments/{assessment_id}/finalise",
         headers=headers,
     )
     assert finalise_resp.status_code == 200, f"Finalise failed: {finalise_resp.text}"

@@ -18,7 +18,7 @@ async def test_raw_extraction_reads_bytes_from_document(client, db_session):
         pytest.skip(f"fixture PDF not present: {PDF_PATH}")
 
     headers = await get_auth_headers(client)
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = uuid.UUID(proj_resp.json()["id"])
 
     content = PDF_PATH.read_bytes()

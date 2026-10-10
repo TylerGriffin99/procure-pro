@@ -49,7 +49,7 @@ def _llm_single_harness() -> HarnessDefinition:
 async def _make_session(client, db_session):
     headers = await get_auth_headers(client)
     user = await user_repo.get_by_email(db_session, "qs@dmp.co.nz")
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = uuid.UUID(proj_resp.json()["id"])
     doc = await document_repo.create_document(
         db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x",

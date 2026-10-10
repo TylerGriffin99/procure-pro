@@ -18,7 +18,7 @@ from app.schemas.harness import (
 )
 from app.services import harness_service
 
-router = APIRouter(prefix="/api/harness", tags=["harness"])
+router = APIRouter(prefix="/harness", tags=["harness"])
 
 SSE_HEADERS = {"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
 

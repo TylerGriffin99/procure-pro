@@ -24,7 +24,7 @@ from app.schemas.assessment import (
 )
 from app.services import assessment_service
 
-router = APIRouter(prefix="/api/projects/{project_id}/assessments", tags=["assessments"])
+router = APIRouter(prefix="/projects/{project_id}/assessments", tags=["assessments"])
 
 
 @router.post("", response_model=AssessmentResponse, status_code=201)

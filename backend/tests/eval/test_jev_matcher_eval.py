@@ -159,7 +159,7 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     """
     with open(pdf_path, "rb") as f:
         resp = await client.post(
-            f"/api/projects/{project_id}/claims/upload",
+            f"/api/v1/projects/{project_id}/claims/upload",
             params={"mode": "deep_mode"},
             files={"file": (pdf_path.name, f, "application/pdf")},
             headers=headers,
@@ -168,7 +168,7 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     session_id = resp.json()["harness_session_id"]
     event_types: list[str] = []
     async with client.stream(
-        "GET", f"/api/harness/sessions/{session_id}/stream", headers=headers, timeout=600.0,
+        "GET", f"/api/v1/harness/sessions/{session_id}/stream", headers=headers, timeout=600.0,
     ) as stream:
         async for line in stream.aiter_lines():
             if not line.startswith("data: "):
@@ -246,7 +246,7 @@ async def test_jev_matcher_eval(client: AsyncClient, db_session):
     claim_evals: list[ClaimEval] = []
 
     for name, pdf_path, expected_line_items in CLAIMS:
-        project = (await client.post("/api/projects", json=c1.PROJECT, headers=headers)).json()
+        project = (await client.post("/api/v1/projects", json=c1.PROJECT, headers=headers)).json()
         project_id = project["id"]
         session_id = await _upload_and_freeze(client, project_id, pdf_path, headers)
 

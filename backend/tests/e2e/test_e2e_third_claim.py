@@ -82,7 +82,7 @@ async def _approve_assessment_1(
             desc = li["description"]
             if desc in PR1_CONTRACT_WORK_APPROVALS:
                 await client.patch(
-                    f"/api/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
+                    f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
                     json={
                         "total_recommended": PR1_CONTRACT_WORK_APPROVALS[desc],
                         "status": "approved",
@@ -91,7 +91,7 @@ async def _approve_assessment_1(
                 )
             else:
                 await client.patch(
-                    f"/api/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
+                    f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
                     json={
                         "total_recommended": li["contractor_claim_to_date"],
                         "status": "approved",
@@ -103,7 +103,7 @@ async def _approve_assessment_1(
         if ps["status"] == "unapproved":
             if _d(ps["contractor_claim_to_date"]) > 0:
                 await client.patch(
-                    f"/api/projects/{project_id}/assessments/{assessment_id}/provisional-sum-items/{ps['id']}",
+                    f"/api/v1/projects/{project_id}/assessments/{assessment_id}/provisional-sum-items/{ps['id']}",
                     json={
                         "total_recommended": PR1_PS_RECOMMENDED,
                         "status": "approved",
@@ -114,7 +114,7 @@ async def _approve_assessment_1(
     for var in assessment.get("variation_items", []):
         if var["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/variation-items/{var['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/variation-items/{var['id']}",
                 json={
                     "total_recommended": var["contractor_claim_to_date"],
                     "status": "approved",
@@ -130,7 +130,7 @@ async def _approve_assessment_2(
     for li in assessment["line_items"]:
         if li["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
                 json={
                     "total_recommended": li["total_recommended"],
                     "status": "approved",
@@ -141,7 +141,7 @@ async def _approve_assessment_2(
     for ps in assessment.get("provisional_sum_items", []):
         if ps["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/provisional-sum-items/{ps['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/provisional-sum-items/{ps['id']}",
                 json={
                     "total_recommended": ps["total_recommended"],
                     "status": "approved",
@@ -155,7 +155,7 @@ async def _approve_assessment_2(
             if var["contractor_ref"] == "3":
                 recommended = PR2_VAR3_RECOMMENDED
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/variation-items/{var['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/variation-items/{var['id']}",
                 json={
                     "total_recommended": recommended,
                     "status": "approved",
@@ -174,7 +174,7 @@ async def test_third_claim_e2e(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # == 1. Create project ==================================================
-    project_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    project_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     assert project_resp.status_code == 201, project_resp.text
     project_id = project_resp.json()["id"]
 
@@ -183,14 +183,14 @@ async def test_third_claim_e2e(client: AsyncClient):
     assert claim_1_id is not None
 
     claim_1_resp = await client.get(
-        f"/api/projects/{project_id}/claims/{claim_1_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/claims/{claim_1_id}", headers=headers,
     )
     assert claim_1_resp.status_code == 200
     assert len(claim_1_resp.json()["line_items"]) == EXPECTED_CLAIM_ITEM_COUNT
 
     # == 3. Approve and finalise assessment 1 ===============================
     assessment_1_resp = await client.get(
-        f"/api/projects/{project_id}/assessments/by-claim/{claim_1_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_1_id}", headers=headers,
     )
     assert assessment_1_resp.status_code == 200
     assessment_1 = assessment_1_resp.json()
@@ -199,7 +199,7 @@ async def test_third_claim_e2e(client: AsyncClient):
     await _approve_assessment_1(client, project_id, assessment_1_id, assessment_1, headers)
 
     finalise_1_resp = await client.post(
-        f"/api/projects/{project_id}/assessments/{assessment_1_id}/finalise",
+        f"/api/v1/projects/{project_id}/assessments/{assessment_1_id}/finalise",
         headers=headers,
     )
     assert finalise_1_resp.status_code == 200, finalise_1_resp.text
@@ -219,14 +219,14 @@ async def test_third_claim_e2e(client: AsyncClient):
     assert claim_2_id is not None
 
     claim_2_resp = await client.get(
-        f"/api/projects/{project_id}/claims/{claim_2_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/claims/{claim_2_id}", headers=headers,
     )
     assert claim_2_resp.status_code == 200
     assert len(claim_2_resp.json()["line_items"]) == EXPECTED_CLAIM_2_ITEM_COUNT
 
     # == 5. Approve and finalise assessment 2 ===============================
     assessment_2_resp = await client.get(
-        f"/api/projects/{project_id}/assessments/by-claim/{claim_2_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_2_id}", headers=headers,
     )
     assert assessment_2_resp.status_code == 200
     assessment_2 = assessment_2_resp.json()
@@ -235,7 +235,7 @@ async def test_third_claim_e2e(client: AsyncClient):
     await _approve_assessment_2(client, project_id, assessment_2_id, assessment_2, headers)
 
     finalise_2_resp = await client.post(
-        f"/api/projects/{project_id}/assessments/{assessment_2_id}/finalise",
+        f"/api/v1/projects/{project_id}/assessments/{assessment_2_id}/finalise",
         headers=headers,
     )
     assert finalise_2_resp.status_code == 200, finalise_2_resp.text
@@ -261,7 +261,7 @@ async def test_third_claim_e2e(client: AsyncClient):
     assert claim_3_id is not None
 
     claim_3_resp = await client.get(
-        f"/api/projects/{project_id}/claims/{claim_3_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/claims/{claim_3_id}", headers=headers,
     )
     assert claim_3_resp.status_code == 200
     claim_3 = claim_3_resp.json()
@@ -296,7 +296,7 @@ async def test_third_claim_e2e(client: AsyncClient):
 
     # == 8. Get assessment 3 and verify auto-created values =================
     assessment_3_resp = await client.get(
-        f"/api/projects/{project_id}/assessments/by-claim/{claim_3_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_3_id}", headers=headers,
     )
     assert assessment_3_resp.status_code == 200
     assessment_3 = assessment_3_resp.json()
@@ -394,7 +394,7 @@ async def test_third_claim_e2e(client: AsyncClient):
     for li in assessment_3["line_items"]:
         if li["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_3_id}/line-items/{li['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_3_id}/line-items/{li['id']}",
                 json={
                     "total_recommended": li["total_recommended"],
                     "status": "approved",
@@ -406,7 +406,7 @@ async def test_third_claim_e2e(client: AsyncClient):
     for ps in assessment_3.get("provisional_sum_items", []):
         if ps["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_3_id}/provisional-sum-items/{ps['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_3_id}/provisional-sum-items/{ps['id']}",
                 json={
                     "total_recommended": ps["total_recommended"],
                     "status": "approved",
@@ -426,7 +426,7 @@ async def test_third_claim_e2e(client: AsyncClient):
             if var["contractor_ref"] in pr3_var_reductions:
                 recommended = pr3_var_reductions[var["contractor_ref"]]
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_3_id}/variation-items/{var['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_3_id}/variation-items/{var['id']}",
                 json={
                     "total_recommended": recommended,
                     "status": "approved",
@@ -436,7 +436,7 @@ async def test_third_claim_e2e(client: AsyncClient):
 
     # == 10. Finalise assessment 3 ==========================================
     finalise_3_resp = await client.post(
-        f"/api/projects/{project_id}/assessments/{assessment_3_id}/finalise",
+        f"/api/v1/projects/{project_id}/assessments/{assessment_3_id}/finalise",
         headers=headers,
     )
     assert finalise_3_resp.status_code == 200, finalise_3_resp.text

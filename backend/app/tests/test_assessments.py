@@ -10,7 +10,7 @@ async def test_create_assessment_from_claim(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # Setup: create project
-    project_resp = await client.post("/api/projects", json={
+    project_resp = await client.post("/api/v1/projects", json={
         "name": "Test",
         "client_name": "Client",
         "contractor_name": "Contractor",
@@ -19,7 +19,7 @@ async def test_create_assessment_from_claim(client: AsyncClient):
     project_id = project_resp.json()["id"]
 
     # Create a claim manually (no PDF upload in this test)
-    claim_resp = await client.post(f"/api/projects/{project_id}/claims", json={
+    claim_resp = await client.post(f"/api/v1/projects/{project_id}/claims", json={
         "claim_number": 1,
         "period_from": "2025-08-18",
         "period_to": "2025-08-31",
@@ -52,7 +52,7 @@ async def test_create_assessment_from_claim(client: AsyncClient):
 
     # Create assessment
     assess_resp = await client.post(
-        f"/api/projects/{project_id}/assessments",
+        f"/api/v1/projects/{project_id}/assessments",
         json={"claim_id": claim_id},
         headers=headers,
     )
@@ -71,12 +71,12 @@ async def test_approve_line_item(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # Setup project + claim + assessment (abbreviated)
-    project_resp = await client.post("/api/projects", json={
+    project_resp = await client.post("/api/v1/projects", json={
         "name": "Test2", "client_name": "C", "contractor_name": "K", "contract_sum": "100000",
     }, headers=headers)
     project_id = project_resp.json()["id"]
 
-    claim_resp = await client.post(f"/api/projects/{project_id}/claims", json={
+    claim_resp = await client.post(f"/api/v1/projects/{project_id}/claims", json={
         "claim_number": 1,
         "period_from": "2025-08-18",
         "period_to": "2025-08-31",
@@ -95,7 +95,7 @@ async def test_approve_line_item(client: AsyncClient):
     claim_id = claim_resp.json()["id"]
 
     assess_resp = await client.post(
-        f"/api/projects/{project_id}/assessments",
+        f"/api/v1/projects/{project_id}/assessments",
         json={"claim_id": claim_id},
         headers=headers,
     )
@@ -104,7 +104,7 @@ async def test_approve_line_item(client: AsyncClient):
 
     # Approve with adjusted amount (QS certifies 5384.38 instead of 7114.38)
     approve_resp = await client.patch(
-        f"/api/projects/{project_id}/assessments/{assessment_id}/line-items/{line_item_id}",
+        f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{line_item_id}",
         json={
             "status": "approved",
             "total_recommended": "5384.38",

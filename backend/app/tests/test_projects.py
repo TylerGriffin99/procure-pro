@@ -3,10 +3,10 @@ from httpx import AsyncClient
 
 
 async def get_auth_headers(client: AsyncClient) -> dict:
-    await client.post("/api/auth/register", json={
+    await client.post("/api/v1/auth/register", json={
         "email": "qs@dmp.co.nz", "password": "password123", "full_name": "QS User",
     })
-    resp = await client.post("/api/auth/login", data={
+    resp = await client.post("/api/v1/auth/login", data={
         "username": "qs@dmp.co.nz", "password": "password123",
     })
     token = resp.json()["access_token"]
@@ -16,7 +16,7 @@ async def get_auth_headers(client: AsyncClient) -> dict:
 @pytest.mark.asyncio
 async def test_create_project(client: AsyncClient):
     headers = await get_auth_headers(client)
-    resp = await client.post("/api/projects", json={
+    resp = await client.post("/api/v1/projects", json={
         "name": "Gilmours Central - Seismic Upgrade",
         "project_number": "S-02314",
         "client_name": "Foodstuffs North Island",
@@ -53,12 +53,12 @@ async def test_create_project(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_list_projects(client: AsyncClient):
     headers = await get_auth_headers(client)
-    await client.post("/api/projects", json={
+    await client.post("/api/v1/projects", json={
         "name": "Test Project",
         "client_name": "Client",
         "contractor_name": "Contractor",
         "contract_sum": "1000000",
     }, headers=headers)
-    resp = await client.get("/api/projects", headers=headers)
+    resp = await client.get("/api/v1/projects", headers=headers)
     assert resp.status_code == 200
     assert len(resp.json()) >= 1

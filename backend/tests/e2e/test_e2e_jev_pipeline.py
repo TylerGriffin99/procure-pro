@@ -98,7 +98,7 @@ def fake_jev(monkeypatch):
 @pytest.mark.asyncio
 async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_session, fake_jev):
     headers = await get_auth_headers(client)
-    project_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    project_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     assert project_resp.status_code == 201, project_resp.text
     project = project_resp.json()
     project_id = project["id"]
@@ -128,7 +128,7 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
     assert all(m["matched_id"] is None for m in vps)  # no pre-existing records -> new
 
     # Claim record: same item count as the LLM-path e2e.
-    claim = (await client.get(f"/api/projects/{project_id}/claims/{claim_id}", headers=headers)).json()
+    claim = (await client.get(f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers)).json()
     assert len(claim["line_items"]) == EXPECTED_CLAIM_ITEM_COUNT
     n_cw = sum(1 for li in claim["line_items"] if li["item_type"] == "contract_work")
     assert n_cw == len(EXPECTED_CONTRACT_WORK)
@@ -161,6 +161,6 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
 
 async def _assessment(client, project_id, claim_id, headers) -> dict:
     resp = await client.get(
-        f"/api/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers)
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()

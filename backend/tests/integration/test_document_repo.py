@@ -11,7 +11,7 @@ from tests.e2e.helpers import get_auth_headers
 @pytest.mark.asyncio
 async def test_create_and_get_document_roundtrips_bytes(client, db_session):
     headers = await get_auth_headers(client)
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     assert proj_resp.status_code == 201, proj_resp.text
     project_id = uuid.UUID(proj_resp.json()["id"])
 

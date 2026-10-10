@@ -16,7 +16,7 @@ async def test_full_claim_flow(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # 1. Create project with retention tiers
-    project = await client.post("/api/projects", json={
+    project = await client.post("/api/v1/projects", json={
         "name": "Gilmours Central - Seismic Upgrade",
         "project_number": "S-02314",
         "client_name": "Foodstuffs North Island",
@@ -34,7 +34,7 @@ async def test_full_claim_flow(client: AsyncClient):
     # 2. Upload claim PDF
     with open(CLAIM_1_PATH, "rb") as f:
         claim_resp = await client.post(
-            f"/api/projects/{project_id}/claims/upload",
+            f"/api/v1/projects/{project_id}/claims/upload",
             files={"file": ("claim1.pdf", f, "application/pdf")},
             headers=headers,
         )
@@ -45,7 +45,7 @@ async def test_full_claim_flow(client: AsyncClient):
 
     # 3. Create assessment
     assess_resp = await client.post(
-        f"/api/projects/{project_id}/assessments",
+        f"/api/v1/projects/{project_id}/assessments",
         json={"claim_id": claim_id},
         headers=headers,
     )
@@ -58,7 +58,7 @@ async def test_full_claim_flow(client: AsyncClient):
         if li["contractor_claim_to_date"] != "0.00":
             # Approve with claimed amount (accept as-is)
             resp = await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
                 json={
                     "status": "approved",
                     "total_recommended": li["contractor_claim_to_date"],
@@ -70,7 +70,7 @@ async def test_full_claim_flow(client: AsyncClient):
 
     # 5. Download PR PDF
     pdf_resp = await client.get(
-        f"/api/projects/{project_id}/assessments/{assessment_id}/pdf",
+        f"/api/v1/projects/{project_id}/assessments/{assessment_id}/pdf",
         headers=headers,
     )
     assert pdf_resp.status_code == 200

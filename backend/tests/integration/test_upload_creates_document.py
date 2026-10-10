@@ -26,13 +26,13 @@ def _readable_clean_pdf():
 @pytest.mark.asyncio
 async def test_upload_persists_document_and_links_session(client, db_session):
     headers = await get_auth_headers(client)
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = proj_resp.json()["id"]
 
     content = b"%PDF-1.4\nminimal\n%%EOF"
     with patch("pdfplumber.open", return_value=_readable_clean_pdf()):
         resp = await client.post(
-            f"/api/projects/{project_id}/claims/upload",
+            f"/api/v1/projects/{project_id}/claims/upload",
             files={"file": ("claim.pdf", io.BytesIO(content), "application/pdf")},
             headers=headers,
         )
@@ -52,11 +52,11 @@ async def test_upload_persists_document_and_links_session(client, db_session):
 @pytest.mark.asyncio
 async def test_upload_rejects_non_pdf(client):
     headers = await get_auth_headers(client)
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = proj_resp.json()["id"]
 
     resp = await client.post(
-        f"/api/projects/{project_id}/claims/upload",
+        f"/api/v1/projects/{project_id}/claims/upload",
         files={"file": ("notes.txt", io.BytesIO(b"hello"), "text/plain")},
         headers=headers,
     )
@@ -66,12 +66,12 @@ async def test_upload_rejects_non_pdf(client):
 @pytest.mark.asyncio
 async def test_upload_rejects_oversized(client):
     headers = await get_auth_headers(client)
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = proj_resp.json()["id"]
 
     big = b"%PDF-1.4" + b"0" * (26 * 1024 * 1024)
     resp = await client.post(
-        f"/api/projects/{project_id}/claims/upload",
+        f"/api/v1/projects/{project_id}/claims/upload",
         files={"file": ("big.pdf", io.BytesIO(big), "application/pdf")},
         headers=headers,
     )

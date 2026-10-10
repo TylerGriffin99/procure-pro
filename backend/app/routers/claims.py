@@ -12,7 +12,7 @@ from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate
 from app.services import claim_service
 from app.services.claim_service import create_document_from_upload
 
-router = APIRouter(prefix="/api/projects/{project_id}/claims", tags=["claims"])
+router = APIRouter(prefix="/projects/{project_id}/claims", tags=["claims"])
 
 
 @router.post("", response_model=ClaimResponse, status_code=201)

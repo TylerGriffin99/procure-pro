@@ -11,9 +11,7 @@ from app.models.user import User
 from app.schemas.claim_flag import ClaimParseFlagResponse, ResolveFlagRequest
 from app.services import claim_flag_service
 
-router = APIRouter(
-    prefix="/api/projects/{project_id}/claims/{claim_id}/flags", tags=["claim_flags"]
-)
+router = APIRouter(prefix="/projects/{project_id}/claims/{claim_id}/flags", tags=["claim_flags"])
 
 
 @router.get("", response_model=list[ClaimParseFlagResponse])

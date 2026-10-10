@@ -16,7 +16,7 @@ from app.schemas.project import (
 )
 from app.services import project_service
 
-router = APIRouter(prefix="/api/projects", tags=["projects"])
+router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)

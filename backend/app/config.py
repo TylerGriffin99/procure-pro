@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     jev_max_concurrency: int = 8
     jev_confidence_floor: float = 0.6
 
+    # API versioning: every router mounts under `/api/v{api_version}`; /health stays unversioned.
+    api_version: int = 1
+
+    @property
+    def api_prefix(self) -> str:
+        return f"/api/v{self.api_version}"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
