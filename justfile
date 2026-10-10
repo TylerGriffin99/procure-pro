@@ -97,16 +97,28 @@ test-e2e-one file *args:
 eval runs="10" *args:
     EVAL_RUNS={{runs}} ./scripts/test.sh eval {{args}}
 
-# ── Lint & type-check (backend app code only) ───────────────────────────────
+# ── Lint, format & type-check (backend app code only) ─────────────────────────
 
-# Lint the backend app with ruff (app/ only; tests, migrations and scripts
-# are excluded via pyproject). `just lint --fix` to apply safe fixes.
-lint *args:
+# Lint + format-check the backend app with ruff (app/ only; tests, migrations and
+# scripts are excluded via pyproject). `just ruff --fix` applies safe lint fixes.
+ruff *args:
     cd backend && uvx ruff@0.16.10 check app {{args}}
+    cd backend && uvx ruff@0.16.10 format --check app
+
+# Reformat the backend app in place.
+fmt:
+    cd backend && uvx ruff@0.16.10 format app
 
 # Type-check the backend app with ty (scoped to app/ via pyproject [tool.ty]).
-typecheck:
+ty:
     cd backend && uvx ty@0.0.84 check
+
+# Everything a commit must pass: ruff, ty, unit tests.
+check: ruff ty test-unit
+
+# Back-compat aliases.
+lint *args: (ruff args)
+typecheck: ty
 
 # ── Internals ───────────────────────────────────────────────────────────────
 
