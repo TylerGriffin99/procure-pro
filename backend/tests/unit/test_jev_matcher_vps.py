@@ -1,5 +1,6 @@
 import json
 import pytest
+from tests.unit.jev_fakes import fake_client
 from app.harness.matchers.jev import JevMatcher, NONE_OPTION
 from app.harness.schemas import VpsRecord
 from app.harness.schemas import VpsMatch
@@ -33,7 +34,7 @@ def _matcher(monkeypatch, answers, parsed=PARSED, seen=None):
         if seen is not None:
             seen.append(questions[qid]["criteria"])
         return {"answers": {qid: answers[qid]}, "usage": {"input_tokens": 5}}
-    return JevMatcher(decide_fn=fake_decide)
+    return JevMatcher(client=fake_client(fake_decide))
 
 
 async def _run(m):

@@ -1,6 +1,7 @@
 # backend/tests/unit/test_jev_matcher_wbs.py
 import json
 import pytest
+from tests.unit.jev_fakes import fake_client
 from app.harness.matchers.jev import JevMatcher, NONE_OPTION
 from app.harness.schemas import MatchOutcome, Subcat
 from app.harness.schemas import WbsMatch
@@ -34,7 +35,7 @@ def _matcher(monkeypatch, answers):
     async def fake_decide(*, state, questions, model, url, api_key, timeout=30.0):
         qid = next(iter(questions))            # one question per call
         return {"answers": {qid: answers[qid]}, "usage": {"input_tokens": 5, "output_tokens": 0, "cost": 0.0}}
-    return JevMatcher(decide_fn=fake_decide)
+    return JevMatcher(client=fake_client(fake_decide))
 
 
 @pytest.mark.asyncio
