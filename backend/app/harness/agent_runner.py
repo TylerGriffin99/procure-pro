@@ -2,8 +2,9 @@
 
 Runs a single structured LLM call through a pydantic-ai ``Agent`` whose
 ``output_type`` is a pydantic model (or ``list`` of one), so every result is
-validated and fully typed. Provider routing mirrors ``llm_client.get_client``:
-all four providers are reached through the OpenAI-compatible interface.
+validated and fully typed. Provider routing (:func:`build_model`) reads
+``settings.llm_provider`` (anthropic / openai / openrouter / deepseek); all four are
+reached through the OpenAI-compatible interface.
 """
 
 from __future__ import annotations

@@ -21,3 +21,12 @@ def test_unversioned_path_is_gone():
     with TestClient(app) as c:
         assert c.get("/api/projects").status_code == 404
         assert c.get("/health").status_code == 200
+
+
+def test_bad_bearer_token_is_401_with_header():
+    resp = TestClient(app).get(
+        f"{settings.api_prefix}/projects", headers={"Authorization": "Bearer junk"}
+    )
+    assert resp.status_code == 401
+    assert resp.headers["www-authenticate"] == "Bearer"
+    assert resp.json() == {"detail": "Invalid token"}

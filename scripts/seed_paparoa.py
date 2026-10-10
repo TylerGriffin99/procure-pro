@@ -117,7 +117,7 @@ PROJECT = {
 def get_token():
     form = urllib.parse.urlencode({"username": "tylergriffin70@gmail.com", "password": "Test@123"}).encode()
     req = urllib.request.Request(
-        f"{BASE_URL}/api/auth/login", data=form,
+        f"{BASE_URL}/api/v1/auth/login", data=form,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     with urllib.request.urlopen(req) as resp:
@@ -128,7 +128,7 @@ def main():
     token = get_token()
     print("Authenticated.")
 
-    url = f"{BASE_URL}/api/projects"
+    url = f"{BASE_URL}/api/v1/projects"
     data = json.dumps(PROJECT).encode()
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
     req = urllib.request.Request(url, data=data, headers=headers)
