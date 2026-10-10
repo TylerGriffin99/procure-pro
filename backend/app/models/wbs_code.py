@@ -26,9 +26,7 @@ class WBSCode(AuditMixin, Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"))
-    parent_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("wbs_codes.id")
-    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("wbs_codes.id"))
     code: Mapped[str] = mapped_column(String(20))
     description: Mapped[str] = mapped_column(String(500))
     level: Mapped[WBSLevel] = mapped_column(Enum(WBSLevel), default=WBSLevel.subcategory)
@@ -41,11 +39,5 @@ class WBSCode(AuditMixin, Base):
     in_use: bool = False
 
     project: Mapped["Project"] = relationship(back_populates="wbs_codes")
-    parent: Mapped[Optional["WBSCode"]] = relationship(
-        back_populates="children",
-        remote_side="WBSCode.id",
-    )
-    children: Mapped[list["WBSCode"]] = relationship(
-        back_populates="parent",
-        order_by="WBSCode.sort_order",
-    )
+    parent: Mapped[Optional["WBSCode"]] = relationship(back_populates="children", remote_side="WBSCode.id")
+    children: Mapped[list["WBSCode"]] = relationship(back_populates="parent", order_by="WBSCode.sort_order")

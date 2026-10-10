@@ -24,9 +24,7 @@ async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[Variat
 
 async def get_max_ci_number(db: AsyncSession, project_id: uuid.UUID) -> int:
     result = await db.execute(
-        select(func.coalesce(func.max(Variation.ci_number), 0)).where(
-            Variation.project_id == project_id
-        )
+        select(func.coalesce(func.max(Variation.ci_number), 0)).where(Variation.project_id == project_id)
     )
     return result.scalar_one()
 

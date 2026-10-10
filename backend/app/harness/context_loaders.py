@@ -22,20 +22,14 @@ FALLBACK_PLAYBOOK = (
 )
 
 
-async def load_wbs_context(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    session_id: uuid.UUID,
-) -> dict[str, str]:
+async def load_wbs_context(db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, str]:
     """Load project WBS categories and subcategories for the categorisation prompt."""
     all_wbs = await wbs_code_repo.get_by_project(db, project_id)
 
     parent_categories = [w for w in all_wbs if w.level == WBSLevel.category]
     subcategories = [w for w in all_wbs if w.level == WBSLevel.subcategory]
 
-    categories_text = "\n".join(
-        f"- id={w.id} | code={w.code}: {w.description}" for w in parent_categories
-    )
+    categories_text = "\n".join(f"- id={w.id} | code={w.code}: {w.description}" for w in parent_categories)
 
     if subcategories:
         parent_map = {w.id: w.code for w in parent_categories}
@@ -47,17 +41,10 @@ async def load_wbs_context(
     else:
         subcategories_text = "(none yet — you must create new subcategories for all items)"
 
-    return {
-        "wbs_categories": categories_text,
-        "wbs_subcategories": subcategories_text,
-    }
+    return {"wbs_categories": categories_text, "wbs_subcategories": subcategories_text}
 
 
-async def load_variations_context(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    session_id: uuid.UUID,
-) -> dict[str, str]:
+async def load_variations_context(db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, str]:
     """Load existing variations and provisional sums for the matching prompt."""
     variations = await variation_repo.get_by_project(db, project_id)
     provisional_sums = await provisional_sum_repo.get_by_project(db, project_id)
@@ -81,17 +68,10 @@ async def load_variations_context(
     else:
         ps_text = "(no existing provisional sums — all items will be new)"
 
-    return {
-        "existing_variations": variations_text,
-        "existing_provisional_sums": ps_text,
-    }
+    return {"existing_variations": variations_text, "existing_provisional_sums": ps_text}
 
 
-async def load_format_playbook(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    session_id: uuid.UUID,
-) -> dict[str, str]:
+async def load_format_playbook(db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, str]:
     """Load format-specific playbook based on format_detection.json."""
     raw = await harness_repo.read_workspace_file(db, session_id, "format_detection.json")
     if not raw:

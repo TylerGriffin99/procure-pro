@@ -20,14 +20,7 @@ logger = logging.getLogger(__name__)
 
 _VALID_ITEM_TYPES = {"contract_work", "variation", "provisional_sum"}
 
-_DECIMAL_FIELDS = (
-    "contract_value",
-    "percentage",
-    "ptd",
-    "previous",
-    "current",
-    "balance",
-)
+_DECIMAL_FIELDS = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
 
 
 def _normalise_decimal(value) -> str:
@@ -94,9 +87,7 @@ def validate_and_normalise(raw_response: dict) -> dict:
     for idx, raw_item in enumerate(raw_items):
         item_type = str(raw_item.get("item_type", "contract_work") or "contract_work")
         if item_type not in _VALID_ITEM_TYPES:
-            logger.warning(
-                "Unknown item_type %r on item %d; coercing to contract_work", item_type, idx
-            )
+            logger.warning("Unknown item_type %r on item %d; coercing to contract_work", item_type, idx)
             item_type = "contract_work"
 
         item = {
@@ -114,8 +105,7 @@ def validate_and_normalise(raw_response: dict) -> dict:
     raw_summary = raw_response.get("summary") or {}
     # Recompute from items if summary is missing or incomplete
     needs_recompute = not raw_summary or not all(
-        raw_summary.get(k)
-        for k in ("original_contract_total", "revised_contract_total", "claimed_amount")
+        raw_summary.get(k) for k in ("original_contract_total", "revised_contract_total", "claimed_amount")
     )
 
     if needs_recompute:
@@ -140,11 +130,7 @@ def validate_and_normalise(raw_response: dict) -> dict:
             "claimed_amount": _normalise_decimal(raw_summary["claimed_amount"]),
         }
 
-    return {
-        "metadata": metadata,
-        "line_items": line_items,
-        "summary": summary,
-    }
+    return {"metadata": metadata, "line_items": line_items, "summary": summary}
 
 
 async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dict:
@@ -159,8 +145,7 @@ async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dic
 
     # Render prompt
     prompt = string.Template(template_text).safe_substitute(
-        playbook_content=playbook_text,
-        workspace_raw_extraction=json.dumps(raw_extraction),
+        playbook_content=playbook_text, workspace_raw_extraction=json.dumps(raw_extraction)
     )
 
     # Run the structured agent — output is a validated GenericExtraction.

@@ -49,11 +49,7 @@ class JevClient:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> JevClient:
-        return cls(
-            url=settings.jev_decisions_url,
-            api_key=settings.open_router_api_key,
-            model=settings.jev_model,
-        )
+        return cls(url=settings.jev_decisions_url, api_key=settings.open_router_api_key, model=settings.jev_model)
 
     @staticmethod
     def is_fatal(exc: Exception) -> bool:
@@ -68,18 +64,12 @@ class JevClient:
 
     @staticmethod
     def is_retryable(exc: Exception) -> bool:
-        return (
-            isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in RETRYABLE_STATUS
-        )
+        return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in RETRYABLE_STATUS
 
     @staticmethod
     def item_state(item: ParsedClaimItem) -> dict[str, Any]:
         """The per-item ``state`` payload sent to the decisions API."""
-        return {
-            "description": item.description,
-            "contract_value": item.contract_value,
-            "item_type": item.item_type,
-        }
+        return {"description": item.description, "contract_value": item.contract_value, "item_type": item.item_type}
 
     def check_context_budget(
         self,
@@ -93,38 +83,24 @@ class JevClient:
         """Reject a request whose largest serialized item exceeds ~32k tokens (chars/4 proxy)."""
         worst = max(states, key=lambda s: len(json.dumps(s, default=str)), default={})
         payload = json.dumps(
-            {
-                "state": worst,
-                "questions": {"item_0": {"instructions": instructions, "criteria": criteria}},
-            },
-            default=str,
+            {"state": worst, "questions": {"item_0": {"instructions": instructions, "criteria": criteria}}}, default=str
         )
         if len(payload) / 4 > max_tokens:
             raise ValueError(f"Jev request for '{phase_name}' exceeds 32k context")
 
-    async def post_decisions(
-        self, *, state: dict[str, Any], questions: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def post_decisions(self, *, state: dict[str, Any], questions: dict[str, Any]) -> dict[str, Any]:
         """POST one decisions request. Raises httpx.HTTPStatusError on non-2xx."""
         async with httpx.AsyncClient(timeout=self.timeout, transport=self.transport) as http:
             resp = await http.post(
                 self.url,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 json={"model": self.model, "state": state, "questions": questions},
             )
             resp.raise_for_status()
             return resp.json()
 
     async def choose(
-        self,
-        *,
-        qid: str,
-        state: dict[str, Any],
-        criteria: dict[str, str],
-        instructions: str,
+        self, *, qid: str, state: dict[str, Any], criteria: dict[str, str], instructions: str
     ) -> JevDecisionResponse:
         """Ask one ``choice`` question. 429/529 are retried per ``self.retry``; fatal
         statuses raise immediately; any other terminal failure is logged and re-raised."""

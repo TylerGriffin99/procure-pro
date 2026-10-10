@@ -70,9 +70,7 @@ def _resolve_claim_dates(claim) -> dict[str, str]:
     claim_received = claim.claim_received
     if not claim_received and claim.created_at:
         # No explicit claim_received — use created_at and recalculate all dates
-        claim_received = (
-            claim.created_at.date() if hasattr(claim.created_at, "date") else claim.created_at
-        )
+        claim_received = claim.created_at.date() if hasattr(claim.created_at, "date") else claim.created_at
         auto = auto_fill_dates(claim_received)
         return {
             "claim_received": _fmt_date(claim_received),
@@ -99,12 +97,7 @@ def _resolve_claim_dates(claim) -> dict[str, str]:
     }
 
 
-async def create_assessment(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    data: AssessmentCreate,
-    user: User,
-) -> Assessment:
+async def create_assessment(db: AsyncSession, project_id: uuid.UUID, data: AssessmentCreate, user: User) -> Assessment:
     # Load claim with line items
     claim = await claim_repo.get_by_id(db, data.claim_id)
     if not claim:
@@ -112,9 +105,7 @@ async def create_assessment(
 
     # Get previously certified amount from latest finalised assessment
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
-    previously_certified = (
-        prev_assessment.total_payment_to_date if prev_assessment else Decimal("0")
-    )
+    previously_certified = prev_assessment.total_payment_to_date if prev_assessment else Decimal("0")
 
     # Determine version
     latest_version = await assessment_repo.get_latest_version_number(db, data.claim_id)
@@ -139,9 +130,7 @@ async def create_assessment(
                 variance_to_claim=Decimal("0") - cli.ptd,
                 previously_paid=Decimal("0"),
                 recommended_this_period=Decimal("0"),
-                status=LineItemStatus.approved
-                if cli.ptd == Decimal("0")
-                else LineItemStatus.unapproved,
+                status=LineItemStatus.approved if cli.ptd == Decimal("0") else LineItemStatus.unapproved,
                 sort_order=i,
                 created_by=user.id,
             )
@@ -153,33 +142,21 @@ async def create_assessment(
     return assessment
 
 
-async def get_latest_by_claim(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    claim_id: uuid.UUID,
-) -> Assessment:
+async def get_latest_by_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> Assessment:
     assessment = await assessment_repo.get_latest_by_claim(db, claim_id, project_id=project_id)
     if not assessment:
         raise NotFoundError("Assessment not found")
     return assessment
 
 
-async def get_aggregated_by_claim(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    claim_id: uuid.UUID,
-) -> AssessmentAggregate:
+async def get_aggregated_by_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> AssessmentAggregate:
     """The latest assessment for ``claim_id``, aggregated."""
     assessment = await get_latest_by_claim(db, project_id, claim_id)
     return await get_aggregated_assessment(db, project_id, assessment.id)
 
 
 async def update_line_item(
-    db: AsyncSession,
-    assessment_id: uuid.UUID,
-    line_item_id: uuid.UUID,
-    data: AssessmentLineItemUpdate,
-    user: User,
+    db: AsyncSession, assessment_id: uuid.UUID, line_item_id: uuid.UUID, data: AssessmentLineItemUpdate, user: User
 ) -> AssessmentLineItem:
     item = await assessment_line_item_repo.get_by_id(db, line_item_id, assessment_id)
     if not item:
@@ -189,9 +166,7 @@ async def update_line_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.contract_sum and item.contract_sum > 0:
-            item.percentage = (data.total_recommended / item.contract_sum * 100).quantize(
-                Decimal("0.01")
-            )
+            item.percentage = (data.total_recommended / item.contract_sum * 100).quantize(Decimal("0.01"))
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -209,9 +184,7 @@ async def update_line_item(
 
 
 async def get_aggregated_assessment(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID
 ) -> AssessmentAggregate:
     """Fetch assessment and return it with pre-aggregated groups."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
@@ -227,17 +200,12 @@ async def get_aggregated_assessment(
     ps_groups = aggregate_provisional_sums(assessment.provisional_sum_items, all_ps)
 
     return AssessmentAggregate(
-        assessment=assessment,
-        wbs_groups=wbs_groups,
-        variation_groups=var_groups,
-        ps_groups=ps_groups,
+        assessment=assessment, wbs_groups=wbs_groups, variation_groups=var_groups, ps_groups=ps_groups
     )
 
 
 async def get_prior_interims(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID
 ) -> PriorInterimsResponse:
     """Find items from the previous finalised assessment that have status='interim'."""
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
@@ -265,9 +233,7 @@ async def get_prior_interims(
     )
 
 
-def _interim_groups(
-    groups: Mapping[uuid.UUID, Sequence[InterimItem]],
-) -> list[PriorInterimResponse]:
+def _interim_groups(groups: Mapping[uuid.UUID, Sequence[InterimItem]]) -> list[PriorInterimResponse]:
     """One entry per parent whose group holds at least one interim-status item."""
     return [
         PriorInterimResponse.from_group(parent_id, items)
@@ -277,11 +243,7 @@ def _interim_groups(
 
 
 async def create_interim_adjustment(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
-    data,
-    user: User,
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data, user: User
 ) -> AssessmentAggregate:
     """Create an interim adjustment child row under the specified parent."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
@@ -291,9 +253,7 @@ async def create_interim_adjustment(
         raise BadRequestError("Assessment must be in draft to add adjustments")
 
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
-    source_id = (
-        prev_assessment.id if prev_assessment and prev_assessment.id != assessment_id else None
-    )
+    source_id = prev_assessment.id if prev_assessment and prev_assessment.id != assessment_id else None
 
     comment_prefix = "Interim"
     comment_text = f"{comment_prefix} - {data.comments}" if data.comments else comment_prefix
@@ -303,9 +263,7 @@ async def create_interim_adjustment(
             (
                 li
                 for li in assessment.line_items
-                if li.wbs_code_id == data.parent_id
-                and li.claim_line_item_id is None
-                and not li.adjustment_type
+                if li.wbs_code_id == data.parent_id and li.claim_line_item_id is None and not li.adjustment_type
             ),
             None,
         )
@@ -338,9 +296,7 @@ async def create_interim_adjustment(
             (
                 av
                 for av in assessment.variation_items
-                if av.variation_id == data.parent_id
-                and av.claim_line_item_id is None
-                and not av.adjustment_type
+                if av.variation_id == data.parent_id and av.claim_line_item_id is None and not av.adjustment_type
             ),
             None,
         )
@@ -370,9 +326,7 @@ async def create_interim_adjustment(
             (
                 ps
                 for ps in assessment.provisional_sum_items
-                if ps.provisional_sum_id == data.parent_id
-                and ps.claim_line_item_id is None
-                and not ps.adjustment_type
+                if ps.provisional_sum_id == data.parent_id and ps.claim_line_item_id is None and not ps.adjustment_type
             ),
             None,
         )
@@ -404,11 +358,7 @@ async def create_interim_adjustment(
 
 
 async def close_out_item(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
-    data,
-    user: User,
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data, user: User
 ) -> AssessmentAggregate:
     """Close out an interim item — sets all rows for this parent to 'approved' status."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
@@ -447,9 +397,7 @@ async def close_out_item(
             item.updated_by = user.id
 
     elif data.item_type == "provisional-sum":
-        matching = [
-            ps for ps in assessment.provisional_sum_items if ps.provisional_sum_id == data.parent_id
-        ]
+        matching = [ps for ps in assessment.provisional_sum_items if ps.provisional_sum_id == data.parent_id]
         for item in matching:
             item.status = LineItemStatus.approved
             item.is_closed_out = True
@@ -463,10 +411,7 @@ async def close_out_item(
 
 
 async def generate_assessment_export(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
-    format: str = "pdf",
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, format: str = "pdf"
 ) -> tuple[bytes, str]:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -589,10 +534,7 @@ async def generate_assessment_export(
     value_claimed = totals.value_claimed_to_date
     adjustments = totals.adjustments
 
-    retention_tiers = [
-        {"percentage": t.percentage, "up_to_amount": t.up_to_amount}
-        for t in project.retention_tiers
-    ]
+    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
     total_retention = calculate_retention(total_recommended, retention_tiers)
     retention_details = calculate_retention_per_tier(total_recommended, retention_tiers)
 
@@ -617,14 +559,10 @@ async def generate_assessment_export(
         else "",
         "landlord_split_pct": project.landlord_split_pct,
         "operator_split_pct": project.operator_split_pct,
-        "landlord_amount": (recommended_this_period * project.landlord_split_pct).quantize(
-            Decimal("0.01")
-        )
+        "landlord_amount": (recommended_this_period * project.landlord_split_pct).quantize(Decimal("0.01"))
         if project.landlord_split_pct
         else Decimal("0"),
-        "operator_amount": (recommended_this_period * project.operator_split_pct).quantize(
-            Decimal("0.01")
-        )
+        "operator_amount": (recommended_this_period * project.operator_split_pct).quantize(Decimal("0.01"))
         if project.operator_split_pct
         else Decimal("0"),
         "engineer": project.end_client_representative or "",
@@ -662,11 +600,7 @@ async def generate_assessment_export(
 
 
 async def update_variation_item(
-    db: AsyncSession,
-    assessment_id: uuid.UUID,
-    item_id: uuid.UUID,
-    data: AssessmentVariationUpdate,
-    user: User,
+    db: AsyncSession, assessment_id: uuid.UUID, item_id: uuid.UUID, data: AssessmentVariationUpdate, user: User
 ) -> AssessmentVariation:
     item = await assessment_variation_repo.get_by_id(db, item_id, assessment_id)
     if not item:
@@ -676,9 +610,9 @@ async def update_variation_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.variation and item.variation.contractor_submission > 0:
-            item.percentage = (
-                data.total_recommended / item.variation.contractor_submission * 100
-            ).quantize(Decimal("0.01"))
+            item.percentage = (data.total_recommended / item.variation.contractor_submission * 100).quantize(
+                Decimal("0.01")
+            )
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -696,11 +630,7 @@ async def update_variation_item(
 
 
 async def update_provisional_sum_item(
-    db: AsyncSession,
-    assessment_id: uuid.UUID,
-    item_id: uuid.UUID,
-    data: AssessmentProvisionalSumUpdate,
-    user: User,
+    db: AsyncSession, assessment_id: uuid.UUID, item_id: uuid.UUID, data: AssessmentProvisionalSumUpdate, user: User
 ) -> AssessmentProvisionalSum:
     item = await assessment_provisional_sum_repo.get_by_id(db, item_id, assessment_id)
     if not item:
@@ -710,9 +640,9 @@ async def update_provisional_sum_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.provisional_sum and item.provisional_sum.contract_sum > 0:
-            item.percentage = (
-                data.total_recommended / item.provisional_sum.contract_sum * 100
-            ).quantize(Decimal("0.01"))
+            item.percentage = (data.total_recommended / item.provisional_sum.contract_sum * 100).quantize(
+                Decimal("0.01")
+            )
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -730,11 +660,7 @@ async def update_provisional_sum_item(
 
 
 async def reclassify_item(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
-    data: ReclassifyRequest,
-    user: User,
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: ReclassifyRequest, user: User
 ) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -743,24 +669,16 @@ async def reclassify_item(
     # Find source row in the appropriate list
     source_row = None
     if data.source_type == "line-item":
-        source_row = next(
-            (li for li in assessment.line_items if li.id == data.source_item_id), None
-        )
+        source_row = next((li for li in assessment.line_items if li.id == data.source_item_id), None)
     elif data.source_type == "variation":
-        source_row = next(
-            (av for av in assessment.variation_items if av.id == data.source_item_id), None
-        )
+        source_row = next((av for av in assessment.variation_items if av.id == data.source_item_id), None)
     elif data.source_type == "provisional-sum":
-        source_row = next(
-            (ps for ps in assessment.provisional_sum_items if ps.id == data.source_item_id), None
-        )
+        source_row = next((ps for ps in assessment.provisional_sum_items if ps.id == data.source_item_id), None)
 
     if not source_row:
         raise NotFoundError("Source item not found")
     if source_row.claim_line_item_id is None:
-        raise BadRequestError(
-            "Cannot reclassify a history row without a linked claim line item",
-        )
+        raise BadRequestError("Cannot reclassify a history row without a linked claim line item")
 
     # Capture carried values
     recommended_this_period = source_row.recommended_this_period
@@ -775,9 +693,7 @@ async def reclassify_item(
     # WBS-to-WBS: same type, just update the wbs_code_id
     if data.source_type == "line-item" and data.target_type == "line-item":
         if not data.target_wbs_code_id:
-            raise BadRequestError(
-                "target_wbs_code_id is required when target_type is 'line-item'",
-            )
+            raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
         assert isinstance(source_row, AssessmentLineItem)
         await assessment_line_item_repo.update(db, source_row, wbs_code_id=data.target_wbs_code_id)
         await db.commit()
@@ -874,9 +790,7 @@ async def reclassify_item(
 
     elif data.target_type == "line-item":
         if not data.target_wbs_code_id:
-            raise BadRequestError(
-                "target_wbs_code_id is required when target_type is 'line-item'",
-            )
+            raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
         # From variation/PS back to line-item
         # Use explicit query instead of assessment.line_items to avoid MissingGreenlet
         # (db.expire above invalidates cached collections; lazy reload fails in async)
@@ -909,10 +823,7 @@ async def reclassify_item(
 
 
 async def finalise_assessment(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
-    user: User,
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, user: User
 ) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -967,18 +878,13 @@ async def finalise_assessment(
     assessment.approved_variation_orders = totals.approved_variation_orders
     assessment.adjustment_to_provisional_sums = totals.adjustment_to_provisional_sums
     assessment.adjusted_contract_sum = (
-        project.contract_sum
-        + totals.approved_variation_orders
-        + totals.adjustment_to_provisional_sums
+        project.contract_sum + totals.approved_variation_orders + totals.adjustment_to_provisional_sums
     )
     total_recommended = totals.total_recommended
     assessment.total_recommended = total_recommended
 
     # Calculate retention and payment-to-date for use by future assessments
-    retention_tiers = [
-        {"percentage": t.percentage, "up_to_amount": t.up_to_amount}
-        for t in project.retention_tiers
-    ]
+    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
     total_retention = calculate_retention(total_recommended, retention_tiers)
     assessment.total_retention = total_retention
     total_payment_to_date = total_recommended - total_retention
@@ -999,12 +905,7 @@ async def finalise_assessment(
     return refreshed
 
 
-async def revert_to_draft(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    assessment_id: uuid.UUID,
-    user: User,
-) -> Assessment:
+async def revert_to_draft(db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, user: User) -> Assessment:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
         raise NotFoundError("Assessment not found")
@@ -1017,9 +918,7 @@ async def revert_to_draft(
     if not current_claim:
         raise NotFoundError("Associated claim not found")
     if any(c.claim_number > current_claim.claim_number for c in claims):
-        raise ConflictError(
-            "Cannot revert: a subsequent claim exists for this project",
-        )
+        raise ConflictError("Cannot revert: a subsequent claim exists for this project")
 
     assessment.status = AssessmentStatus.draft
     assessment.finalised_at = None

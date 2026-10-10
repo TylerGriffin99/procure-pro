@@ -49,10 +49,7 @@ async def get_assessment_by_claim(
     return AggregatedAssessmentResponse.from_aggregate(result)
 
 
-@router.patch(
-    "/{assessment_id}/line-items/{line_item_id}",
-    response_model=AssessmentLineItemResponse,
-)
+@router.patch("/{assessment_id}/line-items/{line_item_id}", response_model=AssessmentLineItemResponse)
 async def update_line_item(
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,
@@ -64,10 +61,7 @@ async def update_line_item(
     return await assessment_service.update_line_item(db, assessment_id, line_item_id, body, user)
 
 
-@router.patch(
-    "/{assessment_id}/variation-items/{item_id}",
-    response_model=AssessmentVariationResponse,
-)
+@router.patch("/{assessment_id}/variation-items/{item_id}", response_model=AssessmentVariationResponse)
 async def update_variation_item(
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,
@@ -79,10 +73,7 @@ async def update_variation_item(
     return await assessment_service.update_variation_item(db, assessment_id, item_id, body, user)
 
 
-@router.patch(
-    "/{assessment_id}/provisional-sum-items/{item_id}",
-    response_model=AssessmentProvisionalSumResponse,
-)
+@router.patch("/{assessment_id}/provisional-sum-items/{item_id}", response_model=AssessmentProvisionalSumResponse)
 async def update_provisional_sum_item(
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,
@@ -91,9 +82,7 @@ async def update_provisional_sum_item(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return await assessment_service.update_provisional_sum_item(
-        db, assessment_id, item_id, body, user
-    )
+    return await assessment_service.update_provisional_sum_item(db, assessment_id, item_id, body, user)
 
 
 @router.post("/{assessment_id}/reclassify", response_model=AggregatedAssessmentResponse)
@@ -172,9 +161,7 @@ async def create_interim_adjustment(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await assessment_service.create_interim_adjustment(
-        db, project_id, assessment_id, body, user
-    )
+    result = await assessment_service.create_interim_adjustment(db, project_id, assessment_id, body, user)
     return AggregatedAssessmentResponse.from_aggregate(result)
 
 

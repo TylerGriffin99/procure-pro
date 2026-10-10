@@ -21,11 +21,7 @@ async def create_session(
     config: dict | None = None,
 ) -> HarnessSession:
     session = HarnessSession(
-        user_id=user_id,
-        project_id=project_id,
-        harness_type=harness_type,
-        config=config or {},
-        document_id=document_id,
+        user_id=user_id, project_id=project_id, harness_type=harness_type, config=config or {}, document_id=document_id
     )
     db.add(session)
     await db.flush()
@@ -40,9 +36,7 @@ async def get_session(db: AsyncSession, session_id: uuid.UUID) -> HarnessSession
 async def get_session_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> HarnessSession | None:
     """Find the harness session that produced a given claim."""
     result = await db.execute(
-        select(HarnessSession)
-        .where(HarnessSession.claim_id == claim_id)
-        .order_by(HarnessSession.created_at.desc())
+        select(HarnessSession).where(HarnessSession.claim_id == claim_id).order_by(HarnessSession.created_at.desc())
     )
     return result.scalars().first()
 
@@ -51,10 +45,7 @@ async def try_claim_running(db: AsyncSession, session_id: uuid.UUID) -> bool:
     """Atomically set status to running if currently pending. Returns True if claimed."""
     result = await db.execute(
         update(HarnessSession)
-        .where(
-            HarnessSession.id == session_id,
-            HarnessSession.status == HarnessSessionStatus.pending,
-        )
+        .where(HarnessSession.id == session_id, HarnessSession.status == HarnessSessionStatus.pending)
         .values(status=HarnessSessionStatus.running)
         .returning(HarnessSession.id)
     )
@@ -64,10 +55,7 @@ async def try_claim_running(db: AsyncSession, session_id: uuid.UUID) -> bool:
 
 
 async def set_status(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    status: HarnessSessionStatus,
-    error_message: str | None = None,
+    db: AsyncSession, session_id: uuid.UUID, status: HarnessSessionStatus, error_message: str | None = None
 ) -> None:
     values: dict = {"status": status}
     if error_message is not None:
@@ -76,13 +64,7 @@ async def set_status(
     await db.flush()
 
 
-async def update_phase(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    phase_key: str,
-    result: dict,
-    next_phase: int,
-) -> None:
+async def update_phase(db: AsyncSession, session_id: uuid.UUID, phase_key: str, result: dict, next_phase: int) -> None:
     """Update phase result and advance current_phase."""
     session = await get_session(db, session_id)
     if session is None:
@@ -98,9 +80,7 @@ async def update_phase(
 
 
 async def set_claim_id(db: AsyncSession, session_id: uuid.UUID, claim_id: uuid.UUID) -> None:
-    await db.execute(
-        update(HarnessSession).where(HarnessSession.id == session_id).values(claim_id=claim_id)
-    )
+    await db.execute(update(HarnessSession).where(HarnessSession.id == session_id).values(claim_id=claim_id))
     await db.flush()
 
 
@@ -108,36 +88,23 @@ async def set_claim_id(db: AsyncSession, session_id: uuid.UUID, claim_id: uuid.U
 
 
 async def write_workspace_file(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    file_path: str,
-    content: str,
-    internal: bool = False,
+    db: AsyncSession, session_id: uuid.UUID, file_path: str, content: str, internal: bool = False
 ) -> None:
     """Upsert a workspace file."""
     stmt = pg_insert(HarnessWorkspaceFile).values(
-        session_id=session_id,
-        file_path=file_path,
-        content=content,
-        internal=internal,
+        session_id=session_id, file_path=file_path, content=content, internal=internal
     )
     stmt = stmt.on_conflict_do_update(
-        constraint="uq_workspace_session_filepath",
-        set_={"content": content, "internal": internal},
+        constraint="uq_workspace_session_filepath", set_={"content": content, "internal": internal}
     )
     await db.execute(stmt)
     await db.flush()
 
 
-async def read_workspace_file(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    file_path: str,
-) -> str | None:
+async def read_workspace_file(db: AsyncSession, session_id: uuid.UUID, file_path: str) -> str | None:
     result = await db.execute(
         select(HarnessWorkspaceFile.content).where(
-            HarnessWorkspaceFile.session_id == session_id,
-            HarnessWorkspaceFile.file_path == file_path,
+            HarnessWorkspaceFile.session_id == session_id, HarnessWorkspaceFile.file_path == file_path
         )
     )
     row = result.first()
@@ -145,9 +112,7 @@ async def read_workspace_file(
 
 
 async def list_workspace_files(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    include_internal: bool = False,
+    db: AsyncSession, session_id: uuid.UUID, include_internal: bool = False
 ) -> list[HarnessWorkspaceFile]:
     stmt = select(HarnessWorkspaceFile).where(HarnessWorkspaceFile.session_id == session_id)
     if not include_internal:
@@ -185,35 +150,21 @@ async def create_flag(
     return flag
 
 
-async def list_flags_by_session(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-) -> list[ClaimParseFlag]:
+async def list_flags_by_session(db: AsyncSession, session_id: uuid.UUID) -> list[ClaimParseFlag]:
     result = await db.execute(
-        select(ClaimParseFlag)
-        .where(ClaimParseFlag.session_id == session_id)
-        .order_by(ClaimParseFlag.created_at)
+        select(ClaimParseFlag).where(ClaimParseFlag.session_id == session_id).order_by(ClaimParseFlag.created_at)
     )
     return list(result.scalars().all())
 
 
-async def list_flags_by_claim(
-    db: AsyncSession,
-    claim_id: uuid.UUID,
-) -> list[ClaimParseFlag]:
+async def list_flags_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> list[ClaimParseFlag]:
     result = await db.execute(
-        select(ClaimParseFlag)
-        .where(ClaimParseFlag.claim_id == claim_id)
-        .order_by(ClaimParseFlag.created_at)
+        select(ClaimParseFlag).where(ClaimParseFlag.claim_id == claim_id).order_by(ClaimParseFlag.created_at)
     )
     return list(result.scalars().all())
 
 
-async def resolve_flag(
-    db: AsyncSession,
-    flag_id: uuid.UUID,
-    user_id: uuid.UUID,
-) -> ClaimParseFlag | None:
+async def resolve_flag(db: AsyncSession, flag_id: uuid.UUID, user_id: uuid.UUID) -> ClaimParseFlag | None:
     result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
     flag = result.scalar_one_or_none()
     if flag is None:
@@ -253,15 +204,7 @@ async def delete_sessions_by_project(db: AsyncSession, project_id: uuid.UUID) ->
     await db.flush()
 
 
-async def link_flags_to_claim(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    claim_id: uuid.UUID,
-) -> None:
+async def link_flags_to_claim(db: AsyncSession, session_id: uuid.UUID, claim_id: uuid.UUID) -> None:
     """Set claim_id on all flags for a session (called in Phase 5)."""
-    await db.execute(
-        update(ClaimParseFlag)
-        .where(ClaimParseFlag.session_id == session_id)
-        .values(claim_id=claim_id)
-    )
+    await db.execute(update(ClaimParseFlag).where(ClaimParseFlag.session_id == session_id).values(claim_id=claim_id))
     await db.flush()

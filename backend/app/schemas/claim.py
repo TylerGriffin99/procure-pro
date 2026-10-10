@@ -60,11 +60,7 @@ class ClaimResponse(BaseModel):
 
     @classmethod
     def from_claim(
-        cls,
-        claim: Claim,
-        *,
-        assessment_id: uuid.UUID | None = None,
-        assessment_status: str | None = None,
+        cls, claim: Claim, *, assessment_id: uuid.UUID | None = None, assessment_status: str | None = None
     ) -> ClaimResponse:
         return cls(
             id=claim.id,

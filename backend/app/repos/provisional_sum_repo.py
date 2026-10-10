@@ -24,9 +24,7 @@ async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[Provis
 
 async def get_max_ps_number(db: AsyncSession, project_id: uuid.UUID) -> int:
     result = await db.execute(
-        select(func.coalesce(func.max(ProvisionalSum.ps_number), 0)).where(
-            ProvisionalSum.project_id == project_id
-        )
+        select(func.coalesce(func.max(ProvisionalSum.ps_number), 0)).where(ProvisionalSum.project_id == project_id)
     )
     return result.scalar_one()
 

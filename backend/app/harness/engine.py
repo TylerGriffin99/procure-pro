@@ -84,9 +84,7 @@ class HarnessEngine:
             phase_def = self.definition.phases[phase_index]
 
             yield HarnessPhaseStartEvent(
-                phase_index=phase_index,
-                phase_name=phase_def.name,
-                phase_type=phase_def.phase_type,
+                phase_index=phase_index, phase_name=phase_def.name, phase_type=phase_def.phase_type
             )
 
             try:
@@ -96,9 +94,7 @@ class HarnessEngine:
                 logger.exception("harness_engine.phase_error")
                 await self.set_failed(f"Phase '{phase_def.name}' failed: {describe_error(e)}")
                 yield HarnessPhaseErrorEvent(
-                    phase_index=phase_index,
-                    phase_name=phase_def.name,
-                    error=describe_error(e),
+                    phase_index=phase_index, phase_name=phase_def.name, error=describe_error(e)
                 )
                 yield HarnessErrorEvent(session_id=self.session_id, error=describe_error(e))
                 return
@@ -109,16 +105,10 @@ class HarnessEngine:
 
         # Read claim_id if set by final phase
         session = await harness_repo.get_session(self.db, self.session_id)
-        yield HarnessCompleteEvent(
-            session_id=self.session_id,
-            claim_id=session.claim_id if session else None,
-        )
+        yield HarnessCompleteEvent(session_id=self.session_id, claim_id=session.claim_id if session else None)
 
     async def _run_phase(
-        self,
-        phase_index: int,
-        phase_def: PhaseDefinition,
-        session_config: dict[str, Any],
+        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
     ) -> AsyncGenerator[HarnessEvent, None]:
         if phase_def.phase_type == PhaseType.PROGRAMMATIC:
             async for event in self._run_programmatic(phase_index, phase_def, session_config):
@@ -133,10 +123,7 @@ class HarnessEngine:
             raise ValueError(f"Unsupported phase type: {phase_def.phase_type}")
 
     async def _run_programmatic(
-        self,
-        phase_index: int,
-        phase_def: PhaseDefinition,
-        session_config: dict[str, Any],
+        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
     ) -> AsyncGenerator[HarnessEvent, None]:
         if not phase_def.executor:
             raise ValueError(f"Programmatic phase '{phase_def.name}' has no executor")
@@ -151,11 +138,7 @@ class HarnessEngine:
 
         result_str = json.dumps(result) if isinstance(result, dict) else str(result)
         await harness_repo.write_workspace_file(
-            self.db,
-            self.session_id,
-            phase_def.workspace_output,
-            result_str,
-            internal=phase_def.internal,
+            self.db, self.session_id, phase_def.workspace_output, result_str, internal=phase_def.internal
         )
 
         await harness_repo.update_phase(
@@ -175,29 +158,19 @@ class HarnessEngine:
             detail = f"Format: {fmt}" + (f" ({int(confidence * 100)}%)" if confidence else "")
 
         yield HarnessPhaseResultEvent(
-            phase_index=phase_index,
-            phase_name=phase_def.name,
-            status=PhaseStatus.COMPLETED,
-            detail=detail,
+            phase_index=phase_index, phase_name=phase_def.name, status=PhaseStatus.COMPLETED, detail=detail
         )
 
     async def _run_llm_single(
-        self,
-        phase_index: int,
-        phase_def: PhaseDefinition,
-        session_config: dict[str, Any],
+        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
     ) -> AsyncGenerator[HarnessEvent, None]:
         if phase_def.output_schema is None:
             raise ValueError(
-                f"LLM_SINGLE phase '{phase_def.name}' has no output_schema; "
-                "a structured output type is required."
+                f"LLM_SINGLE phase '{phase_def.name}' has no output_schema; a structured output type is required."
             )
 
         context = await build_phase_context(
-            db=self.db,
-            session_id=self.session_id,
-            project_id=self.project_id,
-            phase_def=phase_def,
+            db=self.db, session_id=self.session_id, project_id=self.project_id, phase_def=phase_def
         )
         system_prompt = render_system_prompt(phase_def, context)
 
@@ -211,18 +184,11 @@ class HarnessEngine:
             phase_name=phase_def.name,
         )
 
-        yield UsageEvent(
-            prompt_tokens=response.input_tokens,
-            completion_tokens=response.output_tokens,
-        )
+        yield UsageEvent(prompt_tokens=response.input_tokens, completion_tokens=response.output_tokens)
 
         # Write validated output to workspace (bare JSON matching the typed schema).
         await harness_repo.write_workspace_file(
-            self.db,
-            self.session_id,
-            phase_def.workspace_output,
-            response.output_json,
-            internal=phase_def.internal,
+            self.db, self.session_id, phase_def.workspace_output, response.output_json, internal=phase_def.internal
         )
 
         await harness_repo.update_phase(
@@ -234,17 +200,10 @@ class HarnessEngine:
         )
         await self.db.commit()
 
-        yield HarnessPhaseResultEvent(
-            phase_index=phase_index,
-            phase_name=phase_def.name,
-            status=PhaseStatus.COMPLETED,
-        )
+        yield HarnessPhaseResultEvent(phase_index=phase_index, phase_name=phase_def.name, status=PhaseStatus.COMPLETED)
 
     async def _run_decision_match(
-        self,
-        phase_index: int,
-        phase_def: PhaseDefinition,
-        session_config: dict[str, Any],
+        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
     ) -> AsyncGenerator[HarnessEvent, None]:
         if phase_def.output_schema is None:
             raise ValueError(f"LLM_BATCH_AGENTS phase '{phase_def.name}' has no output_schema.")
@@ -261,23 +220,13 @@ class HarnessEngine:
 
         matcher = get_matcher(name)
         outcome = await matcher.match(
-            phase_def=phase_def,
-            db=self.db,
-            project_id=self.project_id,
-            session_id=self.session_id,
+            phase_def=phase_def, db=self.db, project_id=self.project_id, session_id=self.session_id
         )
 
-        yield UsageEvent(
-            prompt_tokens=outcome.input_tokens,
-            completion_tokens=outcome.output_tokens,
-        )
+        yield UsageEvent(prompt_tokens=outcome.input_tokens, completion_tokens=outcome.output_tokens)
 
         await harness_repo.write_workspace_file(
-            self.db,
-            self.session_id,
-            phase_def.workspace_output,
-            outcome.output_json,
-            internal=phase_def.internal,
+            self.db, self.session_id, phase_def.workspace_output, outcome.output_json, internal=phase_def.internal
         )
         n = len(outcome.output)
         counts = f"fell_back={outcome.fell_back}/{n} residue={outcome.residue}/{n}"
@@ -285,10 +234,7 @@ class HarnessEngine:
             self.db,
             self.session_id,
             str(phase_index),
-            {
-                "status": "completed",
-                "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})",
-            },
+            {"status": "completed", "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})"},
             phase_index + 1,
         )
         await self.db.commit()
@@ -304,7 +250,5 @@ class HarnessEngine:
         """Roll back any failed transaction first, so the status write cannot hit
         PendingRollbackError."""
         await self.db.rollback()
-        await harness_repo.set_status(
-            self.db, self.session_id, HarnessSessionStatus.failed, error_message=error
-        )
+        await harness_repo.set_status(self.db, self.session_id, HarnessSessionStatus.failed, error_message=error)
         await self.db.commit()

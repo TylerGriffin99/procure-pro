@@ -8,10 +8,7 @@ from app import error_handlers
 from app.config import settings
 from app.routers import assessments, auth, claim_flags, claims, harness, projects
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s:     %(name)s - %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
 
 
 @asynccontextmanager
@@ -31,14 +28,7 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix=settings.api_prefix)
-for router in (
-    auth.router,
-    projects.router,
-    claims.router,
-    assessments.router,
-    harness.router,
-    claim_flags.router,
-):
+for router in (auth.router, projects.router, claims.router, assessments.router, harness.router, claim_flags.router):
     api.include_router(router)
 app.include_router(api)
 

@@ -59,11 +59,7 @@ def auto_fill_dates(claim_received: date | None) -> dict[str, date | None]:
     provisional = _add_working_days(claim_received, WORKING_DAYS_OFFSET)
     schedule = _add_working_days(provisional, WORKING_DAYS_OFFSET)
     payment = _payment_due_20th(schedule)
-    return {
-        "provisional_payment_schedule_due": provisional,
-        "payment_schedule_due": schedule,
-        "payment_due": payment,
-    }
+    return {"provisional_payment_schedule_due": provisional, "payment_schedule_due": schedule, "payment_due": payment}
 
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
@@ -114,12 +110,8 @@ def _screen_pdf_content(content: bytes) -> None:
         # Snippets are attacker-controlled: log them (repr guards against log
         # injection) but never reflect them to the client.
         snippets = "; ".join(f"{v.category}:{v.snippet!r}" for v in violations)
-        logger.warning(
-            "Rejected upload: disallowed content [%s] — %s", ", ".join(categories), snippets
-        )
-        raise BadRequestError(
-            f"Document rejected: it contains disallowed content ({', '.join(categories)})",
-        )
+        logger.warning("Rejected upload: disallowed content [%s] — %s", ", ".join(categories), snippets)
+        raise BadRequestError(f"Document rejected: it contains disallowed content ({', '.join(categories)})")
 
 
 async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, file: UploadFile):
@@ -134,17 +126,11 @@ async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, f
 
     await asyncio.to_thread(_screen_pdf_content, content)  # PDF parse is blocking
     return await document_repo.create_document(
-        db,
-        project_id,
-        file.filename or "upload.pdf",
-        file.content_type,
-        content,
+        db, project_id, file.filename or "upload.pdf", file.content_type, content
     )
 
 
-async def upload_claim(
-    db: AsyncSession, project_id: uuid.UUID, file: UploadFile, user: User
-) -> ClaimUploadResponse:
+async def upload_claim(db: AsyncSession, project_id: uuid.UUID, file: UploadFile, user: User) -> ClaimUploadResponse:
     """Store the screened PDF and open a CLAIM_PARSE harness session on it."""
     document = await create_document_from_upload(db, project_id, file)
     session = await harness_repo.create_session(
@@ -159,9 +145,7 @@ async def upload_claim(
     return ClaimUploadResponse(harness_session_id=session.id)
 
 
-async def create_claim(
-    db: AsyncSession, project_id: uuid.UUID, data: ClaimCreate, user: User
-) -> ClaimResponse:
+async def create_claim(db: AsyncSession, project_id: uuid.UUID, data: ClaimCreate, user: User) -> ClaimResponse:
     auto_dates = auto_fill_dates(data.claim_received)
     claim = Claim(
         project_id=project_id,
@@ -220,10 +204,7 @@ async def get_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID
 
 
 async def update_claim(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    claim_id: uuid.UUID,
-    data: ClaimUpdate,
+    db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID, data: ClaimUpdate
 ) -> ClaimResponse:
     claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
     if not claim:
@@ -256,9 +237,7 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
     document_id = claim_session.document_id if claim_session else None
 
     # Collect WBS code IDs referenced by this claim's line items
-    claim_wbs_ids = {
-        cli.suggested_wbs_code_id for cli in claim.line_items if cli.suggested_wbs_code_id
-    }
+    claim_wbs_ids = {cli.suggested_wbs_code_id for cli in claim.line_items if cli.suggested_wbs_code_id}
 
     # Delete harness sessions linked to this claim (cascades to workspace_files & flags)
     await harness_repo.delete_sessions_by_claim(db, claim_id)
@@ -273,17 +252,13 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
     # (project-scoped records that may no longer have any assessment rows)
     all_variations = await variation_repo.get_by_project(db, project_id)
     for var in all_variations:
-        has_rows = await db.execute(
-            select(exists().where(AssessmentVariation.variation_id == var.id))
-        )
+        has_rows = await db.execute(select(exists().where(AssessmentVariation.variation_id == var.id)))
         if not has_rows.scalar():
             await db.delete(var)
 
     all_ps = await provisional_sum_repo.get_by_project(db, project_id)
     for ps in all_ps:
-        has_rows = await db.execute(
-            select(exists().where(AssessmentProvisionalSum.provisional_sum_id == ps.id))
-        )
+        has_rows = await db.execute(select(exists().where(AssessmentProvisionalSum.provisional_sum_id == ps.id)))
         if not has_rows.scalar():
             await db.delete(ps)
 

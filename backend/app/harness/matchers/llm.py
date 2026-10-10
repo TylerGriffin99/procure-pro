@@ -6,12 +6,7 @@ from app.harness.schemas import MatchOutcome
 
 
 async def run_llm_matches(*, phase_def, db, project_id, session_id) -> MatchOutcome:
-    context = await build_phase_context(
-        db=db,
-        session_id=session_id,
-        project_id=project_id,
-        phase_def=phase_def,
-    )
+    context = await build_phase_context(db=db, session_id=session_id, project_id=project_id, phase_def=phase_def)
     system_prompt = render_system_prompt(phase_def, context)
     model = build_model(model_name=phase_def.model) if phase_def.model else None
     res = await run_structured(
@@ -22,10 +17,7 @@ async def run_llm_matches(*, phase_def, db, project_id, session_id) -> MatchOutc
         phase_name=phase_def.name,
     )
     return MatchOutcome(
-        output=res.output,
-        output_json=res.output_json,
-        input_tokens=res.input_tokens,
-        output_tokens=res.output_tokens,
+        output=res.output, output_json=res.output_json, input_tokens=res.input_tokens, output_tokens=res.output_tokens
     )
 
 
@@ -33,9 +25,4 @@ class LlmMatcher:
     name = "llm"
 
     async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome:
-        return await run_llm_matches(
-            phase_def=phase_def,
-            db=db,
-            project_id=project_id,
-            session_id=session_id,
-        )
+        return await run_llm_matches(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)

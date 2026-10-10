@@ -19,9 +19,7 @@ from app.repos import (
 from app.schemas.project import ProjectCreate, ProjectUpdate, WBSCodeCreate, WBSCodeUpdate
 
 
-async def create_project(
-    db: AsyncSession, data: ProjectCreate, user: User, project_id: uuid.UUID | None = None
-):
+async def create_project(db: AsyncSession, data: ProjectCreate, user: User, project_id: uuid.UUID | None = None):
     # project_id lets seeds pin a deterministic id; otherwise the model default
     # (uuid4) assigns a random one.
     id_kwargs = {"id": project_id} if project_id is not None else {}
@@ -45,12 +43,7 @@ async def create_project(
     )
 
     for tier in data.retention_tiers:
-        await retention_tier_repo.create(
-            db,
-            project_id=project.id,
-            **tier.model_dump(),
-            created_by=user.id,
-        )
+        await retention_tier_repo.create(db, project_id=project.id, **tier.model_dump(), created_by=user.id)
 
     # Two-pass WBS code creation
     code_to_wbs: dict[str, WBSCode] = {}
@@ -110,12 +103,7 @@ async def get_project(db: AsyncSession, project_id: uuid.UUID):
     return project
 
 
-async def update_project(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    data: ProjectUpdate,
-    user: User,
-) -> Project:
+async def update_project(db: AsyncSession, project_id: uuid.UUID, data: ProjectUpdate, user: User) -> Project:
     project = await project_repo.get_by_id(db, project_id)
     if not project:
         raise NotFoundError("Project not found")
@@ -145,12 +133,7 @@ async def delete_project(db: AsyncSession, project_id: uuid.UUID) -> None:
     await db.commit()
 
 
-async def create_wbs_code(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    data: WBSCodeCreate,
-    user: User,
-) -> WBSCode:
+async def create_wbs_code(db: AsyncSession, project_id: uuid.UUID, data: WBSCodeCreate, user: User) -> WBSCode:
     project = await project_repo.get_by_id(db, project_id)
     if not project:
         raise NotFoundError("Project not found")
@@ -189,11 +172,7 @@ async def create_wbs_code(
 
 
 async def update_wbs_code(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    wbs_code_id: uuid.UUID,
-    data: WBSCodeUpdate,
-    user: User,
+    db: AsyncSession, project_id: uuid.UUID, wbs_code_id: uuid.UUID, data: WBSCodeUpdate, user: User
 ) -> WBSCode:
     wbs = await wbs_code_repo.get_by_id(db, wbs_code_id)
     if not wbs or wbs.project_id != project_id:
@@ -209,16 +188,13 @@ async def update_wbs_code(
         attempted = set(update_data.keys()) & restricted_fields
         if attempted:
             raise UnprocessableError(
-                f"Cannot update {', '.join(attempted)} on a WBS code "
-                "that is in use by claim/assessment data"
+                f"Cannot update {', '.join(attempted)} on a WBS code that is in use by claim/assessment data"
             )
 
     if "code" in update_data and update_data["code"] != wbs.code:
         existing = await wbs_code_repo.get_by_project(db, project_id)
         if any(w.code == update_data["code"] and w.id != wbs_code_id for w in existing):
-            raise UnprocessableError(
-                f"WBS code '{update_data['code']}' already exists in this project",
-            )
+            raise UnprocessableError(f"WBS code '{update_data['code']}' already exists in this project")
 
     if "level" in update_data and update_data["level"] is not None:
         update_data["level"] = WBSLevel(update_data["level"])

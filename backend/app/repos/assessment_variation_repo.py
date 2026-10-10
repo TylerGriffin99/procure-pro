@@ -7,18 +7,11 @@ from sqlalchemy.orm import selectinload
 from app.models.assessment_variation import AssessmentVariation
 
 
-async def get_by_id(
-    db: AsyncSession,
-    item_id: uuid.UUID,
-    assessment_id: uuid.UUID,
-) -> AssessmentVariation | None:
+async def get_by_id(db: AsyncSession, item_id: uuid.UUID, assessment_id: uuid.UUID) -> AssessmentVariation | None:
     result = await db.execute(
         select(AssessmentVariation)
         .options(selectinload(AssessmentVariation.variation))
-        .where(
-            AssessmentVariation.id == item_id,
-            AssessmentVariation.assessment_id == assessment_id,
-        )
+        .where(AssessmentVariation.id == item_id, AssessmentVariation.assessment_id == assessment_id)
     )
     return result.scalar_one_or_none()
 

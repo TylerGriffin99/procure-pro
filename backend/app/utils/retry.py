@@ -10,10 +10,7 @@ from app.schemas.common import RetryPolicy
 
 
 async def retry_async[T](
-    fn: Callable[[], Awaitable[T]],
-    *,
-    policy: RetryPolicy,
-    should_retry: Callable[[Exception], bool],
+    fn: Callable[[], Awaitable[T]], *, policy: RetryPolicy, should_retry: Callable[[Exception], bool]
 ) -> T:
     """Await ``fn()``; on an exception where ``should_retry`` is true and attempts remain,
     sleep ``delay + uniform(0, delay)`` (delay doubling from ``policy.base_delay``) and

@@ -46,9 +46,7 @@ def _write_summary_sheet(wb: Workbook, data: dict):
     section_font = Font(bold=True, size=10, color="1A2744")
     label_font = Font(bold=True, size=9)
     value_font = Font(size=9)
-    thin_border = Border(
-        bottom=Side(style="thin", color="CCCCCC"),
-    )
+    thin_border = Border(bottom=Side(style="thin", color="CCCCCC"))
 
     ws.merge_cells("A1:D1")
     ws["A1"] = f"Payment Recommendation #{data.get('pr_number', '')}"
@@ -140,16 +138,12 @@ def _write_contract_works_sheet(wb: Workbook, data: dict):
     for i, item in enumerate(data.get("contract_works", []), 2):
         ws.cell(row=i, column=1, value=item.get("description", ""))
         ws.cell(row=i, column=2, value=_dec(item.get("contract_sum"))).number_format = NUMBER_FMT
-        ws.cell(
-            row=i, column=3, value=_dec(item.get("contractor_claim"))
-        ).number_format = NUMBER_FMT
+        ws.cell(row=i, column=3, value=_dec(item.get("contractor_claim"))).number_format = NUMBER_FMT
         ws.cell(row=i, column=4, value=_dec(item.get("recommended"))).number_format = NUMBER_FMT
         ws.cell(row=i, column=5, value=item.get("percentage", ""))
         ws.cell(row=i, column=6, value=_dec(item.get("variance"))).number_format = NUMBER_FMT
         ws.cell(row=i, column=7, value=_dec(item.get("previously_paid"))).number_format = NUMBER_FMT
-        ws.cell(
-            row=i, column=8, value=_dec(item.get("recommended_this_period"))
-        ).number_format = NUMBER_FMT
+        ws.cell(row=i, column=8, value=_dec(item.get("recommended_this_period"))).number_format = NUMBER_FMT
         ws.cell(row=i, column=9, value=item.get("comments", ""))
 
     _set_column_widths(ws, [30, 15, 15, 18, 12, 15, 15, 20, 30])

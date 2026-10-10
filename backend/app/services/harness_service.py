@@ -40,18 +40,14 @@ def coerce_harness_type(value: str) -> HarnessType | None:
         return None
 
 
-async def get_owned_session(
-    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID
-) -> HarnessSession:
+async def get_owned_session(db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID) -> HarnessSession:
     session = await harness_repo.get_session(db, session_id)
     if not session or session.user_id != user_id:
         raise NotFoundError("Session not found")
     return session
 
 
-async def get_session(
-    db: AsyncSession, session_id: uuid.UUID, user: User
-) -> HarnessSessionResponse:
+async def get_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> HarnessSessionResponse:
     session = await get_owned_session(db, session_id, user.id)
     ht = coerce_harness_type(session.harness_type)
     definition = harness_registry.get(ht) if ht else None
@@ -72,20 +68,12 @@ async def prepare_stream(
 
 
 async def stream_events(
-    *,
-    definition: HarnessDefinition,
-    session_id: uuid.UUID,
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
+    *, definition: HarnessDefinition, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID
 ) -> AsyncGenerator[str, None]:
     """Run the engine on a DB session that outlives the HTTP request and yield SSE frames."""
     async with async_session() as engine_db:
         engine = HarnessEngine(
-            definition=definition,
-            session_id=session_id,
-            user_id=user_id,
-            project_id=project_id,
-            db=engine_db,
+            definition=definition, session_id=session_id, user_id=user_id, project_id=project_id, db=engine_db
         )
         try:
             async for event in engine.run():
@@ -102,20 +90,14 @@ async def stream_events(
             yield "data: [DONE]\n\n"
 
 
-async def cancel_session(
-    db: AsyncSession, session_id: uuid.UUID, user: User
-) -> HarnessCancelResponse:
+async def cancel_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> HarnessCancelResponse:
     await get_owned_session(db, session_id, user.id)
-    await harness_repo.set_status(
-        db, session_id, HarnessSessionStatus.failed, error_message="Cancelled by user"
-    )
+    await harness_repo.set_status(db, session_id, HarnessSessionStatus.failed, error_message="Cancelled by user")
     await db.commit()
     return HarnessCancelResponse(id=session_id, status="failed")
 
 
-async def rerun_session(
-    db: AsyncSession, session_id: uuid.UUID, user: User
-) -> HarnessRerunResponse:
+async def rerun_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> HarnessRerunResponse:
     """Re-run a FAILED session over its original Document as a new pending session."""
     old = await get_owned_session(db, session_id, user.id)
     if old.status != HarnessSessionStatus.failed:
@@ -135,16 +117,11 @@ async def rerun_session(
     return HarnessRerunResponse(harness_session_id=new_session.id)
 
 
-async def list_workspace_files(
-    db: AsyncSession, session_id: uuid.UUID, user: User
-) -> list[WorkspaceFileResponse]:
+async def list_workspace_files(db: AsyncSession, session_id: uuid.UUID, user: User) -> list[WorkspaceFileResponse]:
     await get_owned_session(db, session_id, user.id)
     files = await harness_repo.list_workspace_files(db, session_id)
     return [
-        WorkspaceFileResponse(
-            file_path=f.file_path, created_at=f.created_at, updated_at=f.updated_at
-        )
-        for f in files
+        WorkspaceFileResponse(file_path=f.file_path, created_at=f.created_at, updated_at=f.updated_at) for f in files
     ]
 
 

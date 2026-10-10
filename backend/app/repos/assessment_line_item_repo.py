@@ -6,13 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.assessment_line_item import AssessmentLineItem
 
 
-async def get_by_id(
-    db: AsyncSession, line_item_id: uuid.UUID, assessment_id: uuid.UUID
-) -> AssessmentLineItem | None:
+async def get_by_id(db: AsyncSession, line_item_id: uuid.UUID, assessment_id: uuid.UUID) -> AssessmentLineItem | None:
     result = await db.execute(
         select(AssessmentLineItem).where(
-            AssessmentLineItem.id == line_item_id,
-            AssessmentLineItem.assessment_id == assessment_id,
+            AssessmentLineItem.id == line_item_id, AssessmentLineItem.assessment_id == assessment_id
         )
     )
     return result.scalar_one_or_none()

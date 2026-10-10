@@ -8,11 +8,7 @@ from app.models.document import Document
 
 
 async def create_document(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    filename: str,
-    content_type: str,
-    content: bytes,
+    db: AsyncSession, project_id: uuid.UUID, filename: str, content_type: str, content: bytes
 ) -> Document:
     """Persist an uploaded PDF as a Document row."""
     doc = Document(

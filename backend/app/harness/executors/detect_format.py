@@ -42,25 +42,13 @@ def detect_format(all_pages_text: str) -> dict:
 
     if len(markers_found) >= _WBPRO_THRESHOLD:
         confidence = min(0.7 + len(markers_found) * 0.05, 0.99)
-        return {
-            "format": "wbpro",
-            "confidence": round(confidence, 2),
-            "markers_found": markers_found,
-        }
+        return {"format": "wbpro", "confidence": round(confidence, 2), "markers_found": markers_found}
 
-    return {
-        "format": "generic",
-        "confidence": 0.5,
-        "markers_found": markers_found,
-    }
+    return {"format": "generic", "confidence": 0.5, "markers_found": markers_found}
 
 
 async def execute_detect_format(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
-    config: dict[str, Any],
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
 ) -> dict:
     """Read raw_extraction.json and detect the document format."""
     raw = await harness_repo.read_workspace_file(db, session_id, "raw_extraction.json")

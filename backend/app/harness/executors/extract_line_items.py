@@ -15,11 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_extract_line_items(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
-    config: dict[str, Any],
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
 ) -> dict:
     """Route extraction based on detected format.
 

@@ -143,10 +143,7 @@ class PSLike(Protocol):
 # ── Aggregation functions ────────────────────────────────────────────────
 
 
-def aggregate_line_items(
-    rows: Sequence[LineItemLike],
-    wbs_codes: Sequence[WBSLike],
-) -> list[AggregatedWBSGroup]:
+def aggregate_line_items(rows: Sequence[LineItemLike], wbs_codes: Sequence[WBSLike]) -> list[AggregatedWBSGroup]:
     """Group line items by wbs_code_id, compute totals, source contract_sum from WBS master."""
     wbs_map: dict[uuid.UUID, WBSLike] = {w.id: w for w in wbs_codes}
 
@@ -214,8 +211,7 @@ def aggregate_line_items(
 
 
 def aggregate_variations(
-    rows: Sequence[VariationItemLike],
-    variations: Sequence[VariationLike],
+    rows: Sequence[VariationItemLike], variations: Sequence[VariationLike]
 ) -> list[AggregatedVariationGroup]:
     """Group variation items by variation_id, compute totals.
 
@@ -279,8 +275,7 @@ def aggregate_variations(
 
 
 def aggregate_provisional_sums(
-    rows: Sequence[PSItemLike],
-    provisional_sums: Sequence[PSLike],
+    rows: Sequence[PSItemLike], provisional_sums: Sequence[PSLike]
 ) -> list[AggregatedPSGroup]:
     """Group PS items by provisional_sum_id, compute totals, source contract_sum from master."""
     ps_map: dict[uuid.UUID, PSLike] = {p.id: p for p in provisional_sums}
@@ -340,9 +335,7 @@ def aggregate_provisional_sums(
 
 
 def compute_assessment_totals(
-    wbs_groups: list[AggregatedWBSGroup],
-    var_groups: list[AggregatedVariationGroup],
-    ps_groups: list[AggregatedPSGroup],
+    wbs_groups: list[AggregatedWBSGroup], var_groups: list[AggregatedVariationGroup], ps_groups: list[AggregatedPSGroup]
 ) -> AssessmentTotals:
     """Sum across all groups to produce assessment-level totals."""
     sub_cw = sum((g.total_recommended for g in wbs_groups), ZERO)

@@ -37,35 +37,18 @@ class ClaimParseFlag(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("harness_sessions.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        UUID(as_uuid=True), ForeignKey("harness_sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    claim_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("claims.id"),
-        nullable=True,
-    )
-    flag_type: Mapped[FlagType] = mapped_column(
-        Enum(FlagType, name="flag_type"),
-        nullable=False,
-    )
-    severity: Mapped[FlagSeverity] = mapped_column(
-        Enum(FlagSeverity, name="flag_severity"),
-        nullable=False,
-    )
+    claim_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("claims.id"), nullable=True)
+    flag_type: Mapped[FlagType] = mapped_column(Enum(FlagType, name="flag_type"), nullable=False)
+    severity: Mapped[FlagSeverity] = mapped_column(Enum(FlagSeverity, name="flag_severity"), nullable=False)
     line_item_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     expected_value: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
     actual_value: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
-    resolved_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
-    )
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    session: Mapped["HarnessSession"] = relationship(
-        back_populates="flags", foreign_keys=[session_id]
-    )
+    session: Mapped["HarnessSession"] = relationship(back_populates="flags", foreign_keys=[session_id])

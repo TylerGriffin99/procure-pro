@@ -18,10 +18,6 @@ class ProvisionalSum(AuditMixin, Base):
     description: Mapped[str] = mapped_column(String(1000))
     contract_sum: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     approved_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
-    status: Mapped[VariationStatus] = mapped_column(
-        Enum(VariationStatus), default=VariationStatus.unapproved
-    )
+    status: Mapped[VariationStatus] = mapped_column(Enum(VariationStatus), default=VariationStatus.unapproved)
     trade: Mapped[str | None] = mapped_column(String(255))
-    wbs_code_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("wbs_codes.id")
-    )
+    wbs_code_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("wbs_codes.id"))

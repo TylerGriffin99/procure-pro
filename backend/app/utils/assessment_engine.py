@@ -51,13 +51,7 @@ def calculate_retention_per_tier(total_recommended: Decimal, tiers: list[dict]) 
         up_to = tier.get("up_to_amount")
 
         if remaining <= 0:
-            details.append(
-                {
-                    "percentage": f"{float(pct) * 100:.1f}%",
-                    "base": Decimal("0"),
-                    "amount": Decimal("0"),
-                }
-            )
+            details.append({"percentage": f"{float(pct) * 100:.1f}%", "base": Decimal("0"), "amount": Decimal("0")})
             continue
 
         if up_to is None:
@@ -68,13 +62,7 @@ def calculate_retention_per_tier(total_recommended: Decimal, tiers: list[dict]) 
             remaining -= applicable
 
         retention = (applicable * pct).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        details.append(
-            {
-                "percentage": f"{float(pct) * 100:.1f}%",
-                "base": applicable,
-                "amount": retention,
-            }
-        )
+        details.append({"percentage": f"{float(pct) * 100:.1f}%", "base": applicable, "amount": retention})
 
     return details
 
@@ -104,9 +92,7 @@ def calculate_assessment_totals(
     adjustments = sub_total_variations_recommended - variations_claimed
 
     # Total recommended = contract works + provisional sums + recommended variations
-    total_recommended = (
-        sub_total_contract_works + sub_total_provisional_sums + sub_total_variations_recommended
-    )
+    total_recommended = sub_total_contract_works + sub_total_provisional_sums + sub_total_variations_recommended
 
     # Retention
     total_retention = calculate_retention(total_recommended, retention_tiers)
@@ -118,9 +104,7 @@ def calculate_assessment_totals(
     recommended_this_period = total_payment_to_date - previously_certified
 
     # GST
-    gst_amount = (recommended_this_period * gst_rate).quantize(
-        Decimal("0.01"), rounding=ROUND_HALF_UP
-    )
+    gst_amount = (recommended_this_period * gst_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     total_including_gst = recommended_this_period + gst_amount
 
     return {

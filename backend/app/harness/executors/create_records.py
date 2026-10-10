@@ -20,19 +20,8 @@ from app.models.claim_line_item import ClaimLineItem
 from app.models.provisional_sum import ProvisionalSum
 from app.models.variation import Variation, VariationStatus
 from app.models.wbs_code import WBSCode, WBSLevel
-from app.repos import (
-    assessment_repo,
-    harness_repo,
-    project_repo,
-    provisional_sum_repo,
-    variation_repo,
-    wbs_code_repo,
-)
-from app.utils.assessment_aggregator import (
-    aggregate_line_items,
-    aggregate_provisional_sums,
-    aggregate_variations,
-)
+from app.repos import assessment_repo, harness_repo, project_repo, provisional_sum_repo, variation_repo, wbs_code_repo
+from app.utils.assessment_aggregator import aggregate_line_items, aggregate_provisional_sums, aggregate_variations
 from app.utils.assessment_engine import calculate_assessment_totals
 
 logger = logging.getLogger(__name__)
@@ -66,11 +55,7 @@ def _parse_date(date_str: str | None) -> dt_date | None:
 
 
 async def execute_create_records(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
-    config: dict[str, Any],
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
 ) -> dict:
     """Create Claim, Assessment, and all line item records from workspace data."""
     # Load workspace files
@@ -92,25 +77,17 @@ async def execute_create_records(
     # -- Item count validation --
     max_index = len(line_items) - 1
     cw_indices = {i for i, it in enumerate(line_items) if it.get("item_type") == "contract_work"}
-    vps_indices = {
-        i
-        for i, it in enumerate(line_items)
-        if it.get("item_type") in ("variation", "provisional_sum")
-    }
+    vps_indices = {i for i, it in enumerate(line_items) if it.get("item_type") in ("variation", "provisional_sum")}
 
     # Index range check (before filtering)
     for match in wbs_matches or []:
         idx = match.get("item_index")
         if idx is None or idx < 0 or idx > max_index:
-            raise ValueError(
-                f"WBS match has out-of-range item_index {idx} (valid range: 0-{max_index})"
-            )
+            raise ValueError(f"WBS match has out-of-range item_index {idx} (valid range: 0-{max_index})")
     for match in vps_matches or []:
         idx = match.get("item_index")
         if idx is None or idx < 0 or idx > max_index:
-            raise ValueError(
-                f"VPS match has out-of-range item_index {idx} (valid range: 0-{max_index})"
-            )
+            raise ValueError(f"VPS match has out-of-range item_index {idx} (valid range: 0-{max_index})")
 
     # LLM sometimes categorises all items despite the prompt saying
     # "contract_work only" — filter to the correct item types.
@@ -258,12 +235,7 @@ async def execute_create_records(
                     new_sum = _dec(item.get("contract_value"))
                     existing_ps_rec = next(ps for ps in existing_ps if ps.id == mid)
                     if new_sum and new_sum != existing_ps_rec.contract_sum:
-                        logger.info(
-                            "Updating PS %s contract_sum: %s -> %s",
-                            mid,
-                            existing_ps_rec.contract_sum,
-                            new_sum,
-                        )
+                        logger.info("Updating PS %s contract_sum: %s -> %s", mid, existing_ps_rec.contract_sum, new_sum)
                         existing_ps_rec.contract_sum = new_sum
                 else:
                     logger.warning(
@@ -326,10 +298,7 @@ async def execute_create_records(
         if item_type == "variation" and item_idx not in matched_var_indices:
             clean_desc = _U_PREFIX.sub("", desc).lower().strip()
             # Try to match an existing unclaimed variation by description
-            matched_existing = next(
-                (v for v in unclaimed_vars if v.description.lower().strip() == clean_desc),
-                None,
-            )
+            matched_existing = next((v for v in unclaimed_vars if v.description.lower().strip() == clean_desc), None)
             if matched_existing:
                 var_id_by_index[item_idx] = matched_existing.id
                 unclaimed_vars.remove(matched_existing)
@@ -352,17 +321,12 @@ async def execute_create_records(
                 await db.flush()
                 var_id_by_index[item_idx] = new_var.id
                 next_ci += 1
-                logger.info(
-                    "Created fallback variation for unmatched item_index %s: %s", item_idx, desc
-                )
+                logger.info("Created fallback variation for unmatched item_index %s: %s", item_idx, desc)
 
         elif item_type == "provisional_sum" and item_idx not in matched_ps_indices:
             desc_lower = desc.lower().strip()
             # Try to match an existing unclaimed PS by description
-            matched_existing = next(
-                (ps for ps in unclaimed_ps if ps.description.lower().strip() == desc_lower),
-                None,
-            )
+            matched_existing = next((ps for ps in unclaimed_ps if ps.description.lower().strip() == desc_lower), None)
             if matched_existing:
                 ps_id_by_index[item_idx] = matched_existing.id
                 unclaimed_ps.remove(matched_existing)
@@ -384,9 +348,7 @@ async def execute_create_records(
                 await db.flush()
                 ps_id_by_index[item_idx] = new_ps.id
                 next_ps += 1
-                logger.info(
-                    "Created fallback provisional sum for unmatched item_index %s", item_idx
-                )
+                logger.info("Created fallback provisional sum for unmatched item_index %s", item_idx)
 
     # -- Create Claim --
     claim = Claim(
@@ -439,17 +401,11 @@ async def execute_create_records(
     for cli in claim.line_items:
         prev = cli.previous if cli.previous is not None else ZERO
         if cli.item_type == ClaimItemType.contract_work and cli.suggested_wbs_code_id:
-            claim_prev_by_wbs[cli.suggested_wbs_code_id] = (
-                claim_prev_by_wbs.get(cli.suggested_wbs_code_id, ZERO) + prev
-            )
+            claim_prev_by_wbs[cli.suggested_wbs_code_id] = claim_prev_by_wbs.get(cli.suggested_wbs_code_id, ZERO) + prev
         elif cli.item_type == ClaimItemType.variation and cli.variation_id:
-            claim_prev_by_variation[cli.variation_id] = (
-                claim_prev_by_variation.get(cli.variation_id, ZERO) + prev
-            )
+            claim_prev_by_variation[cli.variation_id] = claim_prev_by_variation.get(cli.variation_id, ZERO) + prev
         elif cli.item_type == ClaimItemType.provisional_sum and cli.provisional_sum_id:
-            claim_prev_by_ps[cli.provisional_sum_id] = (
-                claim_prev_by_ps.get(cli.provisional_sum_id, ZERO) + prev
-            )
+            claim_prev_by_ps[cli.provisional_sum_id] = claim_prev_by_ps.get(cli.provisional_sum_id, ZERO) + prev
 
     # -- Create Assessment (WBS-first approach) --
     latest_assessment = await assessment_repo.get_latest_finalised(db, project_id)
@@ -473,9 +429,7 @@ async def execute_create_records(
             prev_variation_recommended[g.variation_id] = g.total_recommended
             prev_variation_contractor_claim[g.variation_id] = g.contractor_claim_to_date
 
-        prev_ps_groups = aggregate_provisional_sums(
-            latest_assessment.provisional_sum_items, existing_ps
-        )
+        prev_ps_groups = aggregate_provisional_sums(latest_assessment.provisional_sum_items, existing_ps)
         for g in prev_ps_groups:
             prev_ps_recommended[g.provisional_sum_id] = g.total_recommended
             prev_ps_contractor_claim[g.provisional_sum_id] = g.contractor_claim_to_date
@@ -515,9 +469,7 @@ async def execute_create_records(
         # Contractor acceptance: if their `previous` is lower, they accepted QS valuation
         claim_prev = claim_prev_by_wbs.get(wbs.id)
         if claim_prev is not None and claim_prev < prev_contractor_claim:
-            logger.debug(
-                "Contractor acceptance: WBS %s: %s -> %s", wbs.id, prev_contractor_claim, claim_prev
-            )
+            logger.debug("Contractor acceptance: WBS %s: %s -> %s", wbs.id, prev_contractor_claim, claim_prev)
             prev_contractor_claim = claim_prev
         assessment.line_items.append(
             AssessmentLineItem(
@@ -569,9 +521,7 @@ async def execute_create_records(
         # Contractor acceptance
         claim_prev = claim_prev_by_variation.get(var.id)
         if claim_prev is not None and claim_prev < prev_claim:
-            logger.debug(
-                "Contractor acceptance: Variation %s: %s -> %s", var.id, prev_claim, claim_prev
-            )
+            logger.debug("Contractor acceptance: Variation %s: %s -> %s", var.id, prev_claim, claim_prev)
             prev_claim = claim_prev
         assessment.variation_items.append(
             AssessmentVariation(
@@ -579,9 +529,7 @@ async def execute_create_records(
                 claim_line_item_id=None,
                 contractor_claim_to_date=prev_claim,
                 total_recommended=prev_rec,
-                percentage=(prev_rec / var.contractor_submission * 100)
-                if var.contractor_submission
-                else ZERO,
+                percentage=(prev_rec / var.contractor_submission * 100) if var.contractor_submission else ZERO,
                 variance_to_claim=prev_rec - prev_claim,
                 previously_paid=prev_rec,
                 recommended_this_period=ZERO,
@@ -605,9 +553,7 @@ async def execute_create_records(
                     variance_to_claim=ZERO,
                     previously_paid=ZERO,
                     recommended_this_period=current,
-                    status=LineItemStatus.approved
-                    if current == ZERO
-                    else LineItemStatus.unapproved,
+                    status=LineItemStatus.approved if current == ZERO else LineItemStatus.unapproved,
                     created_by=user_id,
                 )
             )
@@ -652,31 +598,20 @@ async def execute_create_records(
                     variance_to_claim=ZERO,
                     previously_paid=ZERO,
                     recommended_this_period=current,
-                    status=LineItemStatus.approved
-                    if current == ZERO
-                    else LineItemStatus.unapproved,
+                    status=LineItemStatus.approved if current == ZERO else LineItemStatus.unapproved,
                     created_by=user_id,
                 )
             )
 
     # -- Calculate retention and assessment summary totals --
-    sub_total_contract_works = sum(
-        ((ali.total_recommended or ZERO) for ali in assessment.line_items), ZERO
-    )
+    sub_total_contract_works = sum(((ali.total_recommended or ZERO) for ali in assessment.line_items), ZERO)
     sub_total_provisional_sums = sum(
         ((aps.total_recommended or ZERO) for aps in assessment.provisional_sum_items), ZERO
     )
-    sub_total_variations_recommended = sum(
-        ((av.total_recommended or ZERO) for av in assessment.variation_items), ZERO
-    )
-    variations_claimed = sum(
-        ((av.contractor_claim_to_date or ZERO) for av in assessment.variation_items), ZERO
-    )
+    sub_total_variations_recommended = sum(((av.total_recommended or ZERO) for av in assessment.variation_items), ZERO)
+    variations_claimed = sum(((av.contractor_claim_to_date or ZERO) for av in assessment.variation_items), ZERO)
 
-    retention_tiers = [
-        {"percentage": t.percentage, "up_to_amount": t.up_to_amount}
-        for t in project.retention_tiers
-    ]
+    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
 
     totals = calculate_assessment_totals(
         contract_sum=project.contract_sum or ZERO,
@@ -718,8 +653,4 @@ async def execute_create_records(
         assessment.total_retention,
     )
 
-    return {
-        "claim_id": str(claim.id),
-        "assessment_id": str(assessment.id),
-        "line_items_created": len(claim.line_items),
-    }
+    return {"claim_id": str(claim.id), "assessment_id": str(assessment.id), "line_items_created": len(claim.line_items)}

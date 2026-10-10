@@ -14,10 +14,7 @@ router = APIRouter(prefix="/projects/{project_id}/claims", tags=["claims"])
 
 @router.post("", response_model=ClaimResponse, status_code=201)
 async def create_claim_manual(
-    project_id: uuid.UUID,
-    body: ClaimCreate,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    project_id: uuid.UUID, body: ClaimCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
 ):
     return await claim_service.create_claim(db, project_id, body, user)
 
@@ -34,9 +31,7 @@ async def upload_claim(
 
 @router.get("", response_model=list[ClaimResponse])
 async def list_claims(
-    project_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    project_id: uuid.UUID, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
 ):
     return await claim_service.list_claims(db, project_id)
 

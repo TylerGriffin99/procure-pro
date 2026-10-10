@@ -30,11 +30,7 @@ def _dec(value: str | None) -> Decimal:
 
 
 async def execute_validate_claim(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
-    config: dict[str, Any],
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
 ) -> dict:
     """Run deterministic validation checks on parsed claim data."""
     raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
@@ -106,10 +102,7 @@ async def execute_validate_claim(
     for ref, count in ref_counts.items():
         if count > 1:
             await _flag(
-                FlagType.duplicate_item,
-                FlagSeverity.warning,
-                f"Ref code '{ref}' appears {count} times",
-                ref=ref,
+                FlagType.duplicate_item, FlagSeverity.warning, f"Ref code '{ref}' appears {count} times", ref=ref
             )
 
     # -- Section total checks --
@@ -162,13 +155,6 @@ async def execute_validate_claim(
             actual=sum_claimed_ptd,
         )
 
-    logger.info(
-        "Validation complete: %d items checked, %d flags created",
-        len(line_items),
-        flags_created,
-    )
+    logger.info("Validation complete: %d items checked, %d flags created", len(line_items), flags_created)
 
-    return {
-        "total_items": len(line_items),
-        "flags_created": flags_created,
-    }
+    return {"total_items": len(line_items), "flags_created": flags_created}

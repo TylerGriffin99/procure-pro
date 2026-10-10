@@ -33,6 +33,4 @@ async def resolve_flag(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return await claim_flag_service.set_resolved(
-        db, flag_id, resolved=body.resolved, user_id=user.id
-    )
+    return await claim_flag_service.set_resolved(db, flag_id, resolved=body.resolved, user_id=user.id)

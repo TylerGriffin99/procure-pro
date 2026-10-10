@@ -77,11 +77,7 @@ def detect_sections(pages: list[dict]) -> dict[int, str]:
     return page_sections
 
 
-def map_row_to_item(
-    row: list[str | None],
-    section: str,
-    item_index: int,
-) -> dict | None:
+def map_row_to_item(row: list[str | None], section: str, item_index: int) -> dict | None:
     """Map a table row to a parsed_claim line item dict.
 
     Returns None if column count is invalid for the section type.
@@ -141,12 +137,7 @@ _METADATA_PATTERNS = {
 
 def extract_metadata(all_pages_text: str) -> dict[str, str]:
     """Extract claim metadata from the combined text of all pages."""
-    result: dict[str, str] = {
-        "claim_number": "",
-        "period_from": "",
-        "period_to": "",
-        "payment_due": "",
-    }
+    result: dict[str, str] = {"claim_number": "", "period_from": "", "period_to": "", "payment_due": ""}
     for key, pattern in _METADATA_PATTERNS.items():
         match = pattern.search(all_pages_text)
         if match:
@@ -246,8 +237,4 @@ def parse_wbpro(raw_extraction: dict) -> dict:
         sum(1 for i in line_items if i["item_type"] == "provisional_sum"),
     )
 
-    return {
-        "metadata": metadata,
-        "line_items": line_items,
-        "summary": summary,
-    }
+    return {"metadata": metadata, "line_items": line_items, "summary": summary}

@@ -38,9 +38,7 @@ class Assessment(AuditMixin, Base):
     claim_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("claims.id"))
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"))
     version: Mapped[int] = mapped_column(Integer, default=1)
-    status: Mapped[AssessmentStatus] = mapped_column(
-        Enum(AssessmentStatus), default=AssessmentStatus.draft
-    )
+    status: Mapped[AssessmentStatus] = mapped_column(Enum(AssessmentStatus), default=AssessmentStatus.draft)
 
     contract_sum: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     adjustment_to_provisional_sums: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
@@ -59,14 +57,10 @@ class Assessment(AuditMixin, Base):
     finalised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     line_items: Mapped[list["AssessmentLineItem"]] = relationship(
-        back_populates="assessment",
-        cascade="all, delete-orphan",
-        foreign_keys="[AssessmentLineItem.assessment_id]",
+        back_populates="assessment", cascade="all, delete-orphan", foreign_keys="[AssessmentLineItem.assessment_id]"
     )
     variation_items: Mapped[list["AssessmentVariation"]] = relationship(
-        back_populates="assessment",
-        cascade="all, delete-orphan",
-        foreign_keys="[AssessmentVariation.assessment_id]",
+        back_populates="assessment", cascade="all, delete-orphan", foreign_keys="[AssessmentVariation.assessment_id]"
     )
     provisional_sum_items: Mapped[list["AssessmentProvisionalSum"]] = relationship(
         back_populates="assessment",

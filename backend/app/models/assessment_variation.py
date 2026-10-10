@@ -18,9 +18,7 @@ class AssessmentVariation(AuditMixin, Base):
     __tablename__ = "assessment_variations"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    assessment_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("assessments.id")
-    )
+    assessment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("assessments.id"))
     variation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("variations.id"))
     claim_line_item_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("claim_line_items.id"), nullable=True
@@ -32,22 +30,15 @@ class AssessmentVariation(AuditMixin, Base):
     variance_to_claim: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     previously_paid: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     recommended_this_period: Mapped[Decimal] = mapped_column(Numeric(15, 2))
-    status: Mapped[LineItemStatus] = mapped_column(
-        Enum(LineItemStatus), default=LineItemStatus.unapproved
-    )
+    status: Mapped[LineItemStatus] = mapped_column(Enum(LineItemStatus), default=LineItemStatus.unapproved)
     comments: Mapped[str | None] = mapped_column(Text)
     is_closed_out: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    adjustment_type: Mapped[AdjustmentType | None] = mapped_column(
-        Enum(AdjustmentType), nullable=True
-    )
+    adjustment_type: Mapped[AdjustmentType | None] = mapped_column(Enum(AdjustmentType), nullable=True)
     source_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("assessments.id"), nullable=True
     )
 
-    assessment: Mapped["Assessment"] = relationship(
-        back_populates="variation_items",
-        foreign_keys=[assessment_id],
-    )
+    assessment: Mapped["Assessment"] = relationship(back_populates="variation_items", foreign_keys=[assessment_id])
     variation: Mapped["Variation"] = relationship()
 
     @property

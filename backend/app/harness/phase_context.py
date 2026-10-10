@@ -8,9 +8,7 @@ from typing import Any
 from app.repos import harness_repo
 
 
-async def build_phase_context(
-    *, db: Any, session_id: Any, project_id: Any, phase_def: Any
-) -> dict[str, str]:
+async def build_phase_context(*, db: Any, session_id: Any, project_id: Any, phase_def: Any) -> dict[str, str]:
     """Load workspace inputs and context-loader output into a template context."""
     context: dict[str, str] = {}
     for path in phase_def.workspace_inputs:

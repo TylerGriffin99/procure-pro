@@ -36,9 +36,7 @@ class Project(AuditMixin, Base):
     provisional_sum_total: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     gst_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0.15"))
 
-    wbs_codes: Mapped[list["WBSCode"]] = relationship(
-        back_populates="project", cascade="all, delete-orphan"
-    )
+    wbs_codes: Mapped[list["WBSCode"]] = relationship(back_populates="project", cascade="all, delete-orphan")
     retention_tiers: Mapped[list["RetentionTier"]] = relationship(
         back_populates="project", cascade="all, delete-orphan", order_by="RetentionTier.tier_order"
     )

@@ -21,12 +21,7 @@ class HarnessPhaseInfo(BaseModel):
 
     @classmethod
     def from_definition(
-        cls,
-        definition: HarnessDefinition,
-        *,
-        current_phase: int,
-        phase_results: dict,
-        status: str,
+        cls, definition: HarnessDefinition, *, current_phase: int, phase_results: dict, status: str
     ) -> list[HarnessPhaseInfo]:
         infos: list[HarnessPhaseInfo] = []
         for i, phase_def in enumerate(definition.phases):
@@ -65,9 +60,7 @@ class HarnessSessionResponse(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_session(
-        cls, session: HarnessSession, definition: HarnessDefinition | None
-    ) -> HarnessSessionResponse:
+    def from_session(cls, session: HarnessSession, definition: HarnessDefinition | None) -> HarnessSessionResponse:
         phases = (
             HarnessPhaseInfo.from_definition(
                 definition,

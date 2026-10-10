@@ -10,24 +10,17 @@ from app.models.assessment_variation import AssessmentVariation
 
 
 def _eager_options(
-    *,
-    with_line_items: bool = True,
-    with_variations: bool = True,
-    with_provisional_sums: bool = True,
+    *, with_line_items: bool = True, with_variations: bool = True, with_provisional_sums: bool = True
 ) -> list:
     """Build a list of selectinload options for Assessment queries."""
     opts: list = []
     if with_line_items:
         opts.append(selectinload(Assessment.line_items))
     if with_variations:
-        opts.append(
-            selectinload(Assessment.variation_items).selectinload(AssessmentVariation.variation)
-        )
+        opts.append(selectinload(Assessment.variation_items).selectinload(AssessmentVariation.variation))
     if with_provisional_sums:
         opts.append(
-            selectinload(Assessment.provisional_sum_items).selectinload(
-                AssessmentProvisionalSum.provisional_sum
-            )
+            selectinload(Assessment.provisional_sum_items).selectinload(AssessmentProvisionalSum.provisional_sum)
         )
     return opts
 
@@ -101,9 +94,7 @@ async def get_latest_by_claim(
 
 async def get_latest_version_number(db: AsyncSession, claim_id: uuid.UUID) -> int:
     result = await db.execute(
-        select(Assessment)
-        .where(Assessment.claim_id == claim_id)
-        .order_by(Assessment.version.desc())
+        select(Assessment).where(Assessment.claim_id == claim_id).order_by(Assessment.version.desc())
     )
     latest = result.scalar_one_or_none()
     return latest.version if latest else 0

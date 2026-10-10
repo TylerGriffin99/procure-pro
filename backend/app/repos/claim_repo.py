@@ -24,9 +24,7 @@ async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[Claim]
     return list(result.scalars().all())
 
 
-async def get_by_id(
-    db: AsyncSession, claim_id: uuid.UUID, project_id: uuid.UUID | None = None
-) -> Claim | None:
+async def get_by_id(db: AsyncSession, claim_id: uuid.UUID, project_id: uuid.UUID | None = None) -> Claim | None:
     stmt = select(Claim).options(selectinload(Claim.line_items)).where(Claim.id == claim_id)
     if project_id is not None:
         stmt = stmt.where(Claim.project_id == project_id)

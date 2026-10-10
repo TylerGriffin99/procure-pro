@@ -11,13 +11,7 @@ import logging
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import (
-    DataError,
-    IntegrityError,
-    InterfaceError,
-    NoResultFound,
-    OperationalError,
-)
+from sqlalchemy.exc import DataError, IntegrityError, InterfaceError, NoResultFound, OperationalError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 
 from app.exceptions import AppError
@@ -28,9 +22,7 @@ logger = logging.getLogger(__name__)
 CONFLICT_SQLSTATES = frozenset({"23505", "23503"})  # unique_violation, foreign_key_violation
 
 
-def detail_response(
-    status_code: int, detail: str, headers: dict[str, str] | None = None
-) -> JSONResponse:
+def detail_response(status_code: int, detail: str, headers: dict[str, str] | None = None) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": detail}, headers=headers)
 
 
@@ -58,12 +50,7 @@ async def handle_integrity_error(request: Request, exc: Exception) -> JSONRespon
     status = 409 if sqlstate(exc) in CONFLICT_SQLSTATES else 400
     message = driver_message(exc)
     logger.warning(
-        "DB %s (sqlstate=%s) on %s %s: %s",
-        type(exc).__name__,
-        sqlstate(exc),
-        request.method,
-        request.url.path,
-        message,
+        "DB %s (sqlstate=%s) on %s %s: %s", type(exc).__name__, sqlstate(exc), request.method, request.url.path, message
     )
     return detail_response(status, message)
 
@@ -72,12 +59,7 @@ async def handle_data_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, DataError)
     message = driver_message(exc)
     logger.warning(
-        "DB %s (sqlstate=%s) on %s %s: %s",
-        type(exc).__name__,
-        sqlstate(exc),
-        request.method,
-        request.url.path,
-        message,
+        "DB %s (sqlstate=%s) on %s %s: %s", type(exc).__name__, sqlstate(exc), request.method, request.url.path, message
     )
     return detail_response(400, message)
 
@@ -104,13 +86,7 @@ async def handle_db_unavailable(request: Request, exc: Exception) -> JSONRespons
 async def handle_upstream_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, httpx.HTTPStatusError)
     status = exc.response.status_code
-    logger.error(
-        "Upstream %s returned %s on %s %s",
-        exc.request.url.host,
-        status,
-        request.method,
-        request.url.path,
-    )
+    logger.error("Upstream %s returned %s on %s %s", exc.request.url.host, status, request.method, request.url.path)
     return detail_response(502, f"Upstream service error ({status})")
 
 
