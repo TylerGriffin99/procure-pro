@@ -2,7 +2,13 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.exc import DataError, IntegrityError, NoResultFound, OperationalError
+from sqlalchemy.exc import (
+    DataError,
+    IntegrityError,
+    InterfaceError,
+    NoResultFound,
+    OperationalError,
+)
 
 from app.error_handlers import register
 from app.exceptions import ConflictError, NotFoundError, UnauthorizedError
@@ -59,6 +65,18 @@ def build_app() -> FastAPI:
     async def db_down():
         raise OperationalError("stmt", {}, FakePgError("connection refused", None))
 
+    @app.get("/db-down-empty")
+    async def db_down_empty():
+        raise OperationalError("stmt", {}, ConnectionResetError())
+
+    @app.get("/db-interface")
+    async def db_interface():
+        raise InterfaceError("stmt", {}, FakePgError("connection lost", None))
+
+    @app.get("/integrity-empty")
+    async def integrity_empty():
+        raise IntegrityError("stmt", {}, Exception(""))
+
     @app.get("/upstream")
     async def upstream():
         req = httpx.Request("POST", "https://jev.test/decisions")
@@ -92,6 +110,9 @@ async def client():
         ("/data", 400, "invalid input syntax for type uuid"),
         ("/no-result", 404, "Resource not found"),
         ("/db-down", 503, "connection refused"),
+        ("/db-down-empty", 503, "ConnectionResetError"),
+        ("/db-interface", 503, "connection lost"),
+        ("/integrity-empty", 400, "Exception"),
         ("/upstream", 502, "Upstream service error (402)"),
         ("/boom", 500, "Internal server error"),
     ],

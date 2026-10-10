@@ -38,7 +38,9 @@ def driver_message(exc: Exception) -> str:
     """First line of the DB driver's message — never ``str(exc)``, which SQLAlchemy pads
     with the SQL statement and bound parameters."""
     orig = getattr(exc, "orig", None)
-    return str(orig if orig is not None else exc).splitlines()[0]
+    source = orig if orig is not None else exc
+    lines = str(source).splitlines()
+    return lines[0] if lines else type(source).__name__
 
 
 def sqlstate(exc: Exception) -> str | None:
@@ -54,12 +56,30 @@ async def handle_app_error(request: Request, exc: Exception) -> JSONResponse:
 async def handle_integrity_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, IntegrityError)
     status = 409 if sqlstate(exc) in CONFLICT_SQLSTATES else 400
-    return detail_response(status, driver_message(exc))
+    message = driver_message(exc)
+    logger.warning(
+        "DB %s (sqlstate=%s) on %s %s: %s",
+        type(exc).__name__,
+        sqlstate(exc),
+        request.method,
+        request.url.path,
+        message,
+    )
+    return detail_response(status, message)
 
 
 async def handle_data_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, DataError)
-    return detail_response(400, driver_message(exc))
+    message = driver_message(exc)
+    logger.warning(
+        "DB %s (sqlstate=%s) on %s %s: %s",
+        type(exc).__name__,
+        sqlstate(exc),
+        request.method,
+        request.url.path,
+        message,
+    )
+    return detail_response(400, message)
 
 
 async def handle_no_result(request: Request, exc: Exception) -> JSONResponse:
@@ -68,10 +88,17 @@ async def handle_no_result(request: Request, exc: Exception) -> JSONResponse:
 
 
 async def handle_db_unavailable(request: Request, exc: Exception) -> JSONResponse:
+    message = driver_message(exc)
     logger.error(
-        "Database unavailable on %s %s: %s", request.method, request.url.path, driver_message(exc)
+        "Database unavailable (%s, sqlstate=%s) on %s %s: %s",
+        type(getattr(exc, "orig", exc)).__name__,
+        sqlstate(exc),
+        request.method,
+        request.url.path,
+        message,
+        exc_info=exc,
     )
-    return detail_response(503, driver_message(exc))
+    return detail_response(503, message)
 
 
 async def handle_upstream_error(request: Request, exc: Exception) -> JSONResponse:
