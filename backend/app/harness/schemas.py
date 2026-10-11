@@ -16,7 +16,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, VpsKind
+from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, MatcherName, VpsKind
 from app.schemas.assessment_aggregate import AssessmentAggregate
 from app.schemas.base import StrictModel
 from app.schemas.claim_extraction import ClaimMetadata
@@ -232,6 +232,11 @@ class VpsRecord(StrictModel):
     item_type: VpsKind
 
 
+class JevTuning(StrictModel):
+    confidence_floor: float
+    max_concurrency: int
+
+
 class ItemDecision(StrictModel):
     """One Jev answer for one line item. ``failed`` means the call failed non-fatally
     and the caller should treat the item as unmatched."""
@@ -246,6 +251,7 @@ class ItemDecision(StrictModel):
 class MatchOutcome(StrictModel):
     """Result of a matcher run: the typed list, its serialized form, and usage counters."""
 
+    matcher: MatcherName
     output: list[Any]  # list[WbsMatch] or list[VpsMatch]
     output_json: str  # bare JSON array matching the phase output_schema
     input_tokens: int = 0

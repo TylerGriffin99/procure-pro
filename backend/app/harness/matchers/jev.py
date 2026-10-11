@@ -9,31 +9,39 @@ from __future__ import annotations
 
 import functools
 import logging
-import uuid
-from typing import TYPE_CHECKING, cast
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Final, cast
 
 from pydantic import TypeAdapter
 
 from app.clients.jev_client import JevClient
 from app.clients.llm_client import LlmClient
-from app.config import settings
-from app.constants.enums import ClaimItemType, VpsKind
+from app.constants.enums import ClaimItemType, MatcherName, VpsKind
+from app.exceptions import ExternalServiceError
 from app.harness.matchers.data import read_parsed_items, vps_records, wbs_subcategories
-from app.harness.matchers.llm import run_llm_matches
+from app.harness.matchers.llm import match_with_llm
+from app.harness.models import PhaseRun
 from app.harness.prompts import load_prompt
-from app.harness.schemas import ItemDecision, MatchOutcome, ParsedClaimItem, Subcat, VpsMatch, VpsRecord, WbsMatch
+from app.harness.schemas import (
+    ItemDecision,
+    JevTuning,
+    MatchOutcome,
+    ParsedClaimItem,
+    Subcat,
+    VpsMatch,
+    VpsRecord,
+    WbsMatch,
+)
 from app.utils.concurrency import bounded_gather
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    from app.harness.models import PhaseDefinition
 
 logger = logging.getLogger(__name__)
 
 NONE_OPTION = "__none__"
 WBS_INSTRUCTIONS = load_prompt("jev_wbs_instructions").strip().format(none_option=NONE_OPTION)
 VPS_INSTRUCTIONS = load_prompt("jev_vps_instructions").strip().format(none_option=NONE_OPTION)
+VPS_KINDS: Final = frozenset({ClaimItemType.variation, ClaimItemType.provisional_sum})
+WBS_MATCHES: Final = TypeAdapter(list[WbsMatch])
+VPS_MATCHES: Final = TypeAdapter(list[VpsMatch])
 
 
 def build_wbs_criteria(subcats: list[Subcat]) -> tuple[dict[str, str], dict[str, str]]:
@@ -63,7 +71,9 @@ def build_vps_criteria(records: list[VpsRecord]) -> tuple[dict[str, str], set[st
     return criteria, {r.id for r in records}
 
 
-def to_vps_match(decision: ItemDecision, vps_type: VpsKind, valid_ids: set[str]) -> tuple[VpsMatch, bool]:
+def to_vps_match(
+    decision: ItemDecision, vps_type: VpsKind, valid_ids: set[str], *, floor: float
+) -> tuple[VpsMatch, bool]:
     """Build a ``VpsMatch`` from a Jev choice; return ``(match, out_of_criteria)``.
 
     A choice outside the supplied records (and not ``NONE_OPTION``) is a grounding
@@ -75,7 +85,6 @@ def to_vps_match(decision: ItemDecision, vps_type: VpsKind, valid_ids: set[str])
     if out_of_criteria:
         logger.warning("JevMatcher: out-of-criteria VPS choice %r for item %s; treating as new record", choice, idx)
     matched_id = choice if in_valid else None
-    floor = settings.jev_confidence_floor
     if matched_id is not None and conf < floor:
         logger.warning(
             "JevMatcher: VPS item %s confidence %.2f below floor %.2f; treating as new record", idx, conf, floor
@@ -110,164 +119,194 @@ def to_wbs_match(decision: ItemDecision, key_to_id: dict[str, str], by_id: dict[
     return match, out_of_criteria
 
 
-class JevMatcher:
-    def __init__(self, client: JevClient | None = None, llm: LlmClient | None = None) -> None:
-        self.client = client or JevClient.from_settings(settings)
-        self.llm = llm or LlmClient.from_settings(settings)
+async def decide_item(
+    item: ParsedClaimItem, *, client: JevClient, criteria: dict[str, str], instructions: str
+) -> ItemDecision:
+    """One Jev choice for one item. Non-fatal failures (network, 5xx after retries,
+    malformed answers) become ``failed=True``; fatal HTTP errors propagate."""
+    qid = f"item_{item.item_index}"
+    try:
+        data = await client.choose(qid=qid, state=client.item_state(item), criteria=criteria, instructions=instructions)
+        answer = data.answers[qid]
+    except Exception as exc:
+        if client.is_fatal(exc):
+            raise
+        logger.warning(
+            "JevMatcher: Jev call for item %s failed (%s)", item.item_index, type(exc).__name__, exc_info=True
+        )
+        return ItemDecision(item_index=item.item_index, failed=True)
+    return ItemDecision(
+        item_index=item.item_index,
+        choice=answer.choice,
+        confidence=answer.confidence,
+        input_tokens=data.usage.input_tokens,
+    )
 
-    async def match(
-        self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
-    ) -> MatchOutcome:
-        if phase_def.output_schema == list[VpsMatch]:
-            return await self.match_vps(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)
-        return await self.match_wbs(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)
 
-    async def decide_item(self, item: ParsedClaimItem, *, criteria: dict[str, str], instructions: str) -> ItemDecision:
-        """One Jev choice for one item. Non-fatal failures (network, 5xx after retries,
-        malformed answers) become ``failed=True``; fatal HTTP errors propagate."""
-        qid = f"item_{item.item_index}"
-        try:
-            data = await self.client.choose(
-                qid=qid, state=self.client.item_state(item), criteria=criteria, instructions=instructions
+async def decide_items(
+    items: list[ParsedClaimItem],
+    *,
+    client: JevClient,
+    phase_name: str,
+    criteria: dict[str, str],
+    instructions: str,
+    limit: int,
+) -> list[ItemDecision]:
+    """Budget-check, then fan out ``decide_item`` under ``limit`` concurrent calls."""
+    client.check_context_budget(
+        phase_name=phase_name,
+        states=[client.item_state(i) for i in items],
+        criteria=criteria,
+        instructions=instructions,
+    )
+    decide = functools.partial(decide_item, client=client, criteria=criteria, instructions=instructions)
+    return await bounded_gather(items, decide, limit=limit)
+
+
+def residue_of(results: dict[int, WbsMatch], floor: float) -> set[int]:
+    # Residue = Jev picked none/unknown OR confidence below the floor.
+    return {idx for idx, m in results.items() if m.is_new or m.wbs_code_id is None or m.confidence < floor}
+
+
+async def resolve_residue(
+    residue: set[int], results: dict[int, WbsMatch], *, fallback: Callable[[], Awaitable[MatchOutcome]]
+) -> tuple[dict[int, WbsMatch], MatchOutcome]:
+    """Resolve none / low-confidence WBS items via the LLM fallback; return the merged results and the
+    LLM ``MatchOutcome`` so the caller can fold in its token usage."""
+    logger.info(
+        "JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
+        len(residue),
+        len(results),
+        sorted(residue),
+    )
+    outcome = await fallback()
+    resolved = {m.item_index: m for m in outcome.output if m.item_index in residue}
+    missing = residue - set(resolved)
+    if missing:
+        logger.warning("JevMatcher: residue items not resolved by LLM, keeping placeholder: %s", sorted(missing))
+    return results | resolved, outcome
+
+
+def vps_results(
+    decisions: Sequence[ItemDecision], items: Sequence[ParsedClaimItem], valid_ids: set[str], *, floor: float
+) -> tuple[dict[int, VpsMatch], int, int]:
+    by_index = {i.item_index: i for i in items}
+    results: dict[int, VpsMatch] = {}
+    failed = ooc = 0
+    for d in decisions:
+        # Safe: items were pre-filtered to these two types.
+        vps_type = cast(VpsKind, by_index[d.item_index].item_type)
+        if d.failed:
+            logger.warning("JevMatcher VPS item %s failed, treating as new record", d.item_index)
+            failed += 1
+            results[d.item_index] = VpsMatch(
+                item_index=d.item_index, item_type=vps_type, matched_id=None, confidence=0.0
             )
-            answer = data.answers[qid]
-        except Exception as exc:
-            if self.client.is_fatal(exc):
-                raise
-            logger.warning(
-                "JevMatcher: Jev call for item %s failed (%s)", item.item_index, type(exc).__name__, exc_info=True
-            )
-            return ItemDecision(item_index=item.item_index, failed=True)
-        return ItemDecision(
-            item_index=item.item_index,
-            choice=answer.choice,
-            confidence=answer.confidence,
-            input_tokens=data.usage.input_tokens,
-        )
+            continue
+        match, is_ooc = to_vps_match(d, vps_type, valid_ids, floor=floor)
+        ooc += is_ooc
+        results[d.item_index] = match
+    return results, failed, ooc
 
-    async def decide_items(
-        self, items: list[ParsedClaimItem], *, phase_name: str, criteria: dict[str, str], instructions: str
-    ) -> list[ItemDecision]:
-        """Budget-check, then fan out ``decide_item`` under ``settings.jev_max_concurrency``."""
-        self.client.check_context_budget(
-            phase_name=phase_name,
-            states=[self.client.item_state(i) for i in items],
-            criteria=criteria,
-            instructions=instructions,
-        )
-        decide = functools.partial(self.decide_item, criteria=criteria, instructions=instructions)
-        return await bounded_gather(items, decide, limit=settings.jev_max_concurrency)
 
-    async def resolve_residue(
-        self,
-        residue: set[int],
-        results: dict[int, WbsMatch],
-        *,
-        phase_def: PhaseDefinition,
-        db: AsyncSession,
-        project_id: uuid.UUID,
-        session_id: uuid.UUID,
-    ) -> MatchOutcome:
-        """Resolve none / low-confidence WBS items via the LLM and merge them into ``results``.
+async def match_vps(
+    items: list[ParsedClaimItem], records: list[VpsRecord], *, phase_name: str, client: JevClient, tuning: JevTuning
+) -> MatchOutcome:
+    criteria, valid_ids = build_vps_criteria(records)
+    decisions = await decide_items(
+        items,
+        client=client,
+        phase_name=phase_name,
+        criteria=criteria,
+        instructions=VPS_INSTRUCTIONS,
+        limit=tuning.max_concurrency,
+    )
+    results, failed, ooc = vps_results(decisions, items, valid_ids, floor=tuning.confidence_floor)
+    if results and failed == len(results):
+        logger.warning("JevMatcher: all %d VPS items failed Jev; failing the phase", len(results))
+        raise ExternalServiceError("Jev matcher failed for every item")
+    output = [results[k] for k in sorted(results)]
+    return MatchOutcome(
+        matcher=MatcherName.jev,
+        output=output,
+        output_json=VPS_MATCHES.dump_json(output).decode(),
+        input_tokens=sum(d.input_tokens for d in decisions),
+        output_tokens=0,
+        fell_back=failed,
+        out_of_criteria=ooc,
+    )
 
-        Returns the LLM ``MatchOutcome`` so the caller can fold in its token usage.
-        """
-        logger.info(
-            "JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
-            len(residue),
-            len(results),
-            sorted(residue),
-        )
-        outcome = await run_llm_matches(
-            phase_def=phase_def, db=db, project_id=project_id, session_id=session_id, llm=self.llm
-        )
-        resolved = {m.item_index: m for m in outcome.output if m.item_index in residue}
-        missing = residue - set(resolved)
-        if missing:
-            logger.warning("JevMatcher: residue items not resolved by LLM, keeping placeholder: %s", sorted(missing))
-        results.update(resolved)
-        return outcome
 
-    async def match_vps(
-        self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
-    ) -> MatchOutcome:
-        kinds = {ClaimItemType.variation, ClaimItemType.provisional_sum}
-        items = [i for i in await read_parsed_items(db, session_id) if i.item_type in kinds]
-        records = await vps_records(db=db, project_id=project_id)
-        criteria, valid_ids = build_vps_criteria(records)
-        decisions = await self.decide_items(
-            items, phase_name=phase_def.name, criteria=criteria, instructions=VPS_INSTRUCTIONS
-        )
-        by_index = {i.item_index: i for i in items}
-        results: dict[int, VpsMatch] = {}
-        failed = ooc = 0
-        for d in decisions:
-            # Safe: items were pre-filtered to these two types above.
-            vps_type = cast(VpsKind, by_index[d.item_index].item_type)
-            if d.failed:
-                logger.warning("JevMatcher VPS item %s failed, treating as new record", d.item_index)
-                failed += 1
-                results[d.item_index] = VpsMatch(
-                    item_index=d.item_index, item_type=vps_type, matched_id=None, confidence=0.0
-                )
-                continue
-            match, is_ooc = to_vps_match(d, vps_type, valid_ids)
-            ooc += is_ooc
-            results[d.item_index] = match
-        if results and failed == len(results):
-            logger.warning("JevMatcher: all %d VPS items failed Jev; created as new records", len(results))
-        output = [results[k] for k in sorted(results)]
-        return MatchOutcome(
-            output=output,
-            output_json=TypeAdapter(list[VpsMatch]).dump_json(output).decode(),
-            input_tokens=sum(d.input_tokens for d in decisions),
-            output_tokens=0,
-            fell_back=failed,
-            out_of_criteria=ooc,
-        )
+def wbs_results(
+    decisions: Sequence[ItemDecision], key_to_id: dict[str, str], by_id: dict[str, Subcat]
+) -> tuple[dict[int, WbsMatch], int, int]:
+    results: dict[int, WbsMatch] = {}
+    failed = ooc = 0
+    for d in decisions:
+        if d.failed:
+            logger.warning("JevMatcher item %s fell back to LLM", d.item_index)
+            failed += 1
+            results[d.item_index] = WbsMatch(item_index=d.item_index, wbs_code="", is_new=True, confidence=0.0)
+            continue
+        match, is_ooc = to_wbs_match(d, key_to_id, by_id)
+        ooc += is_ooc
+        results[d.item_index] = match
+    if results and failed == len(results):
+        logger.warning("JevMatcher: all %d items fell back to LLM (Jev unavailable)", len(results))
+    return results, failed, ooc
 
-    async def match_wbs(
-        self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
-    ) -> MatchOutcome:
-        items = [i for i in await read_parsed_items(db, session_id) if i.item_type == ClaimItemType.contract_work]
-        subcats = await wbs_subcategories(db=db, project_id=project_id)
-        criteria, key_to_id = build_wbs_criteria(subcats)
-        by_id = {s.id: s for s in subcats}
-        decisions = await self.decide_items(
-            items, phase_name=phase_def.name, criteria=criteria, instructions=WBS_INSTRUCTIONS
-        )
-        results: dict[int, WbsMatch] = {}
-        failed = ooc = 0
-        for d in decisions:
-            if d.failed:
-                logger.warning("JevMatcher item %s fell back to LLM", d.item_index)
-                failed += 1
-                results[d.item_index] = WbsMatch(item_index=d.item_index, wbs_code="", is_new=True, confidence=0.0)
-                continue
-            match, is_ooc = to_wbs_match(d, key_to_id, by_id)
-            ooc += is_ooc
-            results[d.item_index] = match
-        if results and failed == len(results):
-            logger.warning("JevMatcher: all %d items fell back to LLM (Jev unavailable)", len(results))
 
-        # Residue = Jev picked none/unknown OR confidence below the floor.
-        floor = settings.jev_confidence_floor
-        residue = {idx for idx, m in results.items() if m.is_new or m.wbs_code_id is None or m.confidence < floor}
-        in_tok = sum(d.input_tokens for d in decisions)
-        out_tok = 0
-        if residue:
-            llm = await self.resolve_residue(
-                residue, results, phase_def=phase_def, db=db, project_id=project_id, session_id=session_id
-            )
-            in_tok += llm.input_tokens
-            out_tok += llm.output_tokens
-        output = [results[k] for k in sorted(results)]
-        return MatchOutcome(
-            output=output,
-            output_json=TypeAdapter(list[WbsMatch]).dump_json(output).decode(),
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-            fell_back=failed,
-            residue=len(residue),
-            out_of_criteria=ooc,
-        )
+async def match_wbs(
+    items: list[ParsedClaimItem],
+    subcats: list[Subcat],
+    *,
+    phase_name: str,
+    client: JevClient,
+    tuning: JevTuning,
+    fallback: Callable[[], Awaitable[MatchOutcome]],
+) -> MatchOutcome:
+    criteria, key_to_id = build_wbs_criteria(subcats)
+    decisions = await decide_items(
+        items,
+        client=client,
+        phase_name=phase_name,
+        criteria=criteria,
+        instructions=WBS_INSTRUCTIONS,
+        limit=tuning.max_concurrency,
+    )
+    results, failed, ooc = wbs_results(decisions, key_to_id, {s.id: s for s in subcats})
+    residue = residue_of(results, tuning.confidence_floor)
+    in_tok, out_tok = sum(d.input_tokens for d in decisions), 0
+    if residue:
+        results, llm_outcome = await resolve_residue(residue, results, fallback=fallback)
+        in_tok += llm_outcome.input_tokens
+        out_tok += llm_outcome.output_tokens
+    output = [results[k] for k in sorted(results)]
+    return MatchOutcome(
+        matcher=MatcherName.jev,
+        output=output,
+        output_json=WBS_MATCHES.dump_json(output).decode(),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        fell_back=failed,
+        residue=len(residue),
+        out_of_criteria=ooc,
+    )
+
+
+async def match_with_jev(phase: PhaseRun, *, client: JevClient, llm: LlmClient, tuning: JevTuning) -> MatchOutcome:
+    items = await read_parsed_items(phase.db, phase.session_id)
+    if phase.phase_def.output_schema == list[VpsMatch]:
+        in_scope = [i for i in items if i.item_type in VPS_KINDS]
+        records = await vps_records(db=phase.db, project_id=phase.project_id)
+        return await match_vps(in_scope, records, phase_name=phase.phase_def.name, client=client, tuning=tuning)
+    in_scope = [i for i in items if i.item_type == ClaimItemType.contract_work]
+    subcats = await wbs_subcategories(db=phase.db, project_id=phase.project_id)
+    return await match_wbs(
+        in_scope,
+        subcats,
+        phase_name=phase.phase_def.name,
+        client=client,
+        tuning=tuning,
+        fallback=functools.partial(match_with_llm, phase, llm=llm),
+    )

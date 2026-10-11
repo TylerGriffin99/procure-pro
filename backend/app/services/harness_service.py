@@ -8,15 +8,14 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.harness.definitions  # noqa: F401 — triggers registration
-from app.clients.llm_client import LlmClient
 from app.config import settings
 from app.constants.enums import HarnessSessionStatus
 from app.database import async_session
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.harness.engine import HarnessEngine, describe_error
+from app.harness.definitions import HARNESS_DEFINITIONS
+from app.harness.engine import describe_error
+from app.harness.factory import build_engine
 from app.harness.models import HarnessDefinition, HarnessErrorEvent, HarnessEvent, HarnessType
-from app.harness.registry import harness_registry
 from app.models.harness_session import HarnessSession
 from app.models.user import User
 from app.repos import harness_repo
@@ -53,7 +52,7 @@ async def get_owned_session(db: AsyncSession, session_id: uuid.UUID, user_id: uu
 async def get_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> HarnessSessionResponse:
     session = await get_owned_session(db, session_id, user.id)
     ht = coerce_harness_type(session.harness_type)
-    definition = harness_registry.get(ht) if ht else None
+    definition = HARNESS_DEFINITIONS.get(ht) if ht else None
     return HarnessSessionResponse.from_session(session, definition)
 
 
@@ -64,7 +63,7 @@ async def prepare_stream(
     if session.status in (HarnessSessionStatus.completed, HarnessSessionStatus.failed):
         raise BadRequestError(f"Session already {session.status.value}")
     ht = coerce_harness_type(session.harness_type)
-    definition = harness_registry.get(ht) if ht is not None else None
+    definition = HARNESS_DEFINITIONS.get(ht) if ht is not None else None
     if not definition:
         raise BadRequestError(f"Unknown harness type: {session.harness_type}")
     return session, definition
@@ -75,13 +74,13 @@ async def stream_events(
 ) -> AsyncGenerator[str, None]:
     """Run the engine on a DB session that outlives the HTTP request and yield SSE frames."""
     async with async_session() as engine_db:
-        engine = HarnessEngine(
+        engine = build_engine(
+            settings=settings,
             definition=definition,
             session_id=session_id,
             user_id=user_id,
             project_id=project_id,
             db=engine_db,
-            llm=LlmClient.from_settings(settings),
         )
         try:
             async for event in engine.run():

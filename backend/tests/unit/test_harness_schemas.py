@@ -5,6 +5,7 @@ import json
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from app.constants import MatcherName
 from app.harness.schemas import GenericExtraction, ItemDecision, MatchOutcome, Subcat, VpsMatch, VpsRecord, WbsMatch
 
 
@@ -85,7 +86,7 @@ class TestGenericExtraction:
 
 
 def test_match_outcome_defaults_and_frozen():
-    out = MatchOutcome(output=[], output_json="[]")
+    out = MatchOutcome(matcher=MatcherName.jev, output=[], output_json="[]")
     assert (out.input_tokens, out.output_tokens, out.fell_back, out.residue, out.out_of_criteria) == (0, 0, 0, 0, 0)
     with pytest.raises(ValidationError):
         out.fell_back = 1  # type: ignore[misc]

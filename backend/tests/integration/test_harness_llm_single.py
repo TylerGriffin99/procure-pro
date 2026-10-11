@@ -7,7 +7,7 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from app.clients.llm_client import LlmClient
-from app.constants import LlmProvider
+from app.constants import LlmProvider, MatcherName
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
 from app.harness.schemas import ParsedClaim, ParsedClaimItem, WbsMatch
@@ -89,6 +89,8 @@ async def test_llm_single_writes_validated_json_array(client, db_session):
         project_id=session.project_id,
         db=db_session,
         llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=fake_model),
+        matchers={},
+        default_matcher=MatcherName.llm,
     )
 
     events = [event async for event in engine.run()]
@@ -134,6 +136,8 @@ async def test_llm_single_without_output_schema_errors(client, db_session):
         project_id=session.project_id,
         db=db_session,
         llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=_ExplodingModel()),
+        matchers={},
+        default_matcher=MatcherName.llm,
     )
 
     events = [event async for event in engine.run()]

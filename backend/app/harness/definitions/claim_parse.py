@@ -9,7 +9,6 @@ from app.harness.executors.raw_extraction import execute_raw_extraction
 from app.harness.executors.validate_claim import execute_validate_claim
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
 from app.harness.prompts import load_prompt
-from app.harness.registry import harness_registry
 from app.harness.schemas import VpsMatch, WbsMatch
 
 claim_parse_definition = HarnessDefinition(
@@ -85,5 +84,3 @@ claim_parse_definition = HarnessDefinition(
         ),
     ],
 )
-
-harness_registry.register(claim_parse_definition)

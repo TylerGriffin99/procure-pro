@@ -1,5 +1,6 @@
-"""Integration test: LLM_BATCH_AGENTS phases dispatch through the selected matcher."""
+"""Integration test: LLM_BATCH_AGENTS phases dispatch through the injected matcher table."""
 
+import functools
 import json
 import logging
 
@@ -7,16 +8,20 @@ import pytest
 from pydantic import TypeAdapter
 from pydantic_ai.models.test import TestModel
 
-from app.clients.jev_client import JevClient
 from app.clients.llm_client import LlmClient
-from app.config import settings
-from app.constants import LlmProvider
+from app.config import Settings
+from app.constants import LlmProvider, MatcherName, WBSLevel
 from app.harness.engine import HarnessEngine
+from app.harness.factory import build_matchers
+from app.harness.matchers.jev import match_with_jev
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
-from app.harness.schemas import MatchOutcome, ParsedClaim, ParsedClaimItem, WbsMatch
-from app.repos import harness_repo
+from app.harness.schemas import JevTuning, MatchOutcome, ParsedClaim, ParsedClaimItem, WbsMatch
+from app.repos import harness_repo, wbs_code_repo
 from tests.integration.test_harness_llm_single import _make_session
 from tests.unit.jev_fakes import fake_client
+
+LLM = LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=TestModel())
+SAMPLE = [WbsMatch(item_index=0, wbs_code="DM-01", confidence=0.9)]
 
 
 def _batch_harness(matcher: str | None) -> HarnessDefinition:
@@ -48,29 +53,26 @@ def _batch_harness(matcher: str | None) -> HarnessDefinition:
     )
 
 
-def _patch_llm_match(monkeypatch):
-    sample = [WbsMatch(item_index=0, wbs_code="DM-01", confidence=0.9)]
-
-    async def fake_match(self, *, phase_def, db, project_id, session_id):
-        return MatchOutcome(
-            output=sample,
-            output_json=TypeAdapter(list[WbsMatch]).dump_json(sample).decode(),
-            input_tokens=3,
-            output_tokens=4,
-        )
-
-    monkeypatch.setattr("app.harness.matchers.llm.LlmMatcher.match", fake_match)
+async def fake_llm_matcher(phase):
+    return MatchOutcome(
+        matcher=MatcherName.llm,
+        output=SAMPLE,
+        output_json=TypeAdapter(list[WbsMatch]).dump_json(SAMPLE).decode(),
+        input_tokens=3,
+        output_tokens=4,
+    )
 
 
-async def _run(client, db_session, matcher):
-    session = await _make_session(client, db_session)
+async def _run(session, db_session, matcher, matchers):
     engine = HarnessEngine(
         definition=_batch_harness(matcher),
         session_id=session.id,
         user_id=session.user_id,
         project_id=session.project_id,
         db=db_session,
-        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=TestModel()),
+        llm=LLM,
+        matchers=matchers,
+        default_matcher=MatcherName.llm,
     )
     events = [event async for event in engine.run()]
     raw = await harness_repo.read_workspace_file(db_session, session.id, "wbs_matches.json")
@@ -78,57 +80,67 @@ async def _run(client, db_session, matcher):
 
 
 @pytest.mark.asyncio
-async def test_batch_agents_phase_writes_workspace_via_llm_matcher(client, db_session, monkeypatch):
-    _patch_llm_match(monkeypatch)
-
-    events, raw = await _run(client, db_session, "llm")
+async def test_batch_agents_phase_writes_workspace_via_llm_matcher(client, db_session):
+    session = await _make_session(client, db_session)
+    events, raw = await _run(session, db_session, "llm", {MatcherName.llm: fake_llm_matcher})
 
     types = [e.type for e in events]
     assert "harness_error" not in types
     assert "usage" in types
     result = next(e for e in events if e.type == "harness_phase_result" and e.phase_name == "WBS Matching")
-    assert "fell_back=0/1" in result.detail and "residue=0/1" in result.detail
+    assert result.detail == "matcher=llm fell_back=0/1 residue=0/1"
     parsed = json.loads(raw)
     assert parsed[0]["wbs_code"] == "DM-01"
 
 
 @pytest.mark.asyncio
-async def test_unconfigured_jev_warns_and_falls_back_to_llm(client, db_session, monkeypatch, caplog):
-    _patch_llm_match(monkeypatch)
-    monkeypatch.setattr(settings, "open_router_api_key", "")
+async def test_unconfigured_jev_warns_and_falls_back_to_llm(client, db_session, caplog):
+    session = await _make_session(client, db_session)
+    settings = Settings(secret_key="k", llm_provider="openai", llm_model="m", open_router_api_key="")
+    model = TestModel(custom_output_args=[s.model_dump() for s in SAMPLE])
+    llm = LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=model)
 
-    with caplog.at_level(logging.WARNING, logger="app.harness.engine"):
-        events, raw = await _run(client, db_session, "jev")
+    with caplog.at_level(logging.WARNING, logger="app.harness.factory"):
+        events, raw = await _run(session, db_session, "jev", build_matchers(settings, llm=llm))
 
     assert "harness_error" not in [e.type for e in events]
     assert json.loads(raw)[0]["wbs_code"] == "DM-01"
+    result = next(e for e in events if e.type == "harness_phase_result" and e.phase_name == "WBS Matching")
+    assert result.detail.startswith("matcher=llm ")
     assert any("falling back to matcher=llm" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
-async def test_phase4_jev_end_to_end_with_fake_decisions(client, db_session, monkeypatch):
+async def test_phase4_jev_end_to_end_with_fake_decisions(client, db_session):
     """Phase 4 as LLM_BATCH_AGENTS/jev yields a valid list[WbsMatch] via a fake decisions endpoint."""
-    from app.harness.schemas import Subcat
-
-    monkeypatch.setattr(settings, "open_router_api_key", "test-key")
-
-    async def fake_subs(*, db, project_id):
-        return [Subcat(id="u1", code="DM-01", description="Soft strip", parent_code="DM", contract_sum=100.0)]
-
-    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories", fake_subs)
+    session = await _make_session(client, db_session)
+    subcat = await wbs_code_repo.create(
+        db_session,
+        project_id=session.project_id,
+        code="ZZ-01",
+        description="Soft strip",
+        level=WBSLevel.subcategory,
+        contract_sum=100,
+        created_by=session.user_id,
+    )
+    await db_session.commit()
 
     async def fake_decide(*, state, questions, model, url, api_key, timeout=30.0):
         qid = next(iter(questions))
         return {
-            "answers": {qid: {"choice": "DM-01", "confidence": 0.95, "probabilities": {"DM-01": 0.95}}},
+            "answers": {qid: {"choice": "ZZ-01", "confidence": 0.95, "probabilities": {"ZZ-01": 0.95}}},
             "usage": {"input_tokens": 3},
         }
 
-    monkeypatch.setattr(JevClient, "from_settings", classmethod(lambda cls, settings: fake_client(fake_decide)))
-
-    events, raw = await _run(client, db_session, "jev")
+    jev = functools.partial(
+        match_with_jev,
+        client=fake_client(fake_decide),
+        llm=LLM,
+        tuning=JevTuning(confidence_floor=0.6, max_concurrency=2),
+    )
+    events, raw = await _run(session, db_session, "jev", {MatcherName.jev: jev})
 
     assert "harness_error" not in [e.type for e in events]
     parsed = TypeAdapter(list[WbsMatch]).validate_json(raw)
     assert len(parsed) == 1
-    assert parsed[0].wbs_code == "DM-01" and parsed[0].wbs_code_id == "u1" and not parsed[0].is_new
+    assert parsed[0].wbs_code == "ZZ-01" and parsed[0].wbs_code_id == str(subcat.id) and not parsed[0].is_new

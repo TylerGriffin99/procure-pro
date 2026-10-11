@@ -55,6 +55,11 @@ async def try_claim_running(db: AsyncSession, session_id: uuid.UUID) -> bool:
     return row is not None
 
 
+async def get_status(db: AsyncSession, session_id: uuid.UUID) -> HarnessSessionStatus | None:
+    result = await db.execute(select(HarnessSession.status).where(HarnessSession.id == session_id))
+    return result.scalar_one_or_none()
+
+
 async def set_status(
     db: AsyncSession, session_id: uuid.UUID, status: HarnessSessionStatus, error_message: str | None = None
 ) -> None:

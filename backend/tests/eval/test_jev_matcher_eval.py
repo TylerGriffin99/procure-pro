@@ -41,10 +41,13 @@ from httpx import AsyncClient
 
 import app.harness.matchers.jev as jev_module
 from app.clients.jev_client import JevClient
+from app.clients.llm_client import LlmClient
 from app.config import settings
+from app.constants import MatcherName
 from app.harness.definitions.claim_parse import claim_parse_definition
-from app.harness.matchers.jev import JevMatcher
-from app.harness.schemas import MatchOutcome
+from app.harness.matchers.jev import match_with_jev
+from app.harness.models import PhaseRun
+from app.harness.schemas import JevTuning, MatchOutcome
 from app.repos import harness_repo
 from tests.e2e.fixtures import gilmours_claim1 as c1
 from tests.e2e.fixtures import gilmours_claim2 as c2
@@ -183,9 +186,9 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     return session_id
 
 
-async def _no_residue(*, phase_def, db, project_id, session_id, llm) -> MatchOutcome:
+async def _no_residue(phase, *, llm) -> MatchOutcome:
     """Stub residue resolver: leave Jev's own decisions untouched (Jev-alone pass)."""
-    return MatchOutcome(output=[], output_json="[]")
+    return MatchOutcome(matcher=MatcherName.llm, output=[], output_json="[]")
 
 
 async def _run_once(
@@ -197,23 +200,24 @@ async def _run_once(
         memo_cache, url=settings.jev_decisions_url, api_key=settings.open_router_api_key, model=settings.jev_model
     )
 
+    llm = LlmClient.from_settings(settings)
+    tuning = JevTuning(confidence_floor=settings.jev_confidence_floor, max_concurrency=settings.jev_max_concurrency)
+    wbs_phase = PhaseRun(phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id)
+    vps_phase = PhaseRun(phase_def=VPS_PHASE, db=db, project_id=project_id, session_id=session_id)
+
     # Pass A: Jev-alone (residue resolver stubbed out so Jev's raw decisions stand).
-    real_llm = jev_module.run_llm_matches
-    jev_module.run_llm_matches = _no_residue
+    real_llm = jev_module.match_with_llm
+    jev_module.match_with_llm = _no_residue
     try:
-        wbs_alone = await JevMatcher(client=memo).match(
-            phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id
-        )
+        wbs_alone = await match_with_jev(wbs_phase, client=memo, llm=llm, tuning=tuning)
     finally:
-        jev_module.run_llm_matches = real_llm
+        jev_module.match_with_llm = real_llm
 
     # Pass B: post-residue (real LLM resolver; Jev decisions served from the cache).
-    wbs_post = await JevMatcher(client=memo).match(
-        phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id
-    )
+    wbs_post = await match_with_jev(wbs_phase, client=memo, llm=llm, tuning=tuning)
 
     # VPS: single pass, real Jev.
-    vps = await JevMatcher().match(phase_def=VPS_PHASE, db=db, project_id=project_id, session_id=session_id)
+    vps = await match_with_jev(vps_phase, client=JevClient.from_settings(settings), llm=llm, tuning=tuning)
 
     alone_acc, wbs_scored, cal_pairs = _score_wbs(wbs_alone.output, expected_by_index)
     post_acc, _, _ = _score_wbs(wbs_post.output, expected_by_index)

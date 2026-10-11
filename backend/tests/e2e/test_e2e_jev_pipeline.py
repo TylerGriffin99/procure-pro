@@ -109,7 +109,7 @@ def fake_jev(monkeypatch):
             )
         ),
     )
-    monkeypatch.setattr(jev_module, "run_llm_matches", llm_must_not_run)
+    monkeypatch.setattr(jev_module, "match_with_llm", llm_must_not_run)
     monkeypatch.setattr(settings, "open_router_api_key", "test-key")
     return calls
 

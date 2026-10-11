@@ -141,7 +141,9 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
         db_session,
         session.id,
         "vps_matches.json",
-        json.dumps([{"item_index": 0, "item_type": "variation", "matched_id": str(var_in_claim.id), "confidence": 0.9}]),
+        json.dumps(
+            [{"item_index": 0, "item_type": "variation", "matched_id": str(var_in_claim.id), "confidence": 0.9}]
+        ),
     )
     await db_session.flush()
 

@@ -14,7 +14,9 @@ def inputs(line_items, wbs=(), vps=None):
     return CreateRecordsInputs(
         parsed=ParsedClaim(line_items=line_items),
         wbs_matches=[WbsMatch(item_index=i, wbs_code="EX-01", confidence=0.9) for i in wbs],
-        vps_matches=None if vps is None else [VpsMatch(item_index=i, item_type="variation", confidence=0.9) for i in vps],
+        vps_matches=None
+        if vps is None
+        else [VpsMatch(item_index=i, item_type="variation", confidence=0.9) for i in vps],
     )
 
 

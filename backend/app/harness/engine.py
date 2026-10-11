@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, assert_never
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.llm_client import LlmClient
-from app.config import settings
 from app.constants.enums import HarnessSessionStatus, MatcherName, PhaseStatus
-from app.harness.matchers.base import get_matcher
 from app.harness.models import (
     HarnessCompleteEvent,
     HarnessDefinition,
@@ -24,7 +21,10 @@ from app.harness.models import (
     HarnessPhaseResultEvent,
     HarnessPhaseStartEvent,
     HarnessStartEvent,
+    Matcher,
     PhaseDefinition,
+    PhaseOutput,
+    PhaseRun,
     PhaseType,
     UsageEvent,
 )
@@ -51,7 +51,8 @@ class HarnessEngine:
     project_id: uuid.UUID
     db: AsyncSession
     llm: LlmClient = field(kw_only=True)
-    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    matchers: Mapping[MatcherName, Matcher] = field(kw_only=True)
+    default_matcher: MatcherName = field(kw_only=True)
 
     async def run(self) -> AsyncGenerator[HarnessEvent, None]:
         """Execute harness from current_phase, yielding SSE events."""
@@ -67,29 +68,20 @@ class HarnessEngine:
             yield HarnessErrorEvent(session_id=self.session_id, error="Session not found")
             return
 
-        current_phase = session.current_phase
-
         yield HarnessStartEvent(
             session_id=self.session_id,
             harness_type=self.definition.harness_type,
             total_phases=len(self.definition.phases),
         )
 
-        for phase_index in range(current_phase, len(self.definition.phases)):
-            if self.cancel_event.is_set():
-                await self.set_failed("Cancelled by user")
-                yield HarnessErrorEvent(session_id=self.session_id, error="Cancelled")
-                return
-
+        for phase_index in range(session.current_phase, len(self.definition.phases)):
             phase_def = self.definition.phases[phase_index]
-
             yield HarnessPhaseStartEvent(
                 phase_index=phase_index, phase_name=phase_def.name, phase_type=phase_def.phase_type
             )
-
             try:
-                async for event in self._run_phase(phase_index, phase_def, session.config):
-                    yield event
+                output = await self.run_phase(phase_def, session.config)
+                await self.record_phase_result(phase_index, phase_def, output)
             except Exception as e:
                 logger.exception("harness_engine.phase_error")
                 await self.set_failed(f"Phase '{phase_def.name}' failed: {describe_error(e)}")
@@ -98,34 +90,52 @@ class HarnessEngine:
                 )
                 yield HarnessErrorEvent(session_id=self.session_id, error=describe_error(e))
                 return
+            if output.usage is not None:
+                yield output.usage
+            yield HarnessPhaseResultEvent(
+                phase_index=phase_index, phase_name=phase_def.name, status=PhaseStatus.COMPLETED, detail=output.detail
+            )
+            if await self.is_cancelled():
+                logger.info("harness_engine.cancelled session=%s after phase %d", self.session_id, phase_index)
+                yield HarnessErrorEvent(session_id=self.session_id, error="Cancelled")
+                return
 
-        # All phases complete
         await harness_repo.set_status(self.db, self.session_id, HarnessSessionStatus.completed)
         await self.db.commit()
 
-        # Read claim_id if set by final phase
         session = await harness_repo.get_session(self.db, self.session_id)
         yield HarnessCompleteEvent(session_id=self.session_id, claim_id=session.claim_id if session else None)
 
-    async def _run_phase(
-        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
-    ) -> AsyncGenerator[HarnessEvent, None]:
-        if phase_def.phase_type == PhaseType.PROGRAMMATIC:
-            async for event in self._run_programmatic(phase_index, phase_def, session_config):
-                yield event
-        elif phase_def.phase_type == PhaseType.LLM_SINGLE:
-            async for event in self._run_llm_single(phase_index, phase_def, session_config):
-                yield event
-        else:
-            async for event in self._run_decision_match(phase_index, phase_def, session_config):
-                yield event
+    async def run_phase(self, phase_def: PhaseDefinition, session_config: dict[str, Any]) -> PhaseOutput:
+        match phase_def.phase_type:
+            case PhaseType.PROGRAMMATIC:
+                return await self.run_programmatic_phase(phase_def, session_config)
+            case PhaseType.LLM_SINGLE:
+                return await self.run_llm_phase(phase_def)
+            case PhaseType.LLM_BATCH_AGENTS:
+                return await self.run_matcher_phase(phase_def)
+            case _:
+                assert_never(phase_def.phase_type)
 
-    async def _run_programmatic(
-        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
-    ) -> AsyncGenerator[HarnessEvent, None]:
+    async def record_phase_result(self, phase_index: int, phase_def: PhaseDefinition, output: PhaseOutput) -> None:
+        await harness_repo.write_workspace_file(
+            self.db, self.session_id, phase_def.workspace_output, output.output_json, internal=phase_def.internal
+        )
+        await harness_repo.update_phase(
+            self.db,
+            self.session_id,
+            str(phase_index),
+            {"status": PhaseStatus.COMPLETED, "summary": output.summary},
+            phase_index + 1,
+        )
+        await self.db.commit()
+
+    async def is_cancelled(self) -> bool:
+        return await harness_repo.get_status(self.db, self.session_id) == HarnessSessionStatus.failed
+
+    async def run_programmatic_phase(self, phase_def: PhaseDefinition, session_config: dict[str, Any]) -> PhaseOutput:
         if not phase_def.executor:
             raise ValueError(f"Programmatic phase '{phase_def.name}' has no executor")
-
         result = await phase_def.executor(
             db=self.db,
             session_id=self.session_id,
@@ -134,114 +144,47 @@ class HarnessEngine:
             config=session_config,
             llm=self.llm,
         )
-
-        await harness_repo.write_workspace_file(
-            self.db,
-            self.session_id,
-            phase_def.workspace_output,
-            result.model_dump_json(exclude_none=True),
-            internal=phase_def.internal,
+        return PhaseOutput(
+            output_json=result.model_dump_json(exclude_none=True),
+            summary=f"Produced {phase_def.workspace_output}",
+            detail=result.detail() if isinstance(result, FormatDetection) else None,
         )
 
-        await harness_repo.update_phase(
-            self.db,
-            self.session_id,
-            str(phase_index),
-            {"status": PhaseStatus.COMPLETED, "summary": f"Produced {phase_def.workspace_output}"},
-            phase_index + 1,
-        )
-        await self.db.commit()
-
-        detail = result.detail() if isinstance(result, FormatDetection) else None
-
-        yield HarnessPhaseResultEvent(
-            phase_index=phase_index, phase_name=phase_def.name, status=PhaseStatus.COMPLETED, detail=detail
-        )
-
-    async def _run_llm_single(
-        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
-    ) -> AsyncGenerator[HarnessEvent, None]:
+    async def run_llm_phase(self, phase_def: PhaseDefinition) -> PhaseOutput:
         if phase_def.output_schema is None:
             raise ValueError(
                 f"LLM_SINGLE phase '{phase_def.name}' has no output_schema; a structured output type is required."
             )
-
         context = await build_phase_context(
             db=self.db, session_id=self.session_id, project_id=self.project_id, phase_def=phase_def
         )
-        system_prompt = render_system_prompt(phase_def, context)
-
         response = await self.llm.run_structured(
             output_type=phase_def.output_schema,
-            system_prompt=system_prompt,
+            system_prompt=render_system_prompt(phase_def, context),
             user_prompt=f"Process the input for phase: {phase_def.name}",
             model_name=phase_def.model,
             phase_name=phase_def.name,
         )
-
-        yield UsageEvent(prompt_tokens=response.input_tokens, completion_tokens=response.output_tokens)
-
-        # Write validated output to workspace (bare JSON matching the typed schema).
-        await harness_repo.write_workspace_file(
-            self.db, self.session_id, phase_def.workspace_output, response.output_json, internal=phase_def.internal
+        return PhaseOutput(
+            output_json=response.output_json,
+            summary=f"Produced {phase_def.workspace_output}",
+            usage=UsageEvent(prompt_tokens=response.input_tokens, completion_tokens=response.output_tokens),
         )
 
-        await harness_repo.update_phase(
-            self.db,
-            self.session_id,
-            str(phase_index),
-            {"status": PhaseStatus.COMPLETED, "summary": f"Produced {phase_def.workspace_output}"},
-            phase_index + 1,
-        )
-        await self.db.commit()
-
-        yield HarnessPhaseResultEvent(phase_index=phase_index, phase_name=phase_def.name, status=PhaseStatus.COMPLETED)
-
-    async def _run_decision_match(
-        self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]
-    ) -> AsyncGenerator[HarnessEvent, None]:
+    async def run_matcher_phase(self, phase_def: PhaseDefinition) -> PhaseOutput:
         if phase_def.output_schema is None:
             raise ValueError(f"LLM_BATCH_AGENTS phase '{phase_def.name}' has no output_schema.")
-
-        name = phase_def.matcher or settings.matcher_default
-        # Unconfigured Jev -> run the whole phase on the LLM path (logged, not silent).
-        if name == MatcherName.jev and not settings.open_router_api_key:
-            logger.warning(
-                "Phase '%s' requested matcher=jev but open_router_api_key is unset; "
-                "falling back to matcher=llm for the whole phase.",
-                phase_def.name,
-            )
-            name = MatcherName.llm
-
-        matcher = get_matcher(name, llm=self.llm)
-        outcome = await matcher.match(
-            phase_def=phase_def, db=self.db, project_id=self.project_id, session_id=self.session_id
-        )
-
-        yield UsageEvent(prompt_tokens=outcome.input_tokens, completion_tokens=outcome.output_tokens)
-
-        await harness_repo.write_workspace_file(
-            self.db, self.session_id, phase_def.workspace_output, outcome.output_json, internal=phase_def.internal
+        matcher = self.matchers[phase_def.matcher or self.default_matcher]
+        outcome = await matcher(
+            PhaseRun(phase_def=phase_def, db=self.db, project_id=self.project_id, session_id=self.session_id)
         )
         n = len(outcome.output)
-        counts = f"fell_back={outcome.fell_back}/{n} residue={outcome.residue}/{n}"
-        await harness_repo.update_phase(
-            self.db,
-            self.session_id,
-            str(phase_index),
-            {
-                "status": PhaseStatus.COMPLETED,
-                "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})",
-            },
-            phase_index + 1,
-        )
-        await self.db.commit()
-
-        yield HarnessPhaseResultEvent(
-            phase_index=phase_index,
-            phase_name=phase_def.name,
-            status=PhaseStatus.COMPLETED,
-            detail=f"matcher={name} {counts}",
+        detail = f"matcher={outcome.matcher} fell_back={outcome.fell_back}/{n} residue={outcome.residue}/{n}"
+        return PhaseOutput(
+            output_json=outcome.output_json,
+            summary=f"Produced {phase_def.workspace_output} ({detail})",
+            detail=detail,
+            usage=UsageEvent(prompt_tokens=outcome.input_tokens, completion_tokens=outcome.output_tokens),
         )
 
     async def set_failed(self, error: str) -> None:

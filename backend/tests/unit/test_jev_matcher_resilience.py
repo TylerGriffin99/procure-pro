@@ -1,191 +1,151 @@
-import json
-
 import httpx
 import pytest
 from pydantic import TypeAdapter
 
 from app.clients.jev_client import JevClient
-from app.harness.matchers.data import read_parsed_items
-from app.harness.matchers.jev import JevMatcher
-from app.harness.schemas import MatchOutcome, Subcat, VpsMatch, VpsRecord, WbsMatch
+from app.constants import MatcherName
+from app.exceptions import ExternalServiceError
+from app.harness.matchers.jev import NONE_OPTION, match_vps, match_wbs
+from app.harness.schemas import JevTuning, MatchOutcome, ParsedClaimItem, Subcat, VpsRecord, WbsMatch
 from tests.unit.jev_fakes import fake_client
 
-
-class _Phase:
-    name = "WBS Categorisation"
-    output_schema = list[WbsMatch]
-
-
-class _VpsPhase:
-    name = "VPS Matching"
-    output_schema = list[VpsMatch]
+TUNING = JevTuning(confidence_floor=0.6, max_concurrency=4)
+SUBCATS = [Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]
+RECORDS = [VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]
 
 
-def _async(v):
-    async def _a(*a, **k):
-        return v
-
-    return _a()
+def items(n, item_type="contract_work"):
+    return [ParsedClaimItem(item_index=i, description="x", contract_value="1", item_type=item_type) for i in range(n)]
 
 
-def _err(code):
+def err(code):
     return httpx.HTTPStatusError("boom", request=httpx.Request("POST", "http://x"), response=httpx.Response(code))
 
 
-def _setup(monkeypatch, n_items=1, item_type="contract_work"):
-    parsed = {
-        "line_items": [
-            {"item_index": i, "description": "x", "contract_value": "1", "item_type": item_type} for i in range(n_items)
-        ]
-    }
-    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", lambda db, sid, path: _async(json.dumps(parsed)))
-    monkeypatch.setattr(
-        "app.harness.matchers.jev.wbs_subcategories",
-        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]),
-    )
-
-
-def _fake_llm(n):
+def fake_llm(n):
     res = [WbsMatch(item_index=i, wbs_code="DM-01", wbs_code_id="u1", confidence=0.8) for i in range(n)]
 
-    async def fake_llm(*, phase_def, db, project_id, session_id, llm):
-        return MatchOutcome(output=res, output_json=TypeAdapter(list[WbsMatch]).dump_json(res).decode())
+    async def llm():
+        return MatchOutcome(
+            matcher=MatcherName.llm, output=res, output_json=TypeAdapter(list[WbsMatch]).dump_json(res).decode()
+        )
 
-    return fake_llm
+    return llm
 
 
-def _ok(qid):
+async def no_fallback():
+    raise AssertionError("must not fall back")
+
+
+def ok(qid):
     return {"answers": {qid: {"choice": "DM-01", "confidence": 0.9, "probabilities": {}}}, "usage": {}}
 
 
+async def wbs(client, n=1, fallback=no_fallback, subcats=SUBCATS):
+    return await match_wbs(
+        items(n), subcats, phase_name="WBS Categorisation", client=client, tuning=TUNING, fallback=fallback
+    )
+
+
+async def vps(client, n=1):
+    return await match_vps(items(n, "variation"), RECORDS, phase_name="VPS Matching", client=client, tuning=TUNING)
+
+
 @pytest.mark.asyncio
-async def test_429_then_success_retries(monkeypatch):
-    _setup(monkeypatch)
+async def test_429_then_success_retries():
     calls = {"n": 0}
 
     async def flaky(*, state, questions, **k):
         calls["n"] += 1
         if calls["n"] == 1:
-            raise _err(429)
-        return _ok(next(iter(questions)))
+            raise err(429)
+        return ok(next(iter(questions)))
 
-    out = await JevMatcher(client=fake_client(flaky)).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    out = await wbs(fake_client(flaky))
     assert calls["n"] == 2
     assert out.output[0].wbs_code_id == "u1"
 
 
 @pytest.mark.asyncio
-async def test_persistent_529_falls_back_to_llm_and_logs(monkeypatch, caplog):
-    _setup(monkeypatch, n_items=2)
+async def test_persistent_529_falls_back_to_llm_and_logs(caplog):
     calls = {"n": 0}
 
     async def decide(*, state, questions, **k):
         qid = next(iter(questions))
         if qid == "item_0":
             calls["n"] += 1
-            raise _err(529)
-        return _ok(qid)
-
-    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(2))
+            raise err(529)
+        return ok(qid)
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        out = await JevMatcher(client=fake_client(decide)).match(
-            phase_def=_Phase(), db=None, project_id="p", session_id="s"
-        )
+        out = await wbs(fake_client(decide), n=2, fallback=fake_llm(2))
     assert calls["n"] == 4  # bounded retries
     assert {m.item_index: m.wbs_code_id for m in out.output} == {0: "u1", 1: "u1"}
     assert any("item 0 fell back to LLM" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
-async def test_401_raises_without_fallback(monkeypatch):
-    _setup(monkeypatch)
+async def test_401_raises_without_fallback():
     calls = {"n": 0}
 
     async def unauthorized(*, state, questions, **k):
         calls["n"] += 1
-        raise _err(401)
-
-    async def boom_llm(**k):
-        raise AssertionError("must not fall back on 401")
-
-    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", boom_llm)
+        raise err(401)
 
     with pytest.raises(httpx.HTTPStatusError):
-        await JevMatcher(client=fake_client(unauthorized)).match(
-            phase_def=_Phase(), db=None, project_id="p", session_id="s"
-        )
+        await wbs(fake_client(unauthorized))
     assert calls["n"] == 1
 
 
 @pytest.mark.asyncio
-async def test_total_outage_all_fall_back_loudly(monkeypatch, caplog):
-    _setup(monkeypatch, n_items=3)
-
+async def test_total_outage_all_fall_back_loudly(caplog):
     async def always_529(*, state, questions, **k):
-        raise _err(529)
-
-    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(3))
+        raise err(529)
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        out = await JevMatcher(client=fake_client(always_529)).match(
-            phase_def=_Phase(), db=None, project_id="p", session_id="s"
-        )
+        out = await wbs(fake_client(always_529), n=3, fallback=fake_llm(3))
     assert len(out.output) == 3 and all(m.wbs_code_id == "u1" for m in out.output)
     msgs = [r.getMessage() for r in caplog.records]
     assert any("all 3 items fell back" in m for m in msgs)
 
 
 @pytest.mark.asyncio
-async def test_vps_terminal_failure_defaults_to_new_record(monkeypatch, caplog):
-    _setup(monkeypatch, n_items=1, item_type="variation")
-    monkeypatch.setattr(
-        "app.harness.matchers.jev.vps_records",
-        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]),
-    )
-
-    async def always_529(*, state, questions, **k):
-        raise _err(529)
+async def test_vps_terminal_failure_defaults_to_new_record(caplog):
+    async def first_fails(*, state, questions, **k):
+        qid = next(iter(questions))
+        if qid == "item_0":
+            raise err(529)
+        return {"answers": {qid: {"choice": "r1", "confidence": 0.9}}, "usage": {}}
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        out = await JevMatcher(client=fake_client(always_529)).match(
-            phase_def=_VpsPhase(), db=None, project_id="p", session_id="s"
-        )
+        out = await vps(fake_client(first_fails), n=2)
     assert out.output[0].matched_id is None and out.output[0].confidence == 0.0
+    assert out.output[1].matched_id == "r1"
+    assert out.fell_back == 1
     assert any("VPS item 0" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
-async def test_32k_guard_wbs(monkeypatch):
-    _setup(monkeypatch)
+async def test_32k_guard_wbs():
     big = [
         Subcat(id=f"u{i}", code=f"C-{i}", description="d" * 200, parent_code="C", contract_sum=1.0) for i in range(1000)
     ]
-    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories", lambda **k: _async(big))
 
     async def decide(**k):
         raise AssertionError("should not be called")
 
     with pytest.raises(ValueError, match="exceeds 32k context"):
-        await JevMatcher(client=fake_client(decide)).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+        await wbs(fake_client(decide), subcats=big)
 
 
 @pytest.mark.asyncio
-async def test_vps_total_outage_summary(monkeypatch, caplog):
-    _setup(monkeypatch, n_items=2, item_type="variation")
-    monkeypatch.setattr(
-        "app.harness.matchers.jev.vps_records",
-        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]),
-    )
-
+async def test_vps_total_outage_fails_the_phase(caplog):
     async def always_529(*, state, questions, **k):
-        raise _err(529)
+        raise err(529)
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        out = await JevMatcher(client=fake_client(always_529)).match(
-            phase_def=_VpsPhase(), db=None, project_id="p", session_id="s"
-        )
-    assert [m.matched_id for m in out.output] == [None, None]
+        with pytest.raises(ExternalServiceError, match="Jev matcher failed for every item"):
+            await vps(fake_client(always_529), n=2)
     assert any("all 2 VPS items failed Jev" in r.getMessage() for r in caplog.records)
 
 
@@ -199,131 +159,84 @@ async def test_vps_total_outage_summary(monkeypatch, caplog):
         {"answers": {}},
     ],
 )
-async def test_wbs_malformed_answer_falls_back(monkeypatch, caplog, bad):
-    _setup(monkeypatch, n_items=2)
-    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(2))
-
+async def test_wbs_malformed_answer_falls_back(caplog, bad):
     async def decide(*, state, questions, **k):
         qid = next(iter(questions))
-        return bad if qid == "item_0" else _ok(qid)
+        return bad if qid == "item_0" else ok(qid)
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        out = await JevMatcher(client=fake_client(decide)).match(
-            phase_def=_Phase(), db=None, project_id="p", session_id="s"
-        )
+        out = await wbs(fake_client(decide), n=2, fallback=fake_llm(2))
     assert len(out.output) == 2 and out.output[0].wbs_code_id == "u1"
     assert any("item 0 fell back to LLM" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
-async def test_vps_malformed_answer_falls_back(monkeypatch, caplog):
-    _setup(monkeypatch, n_items=1, item_type="variation")
-    monkeypatch.setattr(
-        "app.harness.matchers.jev.vps_records",
-        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]),
-    )
-
+async def test_vps_malformed_answer_falls_back(caplog):
     async def decide(*, state, questions, **k):
-        return {"answers": {next(iter(questions)): None}}
+        qid = next(iter(questions))
+        if qid == "item_0":
+            return {"answers": {qid: None}}
+        return {"answers": {qid: {"choice": "r1", "confidence": 0.9}}, "usage": {}}
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        out = await JevMatcher(client=fake_client(decide)).match(
-            phase_def=_VpsPhase(), db=None, project_id="p", session_id="s"
-        )
+        out = await vps(fake_client(decide), n=2)
     assert out.output[0].matched_id is None
     assert any("VPS item 0" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("code", [400, 401, 402, 403, 404, 422])
-async def test_vps_fatal_raises(monkeypatch, code):
-    _setup(monkeypatch, n_items=1, item_type="variation")
-    monkeypatch.setattr(
-        "app.harness.matchers.jev.vps_records",
-        lambda **k: _async([VpsRecord(id="r1", description="rec", value=10.0, item_type="variation")]),
-    )
-
+async def test_vps_fatal_raises(code):
     async def decide(**k):
-        raise _err(code)
+        raise err(code)
 
     with pytest.raises(httpx.HTTPStatusError):
-        await JevMatcher(client=fake_client(decide)).match(
-            phase_def=_VpsPhase(), db=None, project_id="p", session_id="s"
-        )
+        await vps(fake_client(decide))
 
 
 @pytest.mark.asyncio
-async def test_wbs_403_raises(monkeypatch):
-    _setup(monkeypatch)
-
+async def test_wbs_403_raises():
     async def decide(**k):
-        raise _err(403)
+        raise err(403)
 
     with pytest.raises(httpx.HTTPStatusError):
-        await JevMatcher(client=fake_client(decide)).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+        await wbs(fake_client(decide))
 
 
 @pytest.mark.asyncio
-async def test_connect_error_logged_and_falls_back(monkeypatch, caplog):
-    _setup(monkeypatch)
-    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(1))
-
+async def test_connect_error_logged_and_falls_back(caplog):
     async def decide(**k):
         raise httpx.ConnectError("refused")
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        out = await JevMatcher(client=fake_client(decide)).match(
-            phase_def=_Phase(), db=None, project_id="p", session_id="s"
-        )
+        out = await wbs(fake_client(decide), fallback=fake_llm(1))
     assert out.output[0].wbs_code_id == "u1"
     assert any("ConnectError" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
-async def test_all_none_does_not_emit_outage_summary(monkeypatch, caplog):
-    from app.harness.matchers.jev import NONE_OPTION
-
-    _setup(monkeypatch, n_items=2)
-    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", _fake_llm(2))
-
+async def test_all_none_does_not_emit_outage_summary(caplog):
     async def decide(*, state, questions, **k):
         qid = next(iter(questions))
         return {"answers": {qid: {"choice": NONE_OPTION, "confidence": 0.9}}, "usage": {}}
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
-        await JevMatcher(client=fake_client(decide)).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+        await wbs(fake_client(decide), n=2, fallback=fake_llm(2))
     assert not any("all 2 items fell back" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("code", [402, 404])
-async def test_wbs_credit_and_notfound_raise(monkeypatch, code):
-    _setup(monkeypatch)
-
+async def test_wbs_credit_and_notfound_raise(code):
     async def decide(**k):
-        raise _err(code)
+        raise err(code)
 
     with pytest.raises(httpx.HTTPStatusError):
-        await JevMatcher(client=fake_client(decide)).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+        await wbs(fake_client(decide))
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("raw", [None, "", json.dumps({"metadata": {}})])
-async def test_read_items_missing_or_malformed_raises(monkeypatch, raw):
-    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", lambda db, sid, path: _async(raw))
-    with pytest.raises(ValueError, match="parsed_claim.json"):
-        await read_parsed_items(None, "sess")
-
-
-@pytest.mark.asyncio
-async def test_bad_url_scheme_raises_without_fallback(monkeypatch):
-    _setup(monkeypatch)
-
-    async def boom_llm(**k):
-        raise AssertionError("must not fall back on a misconfigured URL")
-
-    monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", boom_llm)
-
+async def test_bad_url_scheme_raises_without_fallback():
     client = JevClient(url="openrouter.ai/no-scheme", api_key="k", model="m")
     with pytest.raises(httpx.UnsupportedProtocol):
-        await JevMatcher(client=client).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+        await wbs(client)

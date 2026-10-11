@@ -26,7 +26,9 @@ def line(item_type, *, current="0", previous=None, sort_order=0, **links):
 
 
 def group(**fields):
-    return SimpleNamespace(total_recommended=Decimal(fields.pop("rec")), contractor_claim_to_date=Decimal(fields.pop("claim")), **fields)
+    return SimpleNamespace(
+        total_recommended=Decimal(fields.pop("rec")), contractor_claim_to_date=Decimal(fields.pop("claim")), **fields
+    )
 
 
 def source(claim_lines, previous=None, latest=None):
@@ -35,9 +37,19 @@ def source(claim_lines, previous=None, latest=None):
         previous=previous,
         latest=latest,
         wbs_codes=[
-            SimpleNamespace(id=WBS_ID, level=WBSLevel.subcategory, contract_sum=Decimal("1000"), sort_order=0, description="Earthworks"),
-            SimpleNamespace(id=uuid.uuid4(), level=WBSLevel.subcategory, contract_sum=None, sort_order=1, description="No sum"),
-            SimpleNamespace(id=uuid.uuid4(), level=WBSLevel.category, contract_sum=Decimal("5"), sort_order=2, description="Cat"),
+            SimpleNamespace(
+                id=WBS_ID,
+                level=WBSLevel.subcategory,
+                contract_sum=Decimal("1000"),
+                sort_order=0,
+                description="Earthworks",
+            ),
+            SimpleNamespace(
+                id=uuid.uuid4(), level=WBSLevel.subcategory, contract_sum=None, sort_order=1, description="No sum"
+            ),
+            SimpleNamespace(
+                id=uuid.uuid4(), level=WBSLevel.category, contract_sum=Decimal("5"), sort_order=2, description="Cat"
+            ),
         ],
         variations=[SimpleNamespace(id=VAR_ID, contractor_submission=Decimal("400"))],
         provisional_sums=[SimpleNamespace(id=PS_ID, contract_sum=Decimal("0"))],

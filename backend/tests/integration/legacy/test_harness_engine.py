@@ -6,7 +6,6 @@ from app.clients.llm_client import LlmClient
 from app.constants import LlmProvider
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, PhaseDefinition, PhaseType
-from app.harness.registry import HarnessRegistry
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
 
@@ -116,12 +115,3 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
     assert any(e["type"] == "harness_error" for e in events)
     await db_session.refresh(session)
     assert session.status == HarnessSessionStatus.failed
-
-
-@pytest.mark.asyncio
-async def test_registry():
-    registry = HarnessRegistry()
-    defn = _make_test_harness()
-    registry.register(defn)
-    assert registry.get("test_harness") is defn
-    assert registry.get("nonexistent") is None

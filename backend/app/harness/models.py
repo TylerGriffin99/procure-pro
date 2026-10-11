@@ -7,9 +7,11 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import MatcherName, PhaseStatus
-from app.harness.schemas import ExecutorResult
+from app.harness.schemas import ExecutorResult, MatchOutcome
+from app.schemas.base import StrictModel
 
 
 class PhaseType(StrEnum):
@@ -40,6 +42,17 @@ class PhaseDefinition:
     executor: Executor | None = None
     context_loaders: list[Callable] = field(default_factory=list)  # async (db, project_id, session_id) -> dict
     internal: bool = False
+
+
+@dataclass(frozen=True)
+class PhaseRun:
+    phase_def: PhaseDefinition
+    db: AsyncSession
+    project_id: uuid.UUID
+    session_id: uuid.UUID
+
+
+Matcher = Callable[[PhaseRun], Awaitable[MatchOutcome]]
 
 
 @dataclass
@@ -98,6 +111,13 @@ class UsageEvent(BaseModel):
     type: Literal["usage"] = "usage"
     prompt_tokens: int
     completion_tokens: int
+
+
+class PhaseOutput(StrictModel):
+    output_json: str
+    summary: str
+    detail: str | None = None
+    usage: UsageEvent | None = None
 
 
 HarnessEvent = (

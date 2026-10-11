@@ -80,5 +80,5 @@ async def test_generic_routes_to_llm_placeholder(db_session: AsyncSession, test_
 
     with pytest.raises(NotImplementedError, match="LLM extraction fallback"):
         await execute_extract_line_items(
-        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=_LLM
-    )
+            db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=_LLM
+        )
