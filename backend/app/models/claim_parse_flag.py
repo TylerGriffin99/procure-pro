@@ -2,12 +2,16 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+if TYPE_CHECKING:
+    from app.models.harness_session import HarnessSession
 
 
 class FlagType(str, enum.Enum):
@@ -33,18 +37,11 @@ class ClaimParseFlag(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("harness_sessions.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        UUID(as_uuid=True), ForeignKey("harness_sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    claim_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("claims.id"), nullable=True,
-    )
-    flag_type: Mapped[FlagType] = mapped_column(
-        Enum(FlagType, name="flag_type"), nullable=False,
-    )
-    severity: Mapped[FlagSeverity] = mapped_column(
-        Enum(FlagSeverity, name="flag_severity"), nullable=False,
-    )
+    claim_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("claims.id"), nullable=True)
+    flag_type: Mapped[FlagType] = mapped_column(Enum(FlagType, name="flag_type"), nullable=False)
+    severity: Mapped[FlagSeverity] = mapped_column(Enum(FlagSeverity, name="flag_severity"), nullable=False)
     line_item_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     expected_value: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)

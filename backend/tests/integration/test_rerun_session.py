@@ -12,7 +12,7 @@ from tests.e2e.helpers import get_auth_headers
 async def _make_session(client, db_session, status):
     headers = await get_auth_headers(client)
     user = await user_repo.get_by_email(db_session, "qs@dmp.co.nz")
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = uuid.UUID(proj_resp.json()["id"])
     doc = await document_repo.create_document(
         db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x",
@@ -31,7 +31,7 @@ async def _make_session(client, db_session, status):
 async def test_rerun_failed_session_creates_new_session_same_document(client, db_session):
     headers, session, doc = await _make_session(client, db_session, HarnessSessionStatus.failed)
 
-    resp = await client.post(f"/api/harness/sessions/{session.id}/rerun", headers=headers)
+    resp = await client.post(f"/api/v1/harness/sessions/{session.id}/rerun", headers=headers)
     assert resp.status_code == 201, resp.text
     new_id = uuid.UUID(resp.json()["harness_session_id"])
     assert new_id != session.id
@@ -45,12 +45,12 @@ async def test_rerun_failed_session_creates_new_session_same_document(client, db
 @pytest.mark.asyncio
 async def test_rerun_rejects_non_failed_session(client, db_session):
     headers, session, _ = await _make_session(client, db_session, HarnessSessionStatus.pending)
-    resp = await client.post(f"/api/harness/sessions/{session.id}/rerun", headers=headers)
+    resp = await client.post(f"/api/v1/harness/sessions/{session.id}/rerun", headers=headers)
     assert resp.status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_rerun_unknown_session_404(client):
     headers = await get_auth_headers(client)
-    resp = await client.post(f"/api/harness/sessions/{uuid.uuid4()}/rerun", headers=headers)
+    resp = await client.post(f"/api/v1/harness/sessions/{uuid.uuid4()}/rerun", headers=headers)
     assert resp.status_code == 404

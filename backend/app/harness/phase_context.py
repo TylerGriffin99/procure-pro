@@ -1,4 +1,5 @@
 """Shared phase-context building for harness phases and matchers."""
+
 from __future__ import annotations
 
 from string import Template

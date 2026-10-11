@@ -1,5 +1,7 @@
 """Phase 0: Extract raw text and tables from PDF using pdfplumber."""
+
 import logging
+import re
 import uuid
 from io import BytesIO
 from typing import Any
@@ -13,11 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_raw_extraction(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
-    config: dict[str, Any],
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
 ) -> dict:
     """Extract raw text and tables from every page of a PDF."""
     document_id = config.get("document_id")
@@ -27,8 +25,8 @@ async def execute_raw_extraction(
     if document is None:
         raise FileNotFoundError(f"Document not found: {document_id}")
 
-    pages_data = []
-    metadata = {}
+    pages_data: list[dict[str, Any]] = []
+    metadata: dict[str, str] = {}
 
     with pdfplumber.open(BytesIO(document.file_data)) as pdf:
         if len(pdf.pages) == 0:
@@ -46,27 +44,18 @@ async def execute_raw_extraction(
                     clean_table.append(clean_row)
                 clean_tables.append(clean_table)
 
-            pages_data.append({
-                "page_num": page.page_number,
-                "text": text,
-                "tables": clean_tables,
-            })
+            pages_data.append({"page_num": page.page_number, "text": text, "tables": clean_tables})
 
         first_text = pages_data[0]["text"] if pages_data else ""
         metadata = _extract_metadata(first_text)
 
-    logger.info(
-        "Raw extraction: %d pages, %d tables total",
-        len(pages_data),
-        sum(len(p["tables"]) for p in pages_data),
-    )
+    logger.info("Raw extraction: %d pages, %d tables total", len(pages_data), sum(len(p["tables"]) for p in pages_data))
 
     return {"metadata": metadata, "pages": pages_data}
 
 
 def _extract_metadata(text: str) -> dict[str, str]:
     """Extract basic metadata from first page text via simple pattern matching."""
-    import re
     metadata = {}
 
     patterns = {

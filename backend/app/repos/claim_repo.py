@@ -38,9 +38,7 @@ async def delete(db: AsyncSession, claim: Claim) -> None:
 
 
 async def delete_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Claim).where(Claim.project_id == project_id)
-    )
+    result = await db.execute(select(Claim).where(Claim.project_id == project_id))
     for claim in result.scalars().all():
         await db.delete(claim)
     await db.flush()

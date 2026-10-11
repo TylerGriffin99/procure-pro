@@ -1,40 +1,22 @@
 """CLAIM_PARSE harness definition — 7-phase claim parsing pipeline."""
-from pathlib import Path
 
-from app.harness.models import (
-    HarnessDefinition,
-    HarnessPrerequisites,
-    HarnessType,
-    PhaseDefinition,
-    PhaseType,
-)
-from app.harness.registry import harness_registry
-from app.harness.schemas import VpsMatch, WbsMatch
-from app.harness.context_loaders import (
-    load_wbs_context,
-    load_variations_context,
-    load_format_playbook,
-)
-from app.harness.executors.raw_extraction import execute_raw_extraction
+from app.harness.context_loaders import load_format_playbook, load_variations_context, load_wbs_context
+from app.harness.executors.create_records import execute_create_records
 from app.harness.executors.detect_format import execute_detect_format
 from app.harness.executors.extract_line_items import execute_extract_line_items
+from app.harness.executors.raw_extraction import execute_raw_extraction
 from app.harness.executors.validate_claim import execute_validate_claim
-from app.harness.executors.create_records import execute_create_records
-
-_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
-
-
-def _load_prompt(name: str) -> str:
-    return (_PROMPTS_DIR / name).read_text()
-
+from app.harness.models import HarnessDefinition, HarnessPrerequisites, HarnessType, PhaseDefinition, PhaseType
+from app.harness.prompts import load_prompt
+from app.harness.registry import harness_registry
+from app.harness.schemas import VpsMatch, WbsMatch
 
 claim_parse_definition = HarnessDefinition(
     harness_type=HarnessType.CLAIM_PARSE,
     display_name="Claim Parse & Assessment",
     description="Parse contractor claim PDF, validate, categorise, and create assessment",
     prerequisites=HarnessPrerequisites(
-        intro_text="Upload a contractor claim PDF to parse and assess",
-        required_document_count=1,
+        intro_text="Upload a contractor claim PDF to parse and assess", required_document_count=1
     ),
     phases=[
         # Phase 0: Raw Extraction
@@ -77,19 +59,21 @@ claim_parse_definition = HarnessDefinition(
             matcher="jev",
             workspace_output="wbs_matches.json",
             workspace_inputs=["parsed_claim.json"],
-            system_prompt_template=_load_prompt("categorise_wbs.md"),
+            system_prompt_template=load_prompt("categorise_wbs"),
             context_loaders=[load_wbs_context, load_format_playbook],
             output_schema=list[WbsMatch],
         ),
         # Phase 5: Variation & PS Matching
         PhaseDefinition(
             name="Variation Matching",
-            description="Match variations and provisional sums to existing records (Jev decision model, LLM fallback)",
+            description=(
+                "Match variations and provisional sums to existing records (Jev decision model, LLM fallback)"
+            ),
             phase_type=PhaseType.LLM_BATCH_AGENTS,
             matcher="jev",
             workspace_output="vps_matches.json",
             workspace_inputs=["parsed_claim.json"],
-            system_prompt_template=_load_prompt("match_variations.md"),
+            system_prompt_template=load_prompt("match_variations"),
             context_loaders=[load_variations_context],
             output_schema=list[VpsMatch],
         ),

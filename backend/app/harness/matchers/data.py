@@ -2,30 +2,19 @@
 
 Mirrors the queries in ``app.harness.context_loaders``.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+import json
+import uuid
+from typing import TYPE_CHECKING
 
+from app.harness.schemas import ParsedClaimItem, Subcat, VpsRecord
 from app.models.wbs_code import WBSLevel
-from app.repos import provisional_sum_repo, variation_repo, wbs_code_repo
+from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
 
-
-@dataclass(eq=True)
-class Subcat:
-    id: str
-    code: str
-    description: str
-    parent_code: str
-    contract_sum: float | None
-
-
-@dataclass(eq=True)
-class VpsRecord:
-    id: str
-    description: str
-    value: float | None
-    item_type: Literal["variation", "provisional_sum"]
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _num(v) -> float | None:
@@ -52,13 +41,26 @@ async def vps_records(*, db, project_id) -> list[VpsRecord]:
     variations = await variation_repo.get_by_project(db, project_id)
     sums = await provisional_sum_repo.get_by_project(db, project_id)
     out = [
-        VpsRecord(id=str(v.id), description=v.description or "",
-                  value=_num(v.contractor_submission), item_type="variation")
+        VpsRecord(
+            id=str(v.id), description=v.description or "", value=_num(v.contractor_submission), item_type="variation"
+        )
         for v in variations
     ]
     out += [
-        VpsRecord(id=str(p.id), description=p.description or "",
-                  value=_num(p.contract_sum), item_type="provisional_sum")
+        VpsRecord(
+            id=str(p.id), description=p.description or "", value=_num(p.contract_sum), item_type="provisional_sum"
+        )
         for p in sums
     ]
     return out
+
+
+async def read_parsed_items(db: AsyncSession, session_id: uuid.UUID) -> list[ParsedClaimItem]:
+    """Load and validate the parsed claim's line items from the session workspace."""
+    raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
+    if not raw:
+        raise ValueError(f"parsed_claim.json missing or empty for session {session_id}")
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict) or "line_items" not in parsed:
+        raise ValueError(f"parsed_claim.json has no 'line_items' for session {session_id}")
+    return [ParsedClaimItem.model_validate(i) for i in parsed["line_items"]]

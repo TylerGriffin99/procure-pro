@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.harness.matchers.data import Subcat, VpsRecord, vps_records, wbs_subcategories
+from app.harness.matchers.data import vps_records, wbs_subcategories
+from app.harness.schemas import Subcat, VpsRecord
 from app.models.wbs_code import WBSLevel
 
 

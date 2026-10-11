@@ -15,11 +15,13 @@ import json
 import re
 from pathlib import Path
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
 import app.harness.matchers.jev as jev_module
+from app.clients.jev_client import JevClient
 from app.config import settings
 from app.models.harness_session import HarnessSession
 from app.repos import harness_repo
@@ -65,7 +67,10 @@ def fake_jev(monkeypatch):
 
     calls = CallLog()
 
-    async def fake_call_decisions(*, state, questions, model, url, api_key, timeout=30.0):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        state, questions = body["state"], body["questions"]
+        api_key = request.headers["Authorization"].removeprefix("Bearer ")
         (qid, q), = questions.items()
         criteria = {k: v for k, v in q["criteria"].items() if k != jev_module.NONE_OPTION}
         choice = jev_module.NONE_OPTION
@@ -81,14 +86,27 @@ def fake_jev(monkeypatch):
             choice = max(pool, key=lambda k: difflib.SequenceMatcher(
                 None, state["description"].lower(), criteria[k].lower()).ratio())
         calls.append({"qid": qid, "choice": choice, "api_key": api_key})
-        return {"answers": {qid: {"choice": choice, "confidence": 0.95}},
-                "usage": {"input_tokens": 1}}
+        return httpx.Response(200, json={
+            "answers": {qid: {"choice": choice, "confidence": 0.95}},
+            "usage": {"input_tokens": 1},
+        })
 
     async def llm_must_not_run(*a, **kw):
         calls.llm_called = True
         raise AssertionError("LLM residue fallback invoked; jev fake should resolve every item")
 
-    monkeypatch.setattr(jev_module, "call_decisions", fake_call_decisions)
+    monkeypatch.setattr(
+        JevClient,
+        "from_settings",
+        classmethod(
+            lambda cls, s: JevClient(
+                url=s.jev_decisions_url,
+                api_key=s.open_router_api_key,
+                model=s.jev_model,
+                transport=httpx.MockTransport(handler),
+            )
+        ),
+    )
     monkeypatch.setattr(jev_module, "run_llm_matches", llm_must_not_run)
     monkeypatch.setattr(settings, "open_router_api_key", "test-key")
     return calls
@@ -98,7 +116,7 @@ def fake_jev(monkeypatch):
 @pytest.mark.asyncio
 async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_session, fake_jev):
     headers = await get_auth_headers(client)
-    project_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    project_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     assert project_resp.status_code == 201, project_resp.text
     project = project_resp.json()
     project_id = project["id"]
@@ -128,7 +146,7 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
     assert all(m["matched_id"] is None for m in vps)  # no pre-existing records -> new
 
     # Claim record: same item count as the LLM-path e2e.
-    claim = (await client.get(f"/api/projects/{project_id}/claims/{claim_id}", headers=headers)).json()
+    claim = (await client.get(f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers)).json()
     assert len(claim["line_items"]) == EXPECTED_CLAIM_ITEM_COUNT
     n_cw = sum(1 for li in claim["line_items"] if li["item_type"] == "contract_work")
     assert n_cw == len(EXPECTED_CONTRACT_WORK)
@@ -161,6 +179,6 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
 
 async def _assessment(client, project_id, claim_id, headers) -> dict:
     resp = await client.get(
-        f"/api/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers)
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()

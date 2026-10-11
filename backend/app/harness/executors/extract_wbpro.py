@@ -4,6 +4,7 @@ Converts raw_extraction.json (pdfplumber output) into parsed_claim.json
 for WBPRO-format contractor claims. Column layouts are fixed and known,
 so no LLM is needed.
 """
+
 import logging
 import re
 from decimal import Decimal, InvalidOperation
@@ -76,11 +77,7 @@ def detect_sections(pages: list[dict]) -> dict[int, str]:
     return page_sections
 
 
-def map_row_to_item(
-    row: list[str | None],
-    section: str,
-    item_index: int,
-) -> dict | None:
+def map_row_to_item(row: list[str | None], section: str, item_index: int) -> dict | None:
     """Map a table row to a parsed_claim line item dict.
 
     Returns None if column count is invalid for the section type.
@@ -89,7 +86,8 @@ def map_row_to_item(
         [ref, description, contract_value, percentage, ptd, previous, current, balance]
 
     Variations (9 cols):
-        [ctc_ref, description, client_ref, contract_value, percentage, ptd, previous, current, balance]
+        [ctc_ref, description, client_ref, contract_value, percentage, ptd, previous,
+         current, balance]
     """
     ncols = len(row)
 
@@ -139,12 +137,7 @@ _METADATA_PATTERNS = {
 
 def extract_metadata(all_pages_text: str) -> dict[str, str]:
     """Extract claim metadata from the combined text of all pages."""
-    result: dict[str, str] = {
-        "claim_number": "",
-        "period_from": "",
-        "period_to": "",
-        "payment_due": "",
-    }
+    result: dict[str, str] = {"claim_number": "", "period_from": "", "period_to": "", "payment_due": ""}
     for key, pattern in _METADATA_PATTERNS.items():
         match = pattern.search(all_pages_text)
         if match:
@@ -162,9 +155,7 @@ def is_skip_row(row: list[str | None]) -> bool:
     desc = str(row[1] or "").strip().lower() if len(row) > 1 else ""
     ref = str(row[0] or "").strip() if len(row) > 0 else ""
     total_keywords = ("total", "sub-total", "subtotal", "sub total")
-    if not ref and any(kw in desc for kw in total_keywords):
-        return True
-    return False
+    return not ref and any(kw in desc for kw in total_keywords)
 
 
 def parse_wbpro(raw_extraction: dict) -> dict:
@@ -246,8 +237,4 @@ def parse_wbpro(raw_extraction: dict) -> dict:
         sum(1 for i in line_items if i["item_type"] == "provisional_sum"),
     )
 
-    return {
-        "metadata": metadata,
-        "line_items": line_items,
-        "summary": summary,
-    }
+    return {"metadata": metadata, "line_items": line_items, "summary": summary}

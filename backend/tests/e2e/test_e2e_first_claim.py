@@ -44,7 +44,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # ── 1. Create project ───────────────────────────────────────────────────
-    project_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    project_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     assert project_resp.status_code == 201, project_resp.text
     project = project_resp.json()
     project_id = project["id"]
@@ -61,7 +61,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
     # ── 2. Upload claim PDF in deep_mode ────────────────────────────────────
     with open(CLAIM_1_PATH, "rb") as f:
         upload_resp = await client.post(
-            f"/api/projects/{project_id}/claims/upload",
+            f"/api/v1/projects/{project_id}/claims/upload",
             params={"mode": "deep_mode"},
             files={"file": ("Gilmours Central_Progress Claim No. 1.pdf", f, "application/pdf")},
             headers=headers,
@@ -73,7 +73,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
     collected_events = []
     async with client.stream(
         "GET",
-        f"/api/harness/sessions/{harness_session_id}/stream",
+        f"/api/v1/harness/sessions/{harness_session_id}/stream",
         headers=headers,
         timeout=600.0,
     ) as stream:
@@ -103,7 +103,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     # ── 4. Verify harness session record ────────────────────────────────────
     session_resp = await client.get(
-        f"/api/harness/sessions/{harness_session_id}", headers=headers,
+        f"/api/v1/harness/sessions/{harness_session_id}", headers=headers,
     )
     assert session_resp.status_code == 200
     session = session_resp.json()
@@ -112,7 +112,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     # ── 5. Verify workspace files ───────────────────────────────────────────
     workspace_resp = await client.get(
-        f"/api/harness/sessions/{harness_session_id}/workspace", headers=headers,
+        f"/api/v1/harness/sessions/{harness_session_id}/workspace", headers=headers,
     )
     assert workspace_resp.status_code == 200
     workspace_paths = {f["file_path"] for f in workspace_resp.json()}
@@ -127,7 +127,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     # ── 6. Verify claim line items (strict) ─────────────────────────────────
     claim_resp = await client.get(
-        f"/api/projects/{project_id}/claims/{claim_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers,
     )
     assert claim_resp.status_code == 200
     claim = claim_resp.json()
@@ -166,7 +166,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     # ── 7. Verify assessment line items (strict) ────────────────────────────
     assessment_resp = await client.get(
-        f"/api/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers,
     )
     assert assessment_resp.status_code == 200
     assessment = assessment_resp.json()

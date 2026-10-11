@@ -7,16 +7,11 @@ from sqlalchemy.orm import selectinload
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 
 
-async def get_by_id(
-    db: AsyncSession, item_id: uuid.UUID, assessment_id: uuid.UUID,
-) -> AssessmentProvisionalSum | None:
+async def get_by_id(db: AsyncSession, item_id: uuid.UUID, assessment_id: uuid.UUID) -> AssessmentProvisionalSum | None:
     result = await db.execute(
         select(AssessmentProvisionalSum)
         .options(selectinload(AssessmentProvisionalSum.provisional_sum))
-        .where(
-            AssessmentProvisionalSum.id == item_id,
-            AssessmentProvisionalSum.assessment_id == assessment_id,
-        )
+        .where(AssessmentProvisionalSum.id == item_id, AssessmentProvisionalSum.assessment_id == assessment_id)
     )
     return result.scalar_one_or_none()
 

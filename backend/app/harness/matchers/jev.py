@@ -1,42 +1,38 @@
+"""Jev decision-model matcher: WBS categorisation and variation / provisional-sum matching.
+
+One Jev ``choice`` question per line item under bounded concurrency; answers are mapped
+onto typed matches; WBS items Jev could not place (none / low confidence) are routed to the
+LLM matcher. Transport, retry and error classification live in :class:`JevClient`.
+"""
+
 from __future__ import annotations
 
-import asyncio
-import json
+import functools
 import logging
-import random
+import uuid
+from typing import TYPE_CHECKING, Literal, cast
 
-import httpx
 from pydantic import TypeAdapter
 
+from app.clients.jev_client import JevClient
 from app.config import settings
-from app.harness.matchers.base import MatchOutcome
-from app.harness.matchers.data import Subcat, vps_records, wbs_subcategories
-from app.harness.matchers.jev_client import call_decisions
+from app.harness.matchers.data import read_parsed_items, vps_records, wbs_subcategories
 from app.harness.matchers.llm import run_llm_matches
-from app.harness.schemas import VpsMatch, WbsMatch
-from app.repos import harness_repo
+from app.harness.prompts import load_prompt
+from app.harness.schemas import ItemDecision, MatchOutcome, ParsedClaimItem, Subcat, VpsMatch, VpsRecord, WbsMatch
+from app.utils.concurrency import bounded_gather
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.harness.models import PhaseDefinition
 
 logger = logging.getLogger(__name__)
 
-_RETRYABLE = {429, 529}
-_FATAL = {400, 401, 402, 403, 404, 422}  # config/auth/credit errors: raise, never fall back
-_MAX_CONTEXT_TOKENS = 32_000
 NONE_OPTION = "__none__"
-_WBS_INSTRUCTIONS = (
-    "Which WBS subcategory does this line item belong to? Prefer an exact or near "
-    "(within ~1%) contract-sum match over description similarity. Choose "
-    f"'{NONE_OPTION}' only if no subcategory fits."
-)
-_VPS_INSTRUCTIONS = (
-    "Which existing record does this item match? Match on description, then value "
-    f"within ~20%. Choose '{NONE_OPTION}' to create a new record."
-)
-
-
-def _item_state(item: dict) -> dict:
-    return {"description": item.get("description", ""),
-            "contract_value": item.get("contract_value"),
-            "item_type": item.get("item_type")}
+WBS_INSTRUCTIONS = load_prompt("jev_wbs_instructions").strip().format(none_option=NONE_OPTION)
+VPS_INSTRUCTIONS = load_prompt("jev_vps_instructions").strip().format(none_option=NONE_OPTION)
+VpsType = Literal["variation", "provisional_sum"]
 
 
 def build_wbs_criteria(subcats: list[Subcat]) -> tuple[dict[str, str], dict[str, str]]:
@@ -59,221 +55,220 @@ def build_wbs_criteria(subcats: list[Subcat]) -> tuple[dict[str, str], dict[str,
     return criteria, key_to_id
 
 
+def build_vps_criteria(records: list[VpsRecord]) -> tuple[dict[str, str], set[str]]:
+    """Return (criteria keyed by record id, the set of valid record ids)."""
+    criteria = {r.id: f"{r.description} — ${r.value:,.2f}" if r.value is not None else r.description for r in records}
+    criteria[NONE_OPTION] = "No existing record matches; create a new one"
+    return criteria, {r.id for r in records}
+
+
+def to_vps_match(decision: ItemDecision, vps_type: VpsType, valid_ids: set[str]) -> tuple[VpsMatch, bool]:
+    """Build a ``VpsMatch`` from a Jev choice; return ``(match, out_of_criteria)``.
+
+    A choice outside the supplied records (and not ``NONE_OPTION``) is a grounding
+    violation; a valid choice below the confidence floor is treated as a new record.
+    """
+    idx, choice, conf = decision.item_index, decision.choice, decision.confidence
+    in_valid = choice in valid_ids
+    out_of_criteria = choice != NONE_OPTION and not in_valid
+    if out_of_criteria:
+        logger.warning("JevMatcher: out-of-criteria VPS choice %r for item %s; treating as new record", choice, idx)
+    matched_id = choice if in_valid else None
+    floor = settings.jev_confidence_floor
+    if matched_id is not None and conf < floor:
+        logger.warning(
+            "JevMatcher: VPS item %s confidence %.2f below floor %.2f; treating as new record", idx, conf, floor
+        )
+        matched_id = None
+    return VpsMatch(item_index=idx, item_type=vps_type, matched_id=matched_id, confidence=conf), out_of_criteria
+
+
+def to_wbs_match(decision: ItemDecision, key_to_id: dict[str, str], by_id: dict[str, Subcat]) -> tuple[WbsMatch, bool]:
+    """Build a ``WbsMatch`` from a Jev choice; return ``(match, out_of_criteria)``.
+
+    ``NONE_OPTION`` or an unknown choice yields a placeholder (``is_new=True``) that the
+    residue phase later resolves; an unknown choice also flags a grounding violation.
+    """
+    idx, choice, conf = decision.item_index, decision.choice, decision.confidence
+    known = choice in key_to_id
+    out_of_criteria = choice != NONE_OPTION and not known
+    if out_of_criteria:
+        logger.warning("JevMatcher: out-of-criteria choice %r for item %s; treating as none/new", choice, idx)
+    if choice is None or choice == NONE_OPTION or not known:
+        return WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=conf), out_of_criteria
+    sub = by_id[key_to_id[choice]]
+    match = WbsMatch(
+        item_index=idx,
+        wbs_code=sub.code,
+        wbs_code_id=sub.id,
+        wbs_description=sub.description,
+        parent_code=sub.parent_code,
+        is_new=False,
+        confidence=conf,
+    )
+    return match, out_of_criteria
+
+
 class JevMatcher:
     name = "jev"
 
-    def __init__(self, decide_fn=None):
-        self._decide = decide_fn or call_decisions
+    def __init__(self, client: JevClient | None = None) -> None:
+        self.client = client or JevClient.from_settings(settings)
 
-    async def _read_items(self, db, session_id) -> list[dict]:
-        raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
-        if not raw:
-            raise ValueError(f"parsed_claim.json missing or empty for session {session_id}")
-        parsed = json.loads(raw)
-        if not isinstance(parsed, dict) or "line_items" not in parsed:
-            raise ValueError(f"parsed_claim.json has no 'line_items' for session {session_id}")
-        return parsed["line_items"]
-
-    async def _decide_with_retry(self, qid, state, criteria, instructions, max_attempts=4):
-        """Call Jev, retrying 429/529 with exponential backoff + jitter.
-
-        Config/auth/credit errors (_FATAL) are raised immediately (never fall back).
-        Any other terminal failure is logged and re-raised.
-        """
-        delay = 0.5
-        for attempt in range(1, max_attempts + 1):
-            try:
-                return await self._decide(
-                    state=state,
-                    questions={qid: {"type": "choice", "instructions": instructions, "criteria": criteria}},
-                    model=settings.jev_model, url=settings.jev_decisions_url,
-                    api_key=settings.open_router_api_key,
-                )
-            except httpx.HTTPStatusError as e:
-                code = e.response.status_code
-                if code in _FATAL:
-                    raise
-                if code in _RETRYABLE and attempt < max_attempts:
-                    await asyncio.sleep(delay + random.uniform(0, delay))
-                    delay *= 2
-                    continue
-                logger.warning("Jev decision %s failed after %d attempt(s): HTTP %s", qid, attempt, code)
-                raise
-
-    @staticmethod
-    def _check_context(phase_def, states, criteria, instructions) -> None:
-        """Reject requests whose serialized size exceeds ~32k tokens (chars/4 proxy)."""
-        worst = max(states, key=lambda s: len(json.dumps(s, default=str)), default={})
-        payload = json.dumps(
-            {"state": worst, "questions": {"item_0": {"instructions": instructions, "criteria": criteria}}},
-            default=str,
-        )
-        if len(payload) / 4 > _MAX_CONTEXT_TOKENS:
-            raise ValueError(f"Jev request for '{phase_def.name}' exceeds 32k context")
-
-    @staticmethod
-    def _is_fatal(e: Exception) -> bool:
-        return isinstance(e, httpx.HTTPStatusError) and e.response.status_code in _FATAL
-
-    async def _resolve_residue(
-        self, residue, phase_def, db, project_id, session_id
-    ) -> tuple[dict[int, WbsMatch], MatchOutcome]:
-        outcome = await run_llm_matches(
-            phase_def=phase_def, db=db, project_id=project_id, session_id=session_id,
-        )
-        return {m.item_index: m for m in outcome.output if m.item_index in residue}, outcome
-
-    async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome:
+    async def match(
+        self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
+    ) -> MatchOutcome:
         if phase_def.output_schema == list[VpsMatch]:
-            return await self._match_vps(phase_def, db, project_id, session_id)
-        return await self._match_wbs(phase_def, db, project_id, session_id)
+            return await self.match_vps(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)
+        return await self.match_wbs(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)
 
-    async def _match_vps(self, phase_def, db, project_id, session_id) -> MatchOutcome:
-        kinds = {"variation", "provisional_sum"}
-        items = [i for i in await self._read_items(db, session_id) if i.get("item_type") in kinds]
-        records = await vps_records(db=db, project_id=project_id)
-        criteria = {
-            r.id: f"{r.description} — ${r.value:,.2f}" if r.value is not None else r.description
-            for r in records
-        }
-        criteria[NONE_OPTION] = "No existing record matches; create a new one"
-        valid_ids = {r.id for r in records}
-        self._check_context(phase_def, [_item_state(i) for i in items], criteria, _VPS_INSTRUCTIONS)
-        sem = asyncio.Semaphore(settings.jev_max_concurrency)
-        results: dict[int, VpsMatch] = {}
-        failed: set[int] = set()
-        ooc: set[int] = set()  # out-of-criteria (grounding) violations
-        in_tok = 0
-
-        async def run(item):
-            nonlocal in_tok
-            idx = item["item_index"]
-            qid = f"item_{idx}"
-            state = _item_state(item)
-            try:
-                async with sem:
-                    data = await self._decide_with_retry(qid, state, criteria, _VPS_INSTRUCTIONS)
-                ans = data["answers"][qid]
-                choice = ans.get("choice")
-                conf = float(ans.get("confidence", 0.0))
-                in_valid = choice in valid_ids
-                tok = int(data.get("usage", {}).get("input_tokens", 0))
-            except Exception as e:
-                if self._is_fatal(e):
-                    raise
-                logger.warning("JevMatcher VPS item %s failed, treating as new record: %s: %r",
-                               idx, type(e).__name__, e, exc_info=True)
-                failed.add(idx)
-                results[idx] = VpsMatch(item_index=idx, item_type=item["item_type"],
-                                        matched_id=None, confidence=0.0)
-                return
-            in_tok += tok
-            if choice != NONE_OPTION and not in_valid:
-                logger.warning("JevMatcher: out-of-criteria VPS choice %r for item %s; treating as new record",
-                               choice, idx)
-                ooc.add(idx)
-            matched_id = choice if in_valid else None
-            floor = settings.jev_confidence_floor
-            if matched_id is not None and conf < floor:
-                logger.warning(
-                    "JevMatcher: VPS item %s confidence %.2f below floor %.2f; treating as new record",
-                    idx, conf, floor)
-                matched_id = None
-            results[idx] = VpsMatch(
-                item_index=idx, item_type=item["item_type"],
-                matched_id=matched_id, confidence=conf,
+    async def decide_item(self, item: ParsedClaimItem, *, criteria: dict[str, str], instructions: str) -> ItemDecision:
+        """One Jev choice for one item. Non-fatal failures (network, 5xx after retries,
+        malformed answers) become ``failed=True``; fatal HTTP errors propagate."""
+        qid = f"item_{item.item_index}"
+        try:
+            data = await self.client.choose(
+                qid=qid, state=self.client.item_state(item), criteria=criteria, instructions=instructions
             )
+            answer = data.answers[qid]
+        except Exception as exc:
+            if self.client.is_fatal(exc):
+                raise
+            logger.warning(
+                "JevMatcher: Jev call for item %s failed (%s)", item.item_index, type(exc).__name__, exc_info=True
+            )
+            return ItemDecision(item_index=item.item_index, failed=True)
+        return ItemDecision(
+            item_index=item.item_index,
+            choice=answer.choice,
+            confidence=answer.confidence,
+            input_tokens=data.usage.input_tokens,
+        )
 
-        await asyncio.gather(*(run(i) for i in items))
-        if results and len(failed) == len(results):
+    async def decide_items(
+        self, items: list[ParsedClaimItem], *, phase_name: str, criteria: dict[str, str], instructions: str
+    ) -> list[ItemDecision]:
+        """Budget-check, then fan out ``decide_item`` under ``settings.jev_max_concurrency``."""
+        self.client.check_context_budget(
+            phase_name=phase_name,
+            states=[self.client.item_state(i) for i in items],
+            criteria=criteria,
+            instructions=instructions,
+        )
+        decide = functools.partial(self.decide_item, criteria=criteria, instructions=instructions)
+        return await bounded_gather(items, decide, limit=settings.jev_max_concurrency)
+
+    async def resolve_residue(
+        self,
+        residue: set[int],
+        results: dict[int, WbsMatch],
+        *,
+        phase_def: PhaseDefinition,
+        db: AsyncSession,
+        project_id: uuid.UUID,
+        session_id: uuid.UUID,
+    ) -> MatchOutcome:
+        """Resolve none / low-confidence WBS items via the LLM and merge them into ``results``.
+
+        Returns the LLM ``MatchOutcome`` so the caller can fold in its token/cost usage.
+        """
+        logger.info(
+            "JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
+            len(residue),
+            len(results),
+            sorted(residue),
+        )
+        outcome = await run_llm_matches(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)
+        resolved = {m.item_index: m for m in outcome.output if m.item_index in residue}
+        missing = residue - set(resolved)
+        if missing:
+            logger.warning("JevMatcher: residue items not resolved by LLM, keeping placeholder: %s", sorted(missing))
+        results.update(resolved)
+        return outcome
+
+    async def match_vps(
+        self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
+    ) -> MatchOutcome:
+        kinds = {"variation", "provisional_sum"}
+        items = [i for i in await read_parsed_items(db, session_id) if i.item_type in kinds]
+        records = await vps_records(db=db, project_id=project_id)
+        criteria, valid_ids = build_vps_criteria(records)
+        decisions = await self.decide_items(
+            items, phase_name=phase_def.name, criteria=criteria, instructions=VPS_INSTRUCTIONS
+        )
+        by_index = {i.item_index: i for i in items}
+        results: dict[int, VpsMatch] = {}
+        failed = ooc = 0
+        for d in decisions:
+            # Safe: items were pre-filtered to these two types above.
+            vps_type = cast(VpsType, by_index[d.item_index].item_type)
+            if d.failed:
+                logger.warning("JevMatcher VPS item %s failed, treating as new record", d.item_index)
+                failed += 1
+                results[d.item_index] = VpsMatch(
+                    item_index=d.item_index, item_type=vps_type, matched_id=None, confidence=0.0
+                )
+                continue
+            match, is_ooc = to_vps_match(d, vps_type, valid_ids)
+            ooc += is_ooc
+            results[d.item_index] = match
+        if results and failed == len(results):
             logger.warning("JevMatcher: all %d VPS items failed Jev; created as new records", len(results))
         output = [results[k] for k in sorted(results)]
         return MatchOutcome(
             output=output,
             output_json=TypeAdapter(list[VpsMatch]).dump_json(output).decode(),
-            input_tokens=in_tok, output_tokens=0,
-            fell_back=len(failed), out_of_criteria=len(ooc),
+            input_tokens=sum(d.input_tokens for d in decisions),
+            output_tokens=0,
+            fell_back=failed,
+            out_of_criteria=ooc,
         )
 
-    async def _match_wbs(self, phase_def, db, project_id, session_id) -> MatchOutcome:
-        items = [i for i in await self._read_items(db, session_id) if i.get("item_type") == "contract_work"]
+    async def match_wbs(
+        self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
+    ) -> MatchOutcome:
+        items = [i for i in await read_parsed_items(db, session_id) if i.item_type == "contract_work"]
         subcats = await wbs_subcategories(db=db, project_id=project_id)
         criteria, key_to_id = build_wbs_criteria(subcats)
         by_id = {s.id: s for s in subcats}
-
-        self._check_context(phase_def, [_item_state(i) for i in items], criteria, _WBS_INSTRUCTIONS)
-        sem = asyncio.Semaphore(settings.jev_max_concurrency)
+        decisions = await self.decide_items(
+            items, phase_name=phase_def.name, criteria=criteria, instructions=WBS_INSTRUCTIONS
+        )
         results: dict[int, WbsMatch] = {}
-        failed: set[int] = set()
-        ooc: set[int] = set()  # out-of-criteria (grounding) violations
-        in_tok = 0
-        out_tok = 0
-        cost = 0.0
-        have_cost = False
-
-        async def run(item):
-            nonlocal in_tok
-            idx = item["item_index"]
-            qid = f"item_{idx}"
-            state = _item_state(item)
-            try:
-                async with sem:
-                    data = await self._decide_with_retry(qid, state, criteria, _WBS_INSTRUCTIONS)
-                ans = data["answers"][qid]
-                choice = ans.get("choice")
-                conf = float(ans.get("confidence", 0.0))
-                known = choice in key_to_id
-                tok = int(data.get("usage", {}).get("input_tokens", 0))
-            except Exception as e:
-                if self._is_fatal(e):
-                    raise
-                logger.warning("JevMatcher item %s fell back to LLM: %s: %r",
-                               idx, type(e).__name__, e, exc_info=True)
-                failed.add(idx)
-                results[idx] = WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=0.0)
-                return
-            in_tok += tok
-            if choice != NONE_OPTION and not known:
-                logger.warning("JevMatcher: out-of-criteria choice %r for item %s; treating as none/new", choice, idx)
-                ooc.add(idx)
-            if choice == NONE_OPTION or not known:
-                # No existing code chosen. Placeholder; Task 8 mints the real residue code.
-                results[idx] = WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=conf)
-            else:
-                sub = by_id[key_to_id[choice]]
-                results[idx] = WbsMatch(
-                    item_index=idx, wbs_code=sub.code, wbs_code_id=sub.id,
-                    wbs_description=sub.description, parent_code=sub.parent_code,
-                    is_new=False, confidence=conf,
-                )
-
-        await asyncio.gather(*(run(i) for i in items))
+        failed = ooc = 0
+        for d in decisions:
+            if d.failed:
+                logger.warning("JevMatcher item %s fell back to LLM", d.item_index)
+                failed += 1
+                results[d.item_index] = WbsMatch(item_index=d.item_index, wbs_code="", is_new=True, confidence=0.0)
+                continue
+            match, is_ooc = to_wbs_match(d, key_to_id, by_id)
+            ooc += is_ooc
+            results[d.item_index] = match
+        if results and failed == len(results):
+            logger.warning("JevMatcher: all %d items fell back to LLM (Jev unavailable)", len(results))
 
         # Residue = Jev picked none/unknown OR confidence below the floor.
         floor = settings.jev_confidence_floor
-        residue: set[int] = {idx for idx, m in results.items()
-                   if m.is_new or m.wbs_code_id is None or m.confidence < floor}
-        if results and len(failed) == len(results):
-            logger.warning("JevMatcher: all %d items fell back to LLM (Jev unavailable)", len(results))
+        residue = {idx for idx, m in results.items() if m.is_new or m.wbs_code_id is None or m.confidence < floor}
+        in_tok = sum(d.input_tokens for d in decisions)
+        out_tok = 0
+        cost: float | None = None
         if residue:
-            logger.info("JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
-                        len(residue), len(results), sorted(residue))
-            resolved, llm_outcome = await self._resolve_residue(residue, phase_def, db, project_id, session_id)
-            in_tok += llm_outcome.input_tokens
-            out_tok += llm_outcome.output_tokens
-            if llm_outcome.cost_usd is not None:
-                cost += llm_outcome.cost_usd
-                have_cost = True
-            missing = residue - set(resolved)
-            if missing:
-                logger.warning("JevMatcher: residue items not resolved by LLM, keeping placeholder: %s",
-                               sorted(missing))
-            results.update(resolved)
+            llm = await self.resolve_residue(
+                residue, results, phase_def=phase_def, db=db, project_id=project_id, session_id=session_id
+            )
+            in_tok += llm.input_tokens
+            out_tok += llm.output_tokens
+            cost = llm.cost_usd
         output = [results[k] for k in sorted(results)]
         return MatchOutcome(
             output=output,
             output_json=TypeAdapter(list[WbsMatch]).dump_json(output).decode(),
-            input_tokens=in_tok, output_tokens=out_tok,
-            cost_usd=cost if have_cost else None,
-            fell_back=len(failed), residue=len(residue), out_of_criteria=len(ooc),
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            cost_usd=cost,
+            fell_back=failed,
+            residue=len(residue),
+            out_of_criteria=ooc,
         )

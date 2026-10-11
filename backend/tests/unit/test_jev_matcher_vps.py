@@ -1,7 +1,8 @@
 import json
 import pytest
+from tests.unit.jev_fakes import fake_client
 from app.harness.matchers.jev import JevMatcher, NONE_OPTION
-from app.harness.matchers.data import VpsRecord
+from app.harness.schemas import VpsRecord
 from app.harness.schemas import VpsMatch
 
 
@@ -15,14 +16,14 @@ PARSED = {"line_items": [
     {"item_index": 1, "description": "PS lift", "contract_value": "5000", "item_type": "provisional_sum"},
     {"item_index": 2, "description": "work", "contract_value": "1", "item_type": "contract_work"},
 ]}
-RECORDS = [VpsRecord("v1", "Variation one", 900.0, "variation"),
-           VpsRecord("v2", "No value record", None, "provisional_sum")]
+RECORDS = [VpsRecord(id="v1", description="Variation one", value=900.0, item_type="variation"),
+           VpsRecord(id="v2", description="No value record", value=None, item_type="provisional_sum")]
 
 
 def _matcher(monkeypatch, answers, parsed=PARSED, seen=None):
     async def fake_read(db, sid, path):
         return json.dumps(parsed)
-    monkeypatch.setattr("app.harness.matchers.jev.harness_repo.read_workspace_file", fake_read)
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", fake_read)
 
     async def fake_records(*, db, project_id):
         return RECORDS
@@ -33,7 +34,7 @@ def _matcher(monkeypatch, answers, parsed=PARSED, seen=None):
         if seen is not None:
             seen.append(questions[qid]["criteria"])
         return {"answers": {qid: answers[qid]}, "usage": {"input_tokens": 5}}
-    return JevMatcher(decide_fn=fake_decide)
+    return JevMatcher(client=fake_client(fake_decide))
 
 
 async def _run(m):

@@ -18,33 +18,13 @@ async def get_by_id(db: AsyncSession, ps_id: uuid.UUID) -> ProvisionalSum | None
 
 
 async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[ProvisionalSum]:
-    result = await db.execute(
-        select(ProvisionalSum).where(ProvisionalSum.project_id == project_id)
-    )
+    result = await db.execute(select(ProvisionalSum).where(ProvisionalSum.project_id == project_id))
     return list(result.scalars().all())
-
-
-async def get_by_ref_code(
-    db: AsyncSession, project_id: uuid.UUID, ref_code: str,
-) -> ProvisionalSum | None:
-    try:
-        ps_number = int(ref_code)
-    except (ValueError, TypeError):
-        return None
-    result = await db.execute(
-        select(ProvisionalSum).where(
-            ProvisionalSum.project_id == project_id,
-            ProvisionalSum.ps_number == ps_number,
-        )
-    )
-    return result.scalar_one_or_none()
 
 
 async def get_max_ps_number(db: AsyncSession, project_id: uuid.UUID) -> int:
     result = await db.execute(
-        select(func.coalesce(func.max(ProvisionalSum.ps_number), 0)).where(
-            ProvisionalSum.project_id == project_id
-        )
+        select(func.coalesce(func.max(ProvisionalSum.ps_number), 0)).where(ProvisionalSum.project_id == project_id)
     )
     return result.scalar_one()
 
@@ -62,9 +42,7 @@ async def delete(db: AsyncSession, ps: ProvisionalSum) -> None:
 
 
 async def delete_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(ProvisionalSum).where(ProvisionalSum.project_id == project_id)
-    )
+    result = await db.execute(select(ProvisionalSum).where(ProvisionalSum.project_id == project_id))
     for ps in result.scalars().all():
         await db.delete(ps)
     await db.flush()

@@ -8,7 +8,7 @@ from app.repos import harness_repo
 @pytest.mark.asyncio
 async def test_get_session_not_found(client: AsyncClient, auth_headers):
     import uuid
-    resp = await client.get(f"/api/harness/sessions/{uuid.uuid4()}", headers=auth_headers)
+    resp = await client.get(f"/api/v1/harness/sessions/{uuid.uuid4()}", headers=auth_headers)
     assert resp.status_code == 404
 
 
@@ -20,7 +20,7 @@ async def test_get_session(client: AsyncClient, db_session: AsyncSession, test_u
         project_id=test_project.id, harness_type="claim_parse",
     )
     await db_session.commit()
-    resp = await client.get(f"/api/harness/sessions/{session.id}", headers=auth_headers)
+    resp = await client.get(f"/api/v1/harness/sessions/{session.id}", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "pending"
@@ -35,6 +35,6 @@ async def test_cancel_session(client: AsyncClient, db_session: AsyncSession, tes
         project_id=test_project.id, harness_type="claim_parse",
     )
     await db_session.commit()
-    resp = await client.post(f"/api/harness/sessions/{session.id}/cancel", headers=auth_headers)
+    resp = await client.post(f"/api/v1/harness/sessions/{session.id}/cancel", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["status"] == "failed"

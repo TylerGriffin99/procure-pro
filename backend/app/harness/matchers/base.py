@@ -1,39 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-
-@dataclass
-class MatchOutcome:
-    """Result of a matcher run: the typed list + its serialized form + usage."""
-
-    output: list[Any]          # list[WbsMatch] or list[VpsMatch]
-    output_json: str           # bare JSON array matching the phase output_schema
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cost_usd: float | None = None
-    fell_back: int = 0         # items that fell back after a Jev failure
-    residue: int = 0           # items routed to the LLM (none/low-confidence)
-    out_of_criteria: int = 0   # items where the matcher chose an option not in the
-                               # supplied criteria set (a grounding violation: the
-                               # model named an option that does not exist)
+from app.harness.matchers.jev import JevMatcher
+from app.harness.matchers.llm import LlmMatcher
+from app.harness.schemas import MatchOutcome
 
 
 @runtime_checkable
 class DecisionMatcher(Protocol):
     name: str
 
-    async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome:
-        ...
+    async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome: ...
 
 
 def get_matcher(name: str) -> DecisionMatcher:
-    """Resolve a matcher by name. Imports are local to avoid import cycles."""
+    """Resolve a matcher by name."""
     if name == "llm":
-        from app.harness.matchers.llm import LlmMatcher
         return LlmMatcher()
     if name == "jev":
-        from app.harness.matchers.jev import JevMatcher
         return JevMatcher()
     raise ValueError(f"Unknown matcher: {name!r}. Use 'llm' or 'jev'.")

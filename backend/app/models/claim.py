@@ -2,12 +2,16 @@ import enum
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Date, DateTime, ForeignKey, Numeric, Integer, Enum
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import AuditMixin, Base
+
+if TYPE_CHECKING:
+    from app.models.claim_line_item import ClaimLineItem
 
 
 class ClaimItemType(str, enum.Enum):
@@ -41,4 +45,3 @@ class Claim(AuditMixin, Base):
     validation_warnings: Mapped[list | None] = mapped_column(JSONB, default=list)
 
     line_items: Mapped[list["ClaimLineItem"]] = relationship(back_populates="claim", cascade="all, delete-orphan")
-

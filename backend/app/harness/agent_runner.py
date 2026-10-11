@@ -2,9 +2,11 @@
 
 Runs a single structured LLM call through a pydantic-ai ``Agent`` whose
 ``output_type`` is a pydantic model (or ``list`` of one), so every result is
-validated and fully typed. Provider routing mirrors ``llm_client.get_client``:
-all four providers are reached through the OpenAI-compatible interface.
+validated and fully typed. Provider routing (:func:`build_model`) reads
+``settings.llm_provider`` (anthropic / openai / openrouter / deepseek); all four are
+reached through the OpenAI-compatible interface.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,27 +34,15 @@ def build_model(provider: str | None = None, model_name: str | None = None) -> O
     model_name = model_name or settings.llm_model
 
     if provider == "anthropic":
-        openai_provider = OpenAIProvider(
-            base_url="https://api.anthropic.com/v1/",
-            api_key=settings.anthropic_api_key,
-        )
+        openai_provider = OpenAIProvider(base_url="https://api.anthropic.com/v1/", api_key=settings.anthropic_api_key)
     elif provider == "openai":
         openai_provider = OpenAIProvider(api_key=settings.openai_api_key)
     elif provider == "openrouter":
-        openai_provider = OpenAIProvider(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.open_router_api_key,
-        )
+        openai_provider = OpenAIProvider(base_url="https://openrouter.ai/api/v1", api_key=settings.open_router_api_key)
     elif provider == "deepseek":
-        openai_provider = OpenAIProvider(
-            base_url="https://api.deepseek.com",
-            api_key=settings.deepseek_api_key,
-        )
+        openai_provider = OpenAIProvider(base_url="https://api.deepseek.com", api_key=settings.deepseek_api_key)
     else:
-        raise ValueError(
-            f"Unknown LLM_PROVIDER: {provider!r}. "
-            "Use 'anthropic', 'openai', 'openrouter', or 'deepseek'."
-        )
+        raise ValueError(f"Unknown LLM_PROVIDER: {provider!r}. Use 'anthropic', 'openai', 'openrouter', or 'deepseek'.")
 
     return OpenAIChatModel(model_name, provider=openai_provider)
 
@@ -68,11 +58,7 @@ class StructuredResult:
 
 
 async def run_structured(
-    output_type: Any,
-    system_prompt: str,
-    user_prompt: str,
-    model: Model | None = None,
-    phase_name: str | None = None,
+    output_type: Any, system_prompt: str, user_prompt: str, model: Model | None = None, phase_name: str | None = None
 ) -> StructuredResult:
     """Run one structured completion, returning a validated ``output_type`` instance.
 

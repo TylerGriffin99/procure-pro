@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -10,6 +10,7 @@ class Settings(BaseSettings):
         if self.database_url.startswith("postgresql://"):
             self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return self
+
     secret_key: str
     access_token_expire_minutes: int = 60 * 24
 
@@ -29,6 +30,18 @@ class Settings(BaseSettings):
     jev_decisions_url: str = "https://openrouter.ai/api/alpha/decisions"
     jev_max_concurrency: int = 8
     jev_confidence_floor: float = 0.6
+
+    @field_validator("open_router_api_key", "jev_decisions_url", mode="before")
+    @classmethod
+    def strip_whitespace(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
+
+    # API versioning: every router mounts under `/api/v{api_version}`; /health stays unversioned.
+    api_version: int = 1
+
+    @property
+    def api_prefix(self) -> str:
+        return f"/api/v{self.api_version}"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

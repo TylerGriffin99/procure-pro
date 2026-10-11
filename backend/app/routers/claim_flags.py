@@ -1,16 +1,17 @@
 """Claim parse flags API."""
+
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.repos import harness_repo
 from app.schemas.claim_flag import ClaimParseFlagResponse, ResolveFlagRequest
+from app.services import claim_flag_service
 
-router = APIRouter(prefix="/api/projects/{project_id}/claims/{claim_id}/flags", tags=["claim_flags"])
+router = APIRouter(prefix="/projects/{project_id}/claims/{claim_id}/flags", tags=["claim_flags"])
 
 
 @router.get("", response_model=list[ClaimParseFlagResponse])
@@ -20,8 +21,7 @@ async def list_flags(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    flags = await harness_repo.list_flags_by_claim(db, claim_id)
-    return flags
+    return await claim_flag_service.list_flags(db, claim_id)
 
 
 @router.patch("/{flag_id}", response_model=ClaimParseFlagResponse)
@@ -33,22 +33,4 @@ async def resolve_flag(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if body.resolved:
-        flag = await harness_repo.resolve_flag(db, flag_id, user.id)
-    else:
-        # Unresolve — reset resolved fields
-        from sqlalchemy import select
-        from app.models.claim_parse_flag import ClaimParseFlag
-        result = await db.execute(select(ClaimParseFlag).where(ClaimParseFlag.id == flag_id))
-        flag = result.scalar_one_or_none()
-        if flag:
-            flag.resolved = False
-            flag.resolved_by = None
-            flag.resolved_at = None
-            await db.flush()
-
-    if not flag:
-        raise HTTPException(status_code=404, detail="Flag not found")
-    await db.commit()
-    await db.refresh(flag)
-    return flag
+    return await claim_flag_service.set_resolved(db, flag_id, resolved=body.resolved, user_id=user.id)

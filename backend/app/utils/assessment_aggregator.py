@@ -1,155 +1,35 @@
 """
 Pure aggregation utility for assessment rows.
-
-Groups assessment rows (line items, variations, provisional sums) by their
-parent record and computes totals. Sources contract_sum from master records,
-not from individual rows.
-
-No DB access — takes data in, returns computed results.
 """
+
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Any, Protocol
+
+from app.models.assessment_line_item import AssessmentLineItem
+from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+from app.models.assessment_variation import AssessmentVariation
+from app.models.provisional_sum import ProvisionalSum
+from app.models.variation import Variation
+from app.models.wbs_code import WBSCode
+from app.schemas.assessment_aggregate import (
+    AggregatedPSGroup,
+    AggregatedVariationGroup,
+    AggregatedWBSGroup,
+    AssessmentTotals,
+)
 
 ZERO = Decimal("0.00")
 
 
-# ── Protocols for duck-typing ORM models and test fakes ──────────────────
-
-class LineItemLike(Protocol):
-    id: uuid.UUID
-    wbs_code_id: uuid.UUID | None
-    claim_line_item_id: uuid.UUID | None
-    description: str
-    contract_sum: Decimal
-    contractor_claim_to_date: Decimal
-    total_recommended: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    status: str
-    sort_order: int
-    comments: str | None
-    adjustment_type: str | None
-
-
-class WBSLike(Protocol):
-    id: uuid.UUID
-    description: str
-    contract_sum: Decimal | None
-
-
-class VariationItemLike(Protocol):
-    id: uuid.UUID
-    variation_id: uuid.UUID
-    claim_line_item_id: uuid.UUID | None
-    contractor_claim_to_date: Decimal
-    total_recommended: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    status: str
-    adjustment_type: str | None
-
-
-class VariationLike(Protocol):
-    id: uuid.UUID
-    ci_number: int
-    contractor_ref: str
-    description: str
-    contractor_submission: Decimal
-
-
-class PSItemLike(Protocol):
-    id: uuid.UUID
-    provisional_sum_id: uuid.UUID
-    claim_line_item_id: uuid.UUID | None
-    contractor_claim_to_date: Decimal
-    total_recommended: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    status: str
-    adjustment_type: str | None
-
-
-class PSLike(Protocol):
-    id: uuid.UUID
-    ps_number: int
-    description: str
-    contract_sum: Decimal
-
-
-# ── Output dataclasses ───────────────────────────────────────────────────
-
-@dataclass
-class AggregatedWBSGroup:
-    wbs_code_id: uuid.UUID | None
-    description: str
-    contract_sum: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    total_recommended: Decimal
-    contractor_claim_to_date: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    history_row: Any | None
-    child_rows: list[Any] = field(default_factory=list)
-
-
-@dataclass
-class AggregatedVariationGroup:
-    variation_id: uuid.UUID
-    ci_number: int
-    contractor_ref: str
-    description: str
-    contractor_submission: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    total_recommended: Decimal
-    contractor_claim_to_date: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    history_row: Any | None
-    child_rows: list[Any] = field(default_factory=list)
-
-
-@dataclass
-class AggregatedPSGroup:
-    provisional_sum_id: uuid.UUID
-    ps_number: int
-    description: str
-    contract_sum: Decimal
-    previously_paid: Decimal
-    recommended_this_period: Decimal
-    total_recommended: Decimal
-    contractor_claim_to_date: Decimal
-    variance_to_claim: Decimal
-    percentage: Decimal
-    history_row: Any | None
-    child_rows: list[Any] = field(default_factory=list)
-
-
-@dataclass
-class AssessmentTotals:
-    sub_contract_works: Decimal
-    approved_variation_orders: Decimal
-    adjustment_to_provisional_sums: Decimal
-    total_recommended: Decimal
-    value_claimed_to_date: Decimal
-    adjustments: Decimal
-
-
 # ── Aggregation functions ────────────────────────────────────────────────
 
-def aggregate_line_items(
-    rows: list[LineItemLike],
-    wbs_codes: list[WBSLike],
-) -> list[AggregatedWBSGroup]:
+
+def aggregate_line_items(rows: Sequence[AssessmentLineItem], wbs_codes: Sequence[WBSCode]) -> list[AggregatedWBSGroup]:
     """Group line items by wbs_code_id, compute totals, source contract_sum from WBS master."""
-    wbs_map: dict[uuid.UUID, WBSLike] = {w.id: w for w in wbs_codes}
+    wbs_map: dict[uuid.UUID, WBSCode] = {w.id: w for w in wbs_codes}
 
     # Group rows by wbs_code_id, preserving insertion order
     # Use a sentinel for uncategorized items (wbs_code_id=None)
@@ -195,29 +75,33 @@ def aggregate_line_items(
         else:
             description = children[0].description if children else ""
 
-        result.append(AggregatedWBSGroup(
-            wbs_code_id=wbs_id if wbs_id != _UNCATEGORIZED else None,
-            description=description,
-            contract_sum=master_contract_sum,
-            previously_paid=previously_paid,
-            recommended_this_period=rec_this_period,
-            total_recommended=total_recommended,
-            contractor_claim_to_date=contractor_claim_to_date,
-            variance_to_claim=variance,
-            percentage=pct,
-            history_row=history,
-            child_rows=children,
-        ))
+        result.append(
+            AggregatedWBSGroup(
+                wbs_code_id=wbs_id if wbs_id != _UNCATEGORIZED else None,
+                description=description,
+                contract_sum=master_contract_sum,
+                previously_paid=previously_paid,
+                recommended_this_period=rec_this_period,
+                total_recommended=total_recommended,
+                contractor_claim_to_date=contractor_claim_to_date,
+                variance_to_claim=variance,
+                percentage=pct,
+                history_row=history,
+                child_rows=children,
+            )
+        )
 
     return result
 
 
 def aggregate_variations(
-    rows: list[VariationItemLike],
-    variations: list[VariationLike],
+    rows: Sequence[AssessmentVariation], variations: Sequence[Variation]
 ) -> list[AggregatedVariationGroup]:
-    """Group variation items by variation_id, compute totals, source contractor_submission from master."""
-    var_map: dict[uuid.UUID, VariationLike] = {v.id: v for v in variations}
+    """Group variation items by variation_id, compute totals.
+
+    Source contractor_submission from master.
+    """
+    var_map: dict[uuid.UUID, Variation] = {v.id: v for v in variations}
 
     groups: dict[uuid.UUID, dict] = {}
     group_order: list[uuid.UUID] = []
@@ -252,32 +136,33 @@ def aggregate_variations(
         variance = total_recommended - contractor_claim_to_date
         pct = (total_recommended / submission * 100) if submission else ZERO
 
-        result.append(AggregatedVariationGroup(
-            variation_id=vid,
-            ci_number=master.ci_number if master else 0,
-            contractor_ref=master.contractor_ref if master else "",
-            description=master.description if master else "",
-            contractor_submission=submission,
-            previously_paid=previously_paid,
-            recommended_this_period=rec_this_period,
-            total_recommended=total_recommended,
-            contractor_claim_to_date=contractor_claim_to_date,
-            variance_to_claim=variance,
-            percentage=pct,
-            history_row=history,
-            child_rows=children,
-        ))
+        result.append(
+            AggregatedVariationGroup(
+                variation_id=vid,
+                ci_number=master.ci_number if master else 0,
+                contractor_ref=(master.contractor_ref or "") if master else "",
+                description=master.description if master else "",
+                contractor_submission=submission,
+                previously_paid=previously_paid,
+                recommended_this_period=rec_this_period,
+                total_recommended=total_recommended,
+                contractor_claim_to_date=contractor_claim_to_date,
+                variance_to_claim=variance,
+                percentage=pct,
+                history_row=history,
+                child_rows=children,
+            )
+        )
 
     result.sort(key=lambda g: g.ci_number)
     return result
 
 
 def aggregate_provisional_sums(
-    rows: list[PSItemLike],
-    provisional_sums: list[PSLike],
+    rows: Sequence[AssessmentProvisionalSum], provisional_sums: Sequence[ProvisionalSum]
 ) -> list[AggregatedPSGroup]:
     """Group PS items by provisional_sum_id, compute totals, source contract_sum from master."""
-    ps_map: dict[uuid.UUID, PSLike] = {p.id: p for p in provisional_sums}
+    ps_map: dict[uuid.UUID, ProvisionalSum] = {p.id: p for p in provisional_sums}
 
     groups: dict[uuid.UUID, dict] = {}
     group_order: list[uuid.UUID] = []
@@ -312,29 +197,29 @@ def aggregate_provisional_sums(
         variance = total_recommended - contractor_claim_to_date
         pct = (total_recommended / master_contract_sum * 100) if master_contract_sum else ZERO
 
-        result.append(AggregatedPSGroup(
-            provisional_sum_id=psid,
-            ps_number=master.ps_number if master else 0,
-            description=master.description if master else "",
-            contract_sum=master_contract_sum,
-            previously_paid=previously_paid,
-            recommended_this_period=rec_this_period,
-            total_recommended=total_recommended,
-            contractor_claim_to_date=contractor_claim_to_date,
-            variance_to_claim=variance,
-            percentage=pct,
-            history_row=history,
-            child_rows=children,
-        ))
+        result.append(
+            AggregatedPSGroup(
+                provisional_sum_id=psid,
+                ps_number=master.ps_number if master else 0,
+                description=master.description if master else "",
+                contract_sum=master_contract_sum,
+                previously_paid=previously_paid,
+                recommended_this_period=rec_this_period,
+                total_recommended=total_recommended,
+                contractor_claim_to_date=contractor_claim_to_date,
+                variance_to_claim=variance,
+                percentage=pct,
+                history_row=history,
+                child_rows=children,
+            )
+        )
 
     result.sort(key=lambda g: g.ps_number)
     return result
 
 
 def compute_assessment_totals(
-    wbs_groups: list[AggregatedWBSGroup],
-    var_groups: list[AggregatedVariationGroup],
-    ps_groups: list[AggregatedPSGroup],
+    wbs_groups: list[AggregatedWBSGroup], var_groups: list[AggregatedVariationGroup], ps_groups: list[AggregatedPSGroup]
 ) -> AssessmentTotals:
     """Sum across all groups to produce assessment-level totals."""
     sub_cw = sum((g.total_recommended for g in wbs_groups), ZERO)

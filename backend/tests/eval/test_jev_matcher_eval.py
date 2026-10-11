@@ -39,9 +39,10 @@ import pytest
 from httpx import AsyncClient
 
 import app.harness.matchers.jev as jev_module
+from app.clients.jev_client import JevClient
 from app.config import settings
 from app.harness.definitions.claim_parse import claim_parse_definition
-from app.harness.matchers.base import MatchOutcome
+from app.harness.schemas import MatchOutcome
 from app.harness.matchers.jev import JevMatcher
 from app.repos import harness_repo
 from tests.e2e.fixtures import gilmours_claim1 as c1
@@ -49,6 +50,28 @@ from tests.e2e.fixtures import gilmours_claim2 as c2
 from tests.e2e.fixtures import gilmours_claim3 as c3
 from tests.e2e.helpers import get_auth_headers
 from tests.eval.metrics import ClaimEval, RunResult, format_report, gate
+
+
+class MemoJevClient(JevClient):
+    """Serve each Jev decision once so the Jev-alone and post-residue passes see the SAME
+    decisions. Exceptions are cached and re-raised too, so a Jev failure shows up identically
+    in both passes instead of being retried away in pass B."""
+
+    def __init__(self, cache: dict, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.cache = cache
+
+    async def post_decisions(self, *, state, questions):
+        ((qid, _),) = questions.items()
+        if qid not in self.cache:
+            try:
+                self.cache[qid] = (True, await super().post_decisions(state=state, questions=questions))
+            except Exception as e:  # noqa: BLE001 - cached and re-raised immediately below
+                self.cache[qid] = (False, e)
+        ok, value = self.cache[qid]
+        if not ok:
+            raise value
+        return value
 
 # ── Config ───────────────────────────────────────────────────────────────────
 N_RUNS = int(os.environ.get("EVAL_RUNS", "10"))
@@ -136,7 +159,7 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     """
     with open(pdf_path, "rb") as f:
         resp = await client.post(
-            f"/api/projects/{project_id}/claims/upload",
+            f"/api/v1/projects/{project_id}/claims/upload",
             params={"mode": "deep_mode"},
             files={"file": (pdf_path.name, f, "application/pdf")},
             headers=headers,
@@ -145,7 +168,7 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     session_id = resp.json()["harness_session_id"]
     event_types: list[str] = []
     async with client.stream(
-        "GET", f"/api/harness/sessions/{session_id}/stream", headers=headers, timeout=600.0,
+        "GET", f"/api/v1/harness/sessions/{session_id}/stream", headers=headers, timeout=600.0,
     ) as stream:
         async for line in stream.aiter_lines():
             if not line.startswith("data: "):
@@ -167,35 +190,24 @@ async def _no_residue(*, phase_def, db, project_id, session_id) -> MatchOutcome:
 async def _run_once(db, project_id, session_id, expected_by_index, memo_cache) -> tuple[RunResult, list[tuple[float, bool]]]:
     """One matcher run over one claim. WBS is scored twice (Jev-alone, post-residue)
     from a single memoised set of Jev calls; VPS once."""
-    real_call = jev_module.call_decisions
-
-    async def memo(*, state, questions, model, url, api_key, timeout=30.0):
-        """Serve each Jev decision once, so the Jev-alone and post-residue passes see
-        the SAME decisions. Exceptions are cached and re-raised too, so a Jev failure
-        shows up identically in both passes instead of being retried away in pass B."""
-        (qid, _), = questions.items()
-        if qid not in memo_cache:
-            try:
-                memo_cache[qid] = (True, await real_call(
-                    state=state, questions=questions, model=model, url=url, api_key=api_key, timeout=timeout))
-            except Exception as e:  # noqa: BLE001 - cached and re-raised immediately below
-                memo_cache[qid] = (False, e)
-        ok, value = memo_cache[qid]
-        if not ok:
-            raise value
-        return value
+    memo = MemoJevClient(
+        memo_cache,
+        url=settings.jev_decisions_url,
+        api_key=settings.open_router_api_key,
+        model=settings.jev_model,
+    )
 
     # Pass A: Jev-alone (residue resolver stubbed out so Jev's raw decisions stand).
     real_llm = jev_module.run_llm_matches
     jev_module.run_llm_matches = _no_residue
     try:
-        wbs_alone = await JevMatcher(decide_fn=memo).match(
+        wbs_alone = await JevMatcher(client=memo).match(
             phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id)
     finally:
         jev_module.run_llm_matches = real_llm
 
     # Pass B: post-residue (real LLM resolver; Jev decisions served from the cache).
-    wbs_post = await JevMatcher(decide_fn=memo).match(
+    wbs_post = await JevMatcher(client=memo).match(
         phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id)
 
     # VPS: single pass, real Jev.
@@ -234,7 +246,7 @@ async def test_jev_matcher_eval(client: AsyncClient, db_session):
     claim_evals: list[ClaimEval] = []
 
     for name, pdf_path, expected_line_items in CLAIMS:
-        project = (await client.post("/api/projects", json=c1.PROJECT, headers=headers)).json()
+        project = (await client.post("/api/v1/projects", json=c1.PROJECT, headers=headers)).json()
         project_id = project["id"]
         session_id = await _upload_and_freeze(client, project_id, pdf_path, headers)
 

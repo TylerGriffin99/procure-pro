@@ -379,7 +379,7 @@ export default function HarnessPanel({
 	// SSE stream
 	useEffect(() => {
 		const token = localStorage.getItem("token");
-		const url = `/api/harness/sessions/${sessionId}/stream`;
+		const url = `/api/v1/harness/sessions/${sessionId}/stream`;
 		const controller = new AbortController();
 		startTimeRef.current = performance.now();
 

@@ -1,12 +1,16 @@
 import uuid
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String, ForeignKey, Numeric, Integer, Text, Enum
+from sqlalchemy import Boolean, Enum, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import AuditMixin, Base
-from app.models.assessment import LineItemStatus, AdjustmentType
+from app.models.assessment import AdjustmentType, LineItemStatus
+
+if TYPE_CHECKING:
+    from app.models.assessment import Assessment
 
 
 class AssessmentLineItem(AuditMixin, Base):
@@ -30,8 +34,8 @@ class AssessmentLineItem(AuditMixin, Base):
     is_closed_out: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     adjustment_type: Mapped[AdjustmentType | None] = mapped_column(Enum(AdjustmentType), nullable=True)
-    source_assessment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("assessments.id"), nullable=True)
-
-    assessment: Mapped["Assessment"] = relationship(
-        back_populates="line_items", foreign_keys=[assessment_id],
+    source_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id"), nullable=True
     )
+
+    assessment: Mapped["Assessment"] = relationship(back_populates="line_items", foreign_keys=[assessment_id])

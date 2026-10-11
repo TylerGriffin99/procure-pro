@@ -13,13 +13,16 @@ database already migrated:
 
 The script is idempotent — running it again will not create a duplicate.
 """
+
 import asyncio
 import os
 import sys
 import uuid
 
 # Make the backend package importable regardless of where this is run from.
-BACKEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend")
+BACKEND_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"
+)
 sys.path.insert(0, BACKEND_DIR)
 
 from app.database import async_session  # noqa: E402
@@ -36,7 +39,9 @@ async def seed() -> None:
     async with async_session() as db:
         existing = await user_repo.get_by_email(db, DEMO_EMAIL)
         if existing:
-            print(f"Demo user '{DEMO_EMAIL}' already exists (id={existing.id}); nothing to do.")
+            print(
+                f"Demo user '{DEMO_EMAIL}' already exists (id={existing.id}); nothing to do."
+            )
             return
 
         user = await user_repo.create(
@@ -53,7 +58,9 @@ async def seed() -> None:
         # created_by is non-nullable (AuditMixin); point it at the user itself.
         user.created_by = user.id
         await db.commit()
-        print(f"Created demo user (id={user.id}). Sign in with {DEMO_EMAIL} / {DEMO_PASSWORD}.")
+        print(
+            f"Created demo user (id={user.id}). Sign in with {DEMO_EMAIL} / {DEMO_PASSWORD}."
+        )
 
 
 if __name__ == "__main__":

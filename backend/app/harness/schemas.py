@@ -7,11 +7,14 @@ that downstream programmatic phases (``create_records``) consume.
 Field sets mirror exactly what ``create_records`` reads, so the workspace-file
 contract is unchanged — only now it is typed and validated at the source.
 """
+
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.base import StrictModel
 
 _Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 _ItemIndex = Annotated[int, Field(ge=0)]
@@ -19,6 +22,47 @@ _ItemIndex = Annotated[int, Field(ge=0)]
 # Decimal-ish fields arrive as strings ("$1,234.56", "(500.00)") or numbers;
 # downstream normalisation (`validate_and_normalise`) handles the conversion.
 _Numeric = str | float | int | None
+
+
+class ParsedClaimItem(BaseModel):
+    """A single line item as stored in ``parsed_claim.json`` and read by the
+    matchers. Only the fields matchers consume are declared; any other keys the
+    extraction wrote (``ref_code``, ``percentage``, ``ptd``, …) are ignored.
+
+    ``contract_value`` keeps its raw extracted form (it is forwarded verbatim to
+    the Jev decisions API and never used arithmetically here).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    item_index: _ItemIndex
+    description: str = ""
+    item_type: str = "contract_work"
+    contract_value: _Numeric = None
+
+
+class JevAnswer(BaseModel):
+    """One answer within a Jev decisions response (``answers[question_id]``)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    choice: str | None = None
+    confidence: float = 0.0
+
+
+class JevUsage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    input_tokens: int = 0
+
+
+class JevDecisionResponse(BaseModel):
+    """The decisions-endpoint response body for a single Jev call."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    answers: dict[str, JevAnswer] = Field(default_factory=dict)
+    usage: JevUsage = Field(default_factory=JevUsage)
 
 
 class WbsMatch(BaseModel):
@@ -44,6 +88,49 @@ class VpsMatch(BaseModel):
     item_type: Literal["variation", "provisional_sum"]
     matched_id: str | None = None
     confidence: _Confidence
+
+
+class Subcat(StrictModel):
+    """A WBS subcategory offered to the matcher as a choice."""
+
+    id: str
+    code: str
+    description: str
+    parent_code: str
+    contract_sum: float | None
+
+
+class VpsRecord(StrictModel):
+    """An existing variation / provisional-sum record offered to the matcher as a choice."""
+
+    id: str
+    description: str
+    value: float | None
+    item_type: Literal["variation", "provisional_sum"]
+
+
+class ItemDecision(StrictModel):
+    """One Jev answer for one line item. ``failed`` means the call failed non-fatally
+    and the caller should treat the item as unmatched."""
+
+    item_index: int
+    choice: str | None = None
+    confidence: float = 0.0
+    input_tokens: int = 0
+    failed: bool = False
+
+
+class MatchOutcome(StrictModel):
+    """Result of a matcher run: the typed list, its serialized form, and usage counters."""
+
+    output: list[Any]  # list[WbsMatch] or list[VpsMatch]
+    output_json: str  # bare JSON array matching the phase output_schema
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float | None = None
+    fell_back: int = 0  # items that fell back after a Jev failure
+    residue: int = 0  # items routed to the LLM (none / low confidence)
+    out_of_criteria: int = 0  # the model named an option that was never offered
 
 
 class GenericMetadata(BaseModel):

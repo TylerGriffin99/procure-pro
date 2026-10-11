@@ -1,10 +1,21 @@
+from __future__ import annotations
+
 import uuid
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel
 
 from app.models.assessment import AssessmentStatus, LineItemStatus
+from app.schemas.assessment_aggregate import AssessmentAggregate
+
+if TYPE_CHECKING:
+    from app.models.assessment_line_item import AssessmentLineItem
+    from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+    from app.models.assessment_variation import AssessmentVariation
+
+    InterimItem = AssessmentLineItem | AssessmentVariation | AssessmentProvisionalSum
 
 
 class AssessmentCreate(BaseModel):
@@ -192,6 +203,58 @@ class AggregatedAssessmentResponse(BaseModel):
     variation_items: list[AssessmentVariationResponse] = []
     provisional_sum_items: list[AssessmentProvisionalSumResponse] = []
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_aggregate(cls, agg: AssessmentAggregate) -> AggregatedAssessmentResponse:
+        a = agg.assessment
+        return cls(
+            id=a.id,
+            claim_id=a.claim_id,
+            project_id=a.project_id,
+            version=a.version,
+            status=a.status,
+            previously_certified=a.previously_certified,
+            contract_sum=a.contract_sum,
+            approved_variation_orders=a.approved_variation_orders,
+            adjustment_to_provisional_sums=a.adjustment_to_provisional_sums,
+            adjusted_contract_sum=a.adjusted_contract_sum,
+            value_claimed_to_date=a.value_claimed_to_date,
+            adjustments=a.adjustments,
+            total_recommended=a.total_recommended,
+            total_retention=a.total_retention,
+            total_payment_to_date=a.total_payment_to_date,
+            recommended_this_period=a.recommended_this_period,
+            gst_amount=a.gst_amount,
+            total_including_gst=a.total_including_gst,
+            finalised_at=a.finalised_at.isoformat() if a.finalised_at else None,
+            wbs_groups=agg.wbs_groups,
+            variation_groups=agg.variation_groups,
+            ps_groups=agg.ps_groups,
+            line_items=a.line_items,
+            variation_items=a.variation_items,
+            provisional_sum_items=a.provisional_sum_items,
+        )
+
+
+class PriorInterimResponse(BaseModel):
+    parent_id: uuid.UUID
+    previously_paid: Decimal
+    comments: str | None
+
+    @classmethod
+    def from_group(cls, parent_id: uuid.UUID, items: Sequence[InterimItem]) -> PriorInterimResponse:
+        """Sum the group's recommended totals; take the first non-empty comment."""
+        return cls(
+            parent_id=parent_id,
+            previously_paid=sum((item.total_recommended for item in items), Decimal(0)),
+            comments=next((item.comments for item in items if item.comments), None),
+        )
+
+
+class PriorInterimsResponse(BaseModel):
+    wbs_interims: list[PriorInterimResponse] = []
+    variation_interims: list[PriorInterimResponse] = []
+    ps_interims: list[PriorInterimResponse] = []
 
 
 class ReclassifyNewRecord(BaseModel):

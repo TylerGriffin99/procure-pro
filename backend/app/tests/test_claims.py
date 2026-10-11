@@ -14,7 +14,7 @@ async def test_upload_and_parse_claim(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # Create project first
-    project_resp = await client.post("/api/projects", json={
+    project_resp = await client.post("/api/v1/projects", json={
         "name": "Gilmours Central",
         "client_name": "Foodstuffs",
         "contractor_name": "Kynoch",
@@ -25,7 +25,7 @@ async def test_upload_and_parse_claim(client: AsyncClient):
     # Upload claim PDF
     with open(CLAIM_1_PATH, "rb") as f:
         resp = await client.post(
-            f"/api/projects/{project_id}/claims/upload",
+            f"/api/v1/projects/{project_id}/claims/upload",
             files={"file": ("claim1.pdf", f, "application/pdf")},
             headers=headers,
         )

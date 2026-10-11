@@ -12,12 +12,12 @@ from tests.e2e.helpers import get_auth_headers
 async def test_delete_claim_deletes_its_document(client, db_session):
     headers = await get_auth_headers(client)
     user = await user_repo.get_by_email(db_session, "qs@dmp.co.nz")
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = proj_resp.json()["id"]
 
     # Create a minimal claim via the API.
     claim_resp = await client.post(
-        f"/api/projects/{project_id}/claims", json={"claim_number": 1}, headers=headers,
+        f"/api/v1/projects/{project_id}/claims", json={"claim_number": 1}, headers=headers,
     )
     assert claim_resp.status_code == 201, claim_resp.text
     claim_id = uuid.UUID(claim_resp.json()["id"])
@@ -36,7 +36,7 @@ async def test_delete_claim_deletes_its_document(client, db_session):
 
     # Delete the claim via the API.
     del_resp = await client.delete(
-        f"/api/projects/{project_id}/claims/{claim_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers,
     )
     assert del_resp.status_code == 204, del_resp.text
 
@@ -48,9 +48,9 @@ async def test_delete_claim_deletes_its_document(client, db_session):
 @pytest.mark.asyncio
 async def test_old_claim_rerun_endpoint_removed(client):
     headers = await get_auth_headers(client)
-    proj_resp = await client.post("/api/projects", json=PROJECT, headers=headers)
+    proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = proj_resp.json()["id"]
     resp = await client.post(
-        f"/api/projects/{project_id}/claims/{uuid.uuid4()}/rerun", headers=headers,
+        f"/api/v1/projects/{project_id}/claims/{uuid.uuid4()}/rerun", headers=headers,
     )
     assert resp.status_code == 404

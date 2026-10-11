@@ -4,7 +4,7 @@ from httpx import AsyncClient
 
 @pytest.mark.asyncio
 async def test_register_user(client: AsyncClient):
-    resp = await client.post("/api/auth/register", json={
+    resp = await client.post("/api/v1/auth/register", json={
         "email": "mcinnes@dmp.co.nz",
         "password": "securepassword123",
         "first_name": "Mcinnes",
@@ -20,13 +20,13 @@ async def test_register_user(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_login(client: AsyncClient):
-    await client.post("/api/auth/register", json={
+    await client.post("/api/v1/auth/register", json={
         "email": "mcinnes@dmp.co.nz",
         "password": "securepassword123",
         "first_name": "Mcinnes",
         "last_name": "Taljaard",
     })
-    resp = await client.post("/api/auth/login", data={
+    resp = await client.post("/api/v1/auth/login", data={
         "username": "mcinnes@dmp.co.nz",
         "password": "securepassword123",
     })
@@ -37,5 +37,5 @@ async def test_login(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_protected_route(client: AsyncClient):
-    resp = await client.get("/api/auth/me")
+    resp = await client.get("/api/v1/auth/me")
     assert resp.status_code == 401

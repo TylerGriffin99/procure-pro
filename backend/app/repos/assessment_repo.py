@@ -1,36 +1,26 @@
 import uuid
-from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.assessment import Assessment, AssessmentStatus
-from app.models.assessment_variation import AssessmentVariation
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+from app.models.assessment_variation import AssessmentVariation
 
 
 def _eager_options(
-    *,
-    with_line_items: bool = True,
-    with_variations: bool = True,
-    with_provisional_sums: bool = True,
+    *, with_line_items: bool = True, with_variations: bool = True, with_provisional_sums: bool = True
 ) -> list:
     """Build a list of selectinload options for Assessment queries."""
     opts: list = []
     if with_line_items:
         opts.append(selectinload(Assessment.line_items))
     if with_variations:
-        opts.append(
-            selectinload(Assessment.variation_items).selectinload(
-                AssessmentVariation.variation
-            )
-        )
+        opts.append(selectinload(Assessment.variation_items).selectinload(AssessmentVariation.variation))
     if with_provisional_sums:
         opts.append(
-            selectinload(Assessment.provisional_sum_items).selectinload(
-                AssessmentProvisionalSum.provisional_sum
-            )
+            selectinload(Assessment.provisional_sum_items).selectinload(AssessmentProvisionalSum.provisional_sum)
         )
     return opts
 
@@ -134,18 +124,14 @@ async def get_latest_finalised(
 
 
 async def delete_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Assessment).where(Assessment.claim_id == claim_id)
-    )
+    result = await db.execute(select(Assessment).where(Assessment.claim_id == claim_id))
     for assessment in result.scalars().all():
         await db.delete(assessment)
 
 
 async def delete_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:
     """Delete all assessments for a project and flush."""
-    result = await db.execute(
-        select(Assessment).where(Assessment.project_id == project_id)
-    )
+    result = await db.execute(select(Assessment).where(Assessment.project_id == project_id))
     for assessment in result.scalars().all():
         await db.delete(assessment)
     await db.flush()

@@ -1,4 +1,5 @@
 """Phase 2: Extract line items — routes to format-specific parser or LLM fallback."""
+
 import json
 import logging
 import uuid
@@ -6,19 +7,15 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.repos import harness_repo
-from app.harness.executors.extract_wbpro import parse_wbpro
 from app.harness.executors.extract_generic import parse_generic
+from app.harness.executors.extract_wbpro import parse_wbpro
+from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
 
 
 async def execute_extract_line_items(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    user_id: uuid.UUID,
-    project_id: uuid.UUID,
-    config: dict[str, Any],
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
 ) -> dict:
     """Route extraction based on detected format.
 

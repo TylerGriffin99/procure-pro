@@ -8,14 +8,14 @@ from httpx import AsyncClient
 
 async def get_auth_headers(client: AsyncClient) -> dict:
     """Register + login, return Bearer header dict."""
-    await client.post("/api/auth/register", json={
+    await client.post("/api/v1/auth/register", json={
         "email": "qs@dmp.co.nz",
         "password": "password123",
         "first_name": "QS",
         "last_name": "User",
         "country": "NZ",
     })
-    resp = await client.post("/api/auth/login", data={
+    resp = await client.post("/api/v1/auth/login", data={
         "username": "qs@dmp.co.nz", "password": "password123",
     })
     token = resp.json()["access_token"]
@@ -37,7 +37,7 @@ async def upload_claim_deep_mode(
     """Upload a claim via deep_mode and stream to completion. Returns claim_id."""
     with open(pdf_path, "rb") as f:
         upload_resp = await client.post(
-            f"/api/projects/{project_id}/claims/upload",
+            f"/api/v1/projects/{project_id}/claims/upload",
             params={"mode": "deep_mode"},
             files={"file": (pdf_path.name, f, "application/pdf")},
             headers=headers,
@@ -48,7 +48,7 @@ async def upload_claim_deep_mode(
     collected_events = []
     async with client.stream(
         "GET",
-        f"/api/harness/sessions/{harness_session_id}/stream",
+        f"/api/v1/harness/sessions/{harness_session_id}/stream",
         headers=headers,
         timeout=600.0,
     ) as stream:
@@ -83,7 +83,7 @@ async def auto_approve_assessment(
     for li in assessment["line_items"]:
         if li["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
                 json={
                     "total_recommended": li["total_recommended"],
                     "status": "approved",
@@ -94,7 +94,7 @@ async def auto_approve_assessment(
     for ps in assessment.get("provisional_sum_items", []):
         if ps["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/provisional-sum-items/{ps['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/provisional-sum-items/{ps['id']}",
                 json={
                     "total_recommended": ps["total_recommended"],
                     "status": "approved",
@@ -105,7 +105,7 @@ async def auto_approve_assessment(
     for var in assessment.get("variation_items", []):
         if var["status"] == "unapproved":
             await client.patch(
-                f"/api/projects/{project_id}/assessments/{assessment_id}/variation-items/{var['id']}",
+                f"/api/v1/projects/{project_id}/assessments/{assessment_id}/variation-items/{var['id']}",
                 json={
                     "total_recommended": var["total_recommended"],
                     "status": "approved",

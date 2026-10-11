@@ -1,9 +1,10 @@
 """Generate payment recommendation Excel workbook using openpyxl."""
+
 import io
 from decimal import Decimal
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 
@@ -33,7 +34,7 @@ def _set_column_widths(ws, widths: list[int]):
         ws.column_dimensions[get_column_letter(i)].width = w
 
 
-NUMBER_FMT = '#,##0.00'
+NUMBER_FMT = "#,##0.00"
 
 
 def _write_summary_sheet(wb: Workbook, data: dict):
@@ -45,9 +46,7 @@ def _write_summary_sheet(wb: Workbook, data: dict):
     section_font = Font(bold=True, size=10, color="1A2744")
     label_font = Font(bold=True, size=9)
     value_font = Font(size=9)
-    thin_border = Border(
-        bottom=Side(style="thin", color="CCCCCC"),
-    )
+    thin_border = Border(bottom=Side(style="thin", color="CCCCCC"))
 
     ws.merge_cells("A1:D1")
     ws["A1"] = f"Payment Recommendation #{data.get('pr_number', '')}"
@@ -121,8 +120,15 @@ def _write_contract_works_sheet(wb: Workbook, data: dict):
     """Write the Contract Works sheet."""
     ws = wb.create_sheet("Contract Works")
     headers = [
-        "Description", "Contract Sum", "Claim to Date", "Total Recommended",
-        "Percentage", "Variance", "Previously Paid", "Recommended This Period", "Comments",
+        "Description",
+        "Contract Sum",
+        "Claim to Date",
+        "Total Recommended",
+        "Percentage",
+        "Variance",
+        "Previously Paid",
+        "Recommended This Period",
+        "Comments",
     ]
 
     for col, header in enumerate(headers, 1):
@@ -147,8 +153,16 @@ def _write_variations_sheet(wb: Workbook, data: dict):
     """Write the Variations sheet."""
     ws = wb.create_sheet("Variations")
     headers = [
-        "CI Number", "Description", "Submission", "Type",
-        "Claimed to Date", "Recommended", "Previously Paid", "This Period", "Status", "Comments",
+        "CI Number",
+        "Description",
+        "Submission",
+        "Type",
+        "Claimed to Date",
+        "Recommended",
+        "Previously Paid",
+        "This Period",
+        "Status",
+        "Comments",
     ]
 
     for col, header in enumerate(headers, 1):
@@ -174,8 +188,16 @@ def _write_provisional_sums_sheet(wb: Workbook, data: dict):
     """Write the Provisional Sums sheet."""
     ws = wb.create_sheet("Provisional Sums")
     headers = [
-        "PS Number", "Description", "Contract Sum", "Claimed to Date",
-        "Recommended", "Previously Paid", "This Period", "Percentage", "Status", "Comments",
+        "PS Number",
+        "Description",
+        "Contract Sum",
+        "Claimed to Date",
+        "Recommended",
+        "Previously Paid",
+        "This Period",
+        "Percentage",
+        "Status",
+        "Comments",
     ]
 
     for col, header in enumerate(headers, 1):

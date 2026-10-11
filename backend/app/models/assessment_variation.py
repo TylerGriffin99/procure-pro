@@ -1,12 +1,17 @@
 import uuid
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, Text, Enum
+from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import AuditMixin, Base
-from app.models.assessment import LineItemStatus, AdjustmentType
+from app.models.assessment import AdjustmentType, LineItemStatus
+
+if TYPE_CHECKING:
+    from app.models.assessment import Assessment
+    from app.models.variation import Variation
 
 
 class AssessmentVariation(AuditMixin, Base):
@@ -15,7 +20,9 @@ class AssessmentVariation(AuditMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     assessment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("assessments.id"))
     variation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("variations.id"))
-    claim_line_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("claim_line_items.id"), nullable=True)
+    claim_line_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("claim_line_items.id"), nullable=True
+    )
 
     contractor_claim_to_date: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     total_recommended: Mapped[Decimal] = mapped_column(Numeric(15, 2))
@@ -27,11 +34,11 @@ class AssessmentVariation(AuditMixin, Base):
     comments: Mapped[str | None] = mapped_column(Text)
     is_closed_out: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     adjustment_type: Mapped[AdjustmentType | None] = mapped_column(Enum(AdjustmentType), nullable=True)
-    source_assessment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("assessments.id"), nullable=True)
-
-    assessment: Mapped["Assessment"] = relationship(
-        back_populates="variation_items", foreign_keys=[assessment_id],
+    source_assessment_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assessments.id"), nullable=True
     )
+
+    assessment: Mapped["Assessment"] = relationship(back_populates="variation_items", foreign_keys=[assessment_id])
     variation: Mapped["Variation"] = relationship()
 
     @property

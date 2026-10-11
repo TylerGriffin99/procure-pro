@@ -42,7 +42,7 @@ async def test_rerun_creates_new_session(
 
     with patch("pathlib.Path.exists", return_value=True):
         resp = await client.post(
-            f"/api/projects/{test_project.id}/claims/{claim.id}/rerun",
+            f"/api/v1/projects/{test_project.id}/claims/{claim.id}/rerun",
             headers=auth_headers,
         )
 
@@ -82,7 +82,7 @@ async def test_rerun_blocks_finalised(
     await db_session.commit()
 
     resp = await client.post(
-        f"/api/projects/{test_project.id}/claims/{claim.id}/rerun",
+        f"/api/v1/projects/{test_project.id}/claims/{claim.id}/rerun",
         headers=auth_headers,
     )
     assert resp.status_code == 409

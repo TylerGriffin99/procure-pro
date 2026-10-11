@@ -7,6 +7,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user
+from app.exceptions import UnprocessableError
 from app.main import app
 from app.models.user import User
 from app.models.wbs_code import WBSLevel
@@ -87,8 +88,7 @@ async def test_create_wbs_code_subcategory(db_session: AsyncSession, project_wit
 async def test_create_wbs_code_duplicate_code_fails(db_session: AsyncSession, project_with_wbs, user):
     project = project_with_wbs
     data = WBSCodeCreate(code="DM", description="Duplicate", level="category", sort_order=99)
-    from fastapi import HTTPException
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(UnprocessableError) as exc_info:
         await project_service.create_wbs_code(db_session, project.id, data, user)
     assert exc_info.value.status_code == 422
 
@@ -146,9 +146,8 @@ async def test_update_wbs_code_in_use_restricts_code_change(db_session: AsyncSes
     db_session.add(ali)
     await db_session.flush()
 
-    from fastapi import HTTPException
     data = WBSCodeUpdate(code="DM-CHANGED")
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(UnprocessableError) as exc_info:
         await project_service.update_wbs_code(db_session, project.id, dm_sub.id, data, user)
     assert exc_info.value.status_code == 422
 
@@ -206,7 +205,7 @@ async def test_update_wbs_code_in_use_allows_contract_sum_and_description(db_ses
 
 @pytest.mark.asyncio
 async def test_post_wbs_endpoint(authed_client, db_session, user):
-    """Test POST /api/projects/:id/wbs via HTTP."""
+    """Test POST /api/v1/projects/:id/wbs via HTTP."""
     data = ProjectCreate(
         name="Route Test",
         client_name="Client",
@@ -216,7 +215,7 @@ async def test_post_wbs_endpoint(authed_client, db_session, user):
     project = await project_service.create_project(db_session, data, user)
 
     resp = await authed_client.post(
-        f"/api/projects/{project.id}/wbs",
+        f"/api/v1/projects/{project.id}/wbs",
         json={"code": "NW", "description": "New Work", "level": "category", "sort_order": 0, "contract_sum": "10000.00"},
     )
     assert resp.status_code == 201
@@ -227,7 +226,7 @@ async def test_post_wbs_endpoint(authed_client, db_session, user):
 
 @pytest.mark.asyncio
 async def test_patch_wbs_endpoint(authed_client, db_session, user):
-    """Test PATCH /api/projects/:id/wbs/:wbs_id via HTTP."""
+    """Test PATCH /api/v1/projects/:id/wbs/:wbs_id via HTTP."""
     data = ProjectCreate(
         name="Patch Route Test",
         client_name="Client",
@@ -241,7 +240,7 @@ async def test_patch_wbs_endpoint(authed_client, db_session, user):
     wbs = next(w for w in project.wbs_codes if w.code == "AB")
 
     resp = await authed_client.patch(
-        f"/api/projects/{project.id}/wbs/{wbs.id}",
+        f"/api/v1/projects/{project.id}/wbs/{wbs.id}",
         json={"contract_sum": "30000.00", "description": "Updated Alpha Bravo"},
     )
     assert resp.status_code == 200
@@ -252,7 +251,7 @@ async def test_patch_wbs_endpoint(authed_client, db_session, user):
 
 @pytest.mark.asyncio
 async def test_get_project_includes_in_use(authed_client, db_session, user):
-    """GET /api/projects/:id should include in_use flag on WBS codes."""
+    """GET /api/v1/projects/:id should include in_use flag on WBS codes."""
     data = ProjectCreate(
         name="InUse Test",
         client_name="Client",
@@ -264,7 +263,7 @@ async def test_get_project_includes_in_use(authed_client, db_session, user):
     )
     project = await project_service.create_project(db_session, data, user)
 
-    resp = await authed_client.get(f"/api/projects/{project.id}")
+    resp = await authed_client.get(f"/api/v1/projects/{project.id}")
     assert resp.status_code == 200
     body = resp.json()
     wbs = body["wbs_codes"][0]

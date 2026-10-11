@@ -4,7 +4,15 @@ import json
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from app.harness.schemas import GenericExtraction, VpsMatch, WbsMatch
+from app.harness.schemas import (
+    GenericExtraction,
+    ItemDecision,
+    MatchOutcome,
+    Subcat,
+    VpsMatch,
+    VpsRecord,
+    WbsMatch,
+)
 
 
 class TestWbsMatch:
@@ -76,3 +84,22 @@ class TestGenericExtraction:
     def test_requires_line_items(self):
         with pytest.raises(ValidationError):
             GenericExtraction(metadata={}, summary={})
+
+
+def test_match_outcome_defaults_and_frozen():
+    out = MatchOutcome(output=[], output_json="[]")
+    assert (out.input_tokens, out.output_tokens, out.cost_usd, out.fell_back, out.residue, out.out_of_criteria) == (0, 0, None, 0, 0, 0)
+    with pytest.raises(ValidationError):
+        out.fell_back = 1  # type: ignore[misc]
+
+
+def test_subcat_and_vps_record_reject_unknown_fields():
+    with pytest.raises(ValidationError):
+        Subcat(id="u1", code="C", description="d", parent_code="P", contract_sum=1.0, extra="x")  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        VpsRecord(id="r", description="d", value=None, item_type="bogus")  # type: ignore[arg-type]
+
+
+def test_item_decision_failed_default():
+    d = ItemDecision(item_index=3, failed=True)
+    assert d.choice is None and d.confidence == 0.0 and d.input_tokens == 0

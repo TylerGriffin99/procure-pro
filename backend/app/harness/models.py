@@ -62,6 +62,7 @@ class HarnessDefinition:
 
 # --- SSE event models ---
 
+
 class PhaseStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
