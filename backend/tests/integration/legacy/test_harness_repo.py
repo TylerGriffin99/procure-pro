@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.claim_parse_flag import FlagSeverity, FlagType
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
-from app.tests.conftest import list_flags_by_session
+from tests.integration.legacy.conftest import list_flags_by_session
 
 
 @pytest.mark.asyncio

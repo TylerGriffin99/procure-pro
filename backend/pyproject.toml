@@ -46,9 +46,8 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 # ── Lint & type-check (app code only) ────────────────────────────────────────
-# These gates cover the application package `app/`. Test code (`app/tests`,
-# `tests`), DB migrations (`alembic`) and one-off `scripts` are intentionally
-# excluded. Run via `just ruff` and `just ty`.
+# These gates cover the application package `app/`. Test code (`tests`),
+# DB migrations (`alembic`) and one-off `scripts` are intentionally excluded. Run via `just ruff` and `just ty`.
 
 [tool.ruff]
 target-version = "py312"
@@ -80,4 +79,4 @@ extend-immutable-calls = [
 
 [tool.ty.src]
 include = ["app"]
-exclude = ["app/tests", "tests", "alembic", "scripts"]
+exclude = ["tests", "alembic", "scripts"]

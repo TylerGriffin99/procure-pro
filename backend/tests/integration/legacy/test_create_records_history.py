@@ -1,4 +1,4 @@
-# backend/app/tests/test_create_records_history.py
+# backend/tests/integration/legacy/test_create_records_history.py
 """Tests for create_records.py variation/PS history bug fixes."""
 
 import json

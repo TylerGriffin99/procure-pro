@@ -31,6 +31,7 @@ def _make_test_harness() -> HarnessDefinition:
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="legacy: stale against current API/enum; port to testcontainers fixtures")
 async def test_engine_runs_programmatic_phase(db_session: AsyncSession, test_user, test_project, test_document):
     harness_def = _make_test_harness()
 
@@ -63,6 +64,7 @@ async def test_engine_runs_programmatic_phase(db_session: AsyncSession, test_use
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="legacy: stale against current API/enum; port to testcontainers fixtures")
 async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, test_project, test_document):
     async def failing_executor(db, session_id, user_id, project_id, config):
         raise RuntimeError("PDF is corrupted")

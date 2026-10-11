@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from httpx import AsyncClient
 
-from app.tests.test_projects import get_auth_headers
+from tests.integration.legacy.test_projects import get_auth_headers
 
 CLAIM_1_PATH = (
     Path(__file__).parent.parent.parent.parent

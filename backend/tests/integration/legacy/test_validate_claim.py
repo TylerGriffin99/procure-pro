@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.harness.executors.validate_claim import execute_validate_claim
 from app.models.claim_parse_flag import FlagType
 from app.repos import harness_repo
-from app.tests.conftest import list_flags_by_session
+from tests.integration.legacy.conftest import list_flags_by_session
 
 
 def _make_parsed_claim_json(line_items: list[dict] | None = None, summary: dict | None = None) -> str:
