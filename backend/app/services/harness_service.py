@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.constants.enums import HarnessSessionStatus
 from app.exceptions import BadRequestError, ConflictError, require
 from app.harness.definitions import HARNESS_DEFINITIONS
-from app.harness.engine import HarnessEngine, describe_error, mark_session_failed
+from app.harness.engine import HarnessEngine, describe_error
 from app.harness.factory import EngineBuilder
 from app.harness.models import HarnessDefinition, HarnessErrorEvent, HarnessEvent, HarnessType
 from app.models.harness_session import HarnessSession
@@ -70,9 +70,10 @@ async def prepare_stream(
     return session, definition
 
 
-async def mark_stream_cancelled(db: AsyncSession, session_id: uuid.UUID) -> None:
+async def mark_stream_failed(db: AsyncSession, session_id: uuid.UUID, error: str) -> None:
+    # CAS on `running`: a session another stream completed or failed is left as it is.
     await db.rollback()
-    await harness_repo.fail_if_running(db, session_id, "Stream cancelled")
+    await harness_repo.fail_if_running(db, session_id, error)
     await db.commit()
 
 
@@ -104,9 +105,13 @@ async def stream_events(
                 yield sse(event)
             yield "data: [DONE]\n\n"
         except Exception as e:
-            logger.exception("harness_stream.error")
-            with anyio.CancelScope(shield=True):
-                await record_stream_failure(mark_session_failed(engine_db, session_id, describe_error(e)), session_id)
+            logger.exception("harness_stream.error session=%s", session_id)
+            # Only the stream that claimed the session may fail it; an unclaimed one belongs to another stream.
+            if engine is not None and engine.claimed:
+                with anyio.CancelScope(shield=True):
+                    await record_stream_failure(
+                        mark_stream_failed(engine_db, session_id, describe_error(e)), session_id
+                    )
             yield sse(HarnessErrorEvent(session_id=session_id, error=describe_error(e)))
             yield "data: [DONE]\n\n"
         except BaseException:
@@ -114,7 +119,9 @@ async def stream_events(
             logger.warning("harness_stream.cancelled session=%s", session_id)
             if engine is not None and engine.claimed:
                 with anyio.CancelScope(shield=True):
-                    await record_stream_failure(mark_stream_cancelled(engine_db, session_id), session_id)
+                    await record_stream_failure(
+                        mark_stream_failed(engine_db, session_id, "Stream cancelled"), session_id
+                    )
             raise
 
 
@@ -130,6 +137,8 @@ async def rerun_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> 
     old = await get_owned_session(db, session_id, user.id)
     if old.status != HarnessSessionStatus.failed:
         raise ConflictError("Only failed sessions can be re-run")
+    if old.claim_id is not None:
+        raise ConflictError("Session already created a claim")
     ht = coerce_harness_type(old.harness_type)
     if ht is None:
         raise BadRequestError(f"Unknown harness type: {old.harness_type}")

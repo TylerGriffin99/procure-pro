@@ -3,19 +3,24 @@ import uuid
 from collections.abc import Sequence
 from typing import Final
 
-from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import ClaimItemType, WorkspaceFile
 from app.exceptions import ExternalServiceError
 from app.harness.phase_context import load_workspace
-from app.harness.schemas import CreateRecordsInputs, ParsedClaim, ParsedClaimItem, VpsMatch, WbsMatch
+from app.harness.schemas import (
+    VPS_KINDS,
+    VPS_MATCHES,
+    WBS_MATCHES,
+    CreateRecordsInputs,
+    ParsedClaim,
+    ParsedClaimItem,
+    VpsMatch,
+    WbsMatch,
+)
 
 logger = logging.getLogger(__name__)
 
-WBS_MATCHES: Final = TypeAdapter(list[WbsMatch])
-VPS_MATCHES: Final = TypeAdapter(list[VpsMatch])
-VPS_KINDS: Final = frozenset({ClaimItemType.variation, ClaimItemType.provisional_sum})
 PROVISIONAL_SUM_PREFIX: Final = "provisional sum"
 
 

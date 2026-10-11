@@ -8,6 +8,7 @@ from app.constants import LlmProvider
 from app.exceptions import ExternalServiceError
 from app.harness.executors.extract_generic import money_text, parse_generic, validate_and_normalise
 from app.harness.schemas import GenericExtraction, RawExtraction
+from app.schemas.claim_extraction import ParseWarning
 
 
 def _llm(model: TestModel) -> LlmClient:
@@ -120,6 +121,14 @@ class TestValidateAndNormalise:
         items = [_make_item(item_type="bogus_type")]
         result = validate_and_normalise(_make_response(items=items))
         assert result.line_items[0].item_type == "contract_work"
+
+    def test_invalid_item_type_is_reported_as_a_format_warning(self):
+        result = validate_and_normalise(_make_response(items=[_make_item(item_type="bogus_type")]))
+        assert result.format_warnings == [
+            ParseWarning(
+                ref="A1", field="item_type", description="item_type 'bogus_type' unknown; recorded as contract_work"
+            )
+        ]
 
     def test_missing_decimal_fields_default_to_zero(self):
         items = [{"description": "Bare item"}]  # no decimal fields at all

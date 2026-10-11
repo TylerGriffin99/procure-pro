@@ -11,7 +11,7 @@ from app.harness.executors.create_records.claim import money_format_warnings
 from app.harness.executors.extract_generic import validate_and_normalise
 from app.harness.executors.extract_wbpro import parse_wbpro
 from app.harness.schemas import GenericExtraction, ParsedClaimItem, ParsedClaimSummary, RawExtraction, RawPage
-from app.schemas.claim_extraction import DroppedRow, MoneyFormatWarning
+from app.schemas.claim_extraction import DroppedRow, ParseWarning
 from app.utils.dates import parse_ddmmyy
 from app.utils.money import parse_money
 
@@ -32,13 +32,15 @@ def test_money_maps_empty_and_none_to_zero_silently():
     assert parse_money(None).warning is None
 
 
-def test_parse_date_returns_none_on_garbage():
-    assert parse_ddmmyy("31/13/2024") is None
+def test_parse_date_reports_a_warning_on_garbage():
+    parsed = parse_ddmmyy("31/13/2024")
+    assert parsed.value is None
+    assert parsed.warning is not None
 
 
 def test_parse_date_reads_day_first_and_pivots_two_digit_years():
-    assert parse_ddmmyy("05/03/24") == date(2024, 3, 5)
-    assert parse_ddmmyy("2024-03-05") is None
+    assert parse_ddmmyy("05/03/24").value == date(2024, 3, 5)
+    assert parse_ddmmyy("2024-03-05").value is None
 
 
 def test_create_records_reports_one_warning_per_malformed_persisted_field():
@@ -73,7 +75,7 @@ def test_wbpro_extraction_reports_malformed_cell_before_normalising_it():
 
     assert parsed.line_items[0].contract_value == "0.00"
     assert parsed.format_warnings == [
-        MoneyFormatWarning(
+        ParseWarning(
             ref="1.1",
             field="contract_value",
             description="contract_value: unparseable money value '12,3O0.00'; recorded as 0",

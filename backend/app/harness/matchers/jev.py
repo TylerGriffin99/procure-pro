@@ -12,10 +12,10 @@ import json
 import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Final, cast
+from typing import cast
 
 import httpx
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
 from app.clients.jev_client import JevClient
 from app.clients.llm_client import LlmClient
@@ -26,6 +26,9 @@ from app.harness.matchers.llm import match_with_llm
 from app.harness.models import PhaseRun
 from app.harness.prompts import load_prompt
 from app.harness.schemas import (
+    VPS_KINDS,
+    VPS_MATCHES,
+    WBS_MATCHES,
     ItemDecision,
     JevTuning,
     MatchOutcome,
@@ -42,9 +45,6 @@ logger = logging.getLogger(__name__)
 NONE_OPTION = "__none__"
 WBS_INSTRUCTIONS = load_prompt("jev_wbs_instructions").strip().format(none_option=NONE_OPTION)
 VPS_INSTRUCTIONS = load_prompt("jev_vps_instructions").strip().format(none_option=NONE_OPTION)
-VPS_KINDS: Final = frozenset({ClaimItemType.variation, ClaimItemType.provisional_sum})
-WBS_MATCHES: Final = TypeAdapter(list[WbsMatch])
-VPS_MATCHES: Final = TypeAdapter(list[VpsMatch])
 
 
 def build_wbs_criteria(subcats: list[Subcat]) -> tuple[dict[str, str], dict[str, str]]:

@@ -96,7 +96,9 @@ async def test_batch_agents_phase_writes_workspace_via_llm_matcher(client, db_se
 @pytest.mark.asyncio
 async def test_unconfigured_jev_warns_and_falls_back_to_llm(client, db_session, caplog):
     session = await _make_session(client, db_session)
-    settings = Settings(secret_key="k", llm_provider="openai", llm_model="m", open_router_api_key="")
+    settings = Settings(
+        secret_key="k", llm_provider="openai", llm_model="m", openai_api_key="k", open_router_api_key=""
+    )
     model = TestModel(custom_output_args=[s.model_dump() for s in SAMPLE])
     llm = LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=model)
 
@@ -107,7 +109,7 @@ async def test_unconfigured_jev_warns_and_falls_back_to_llm(client, db_session, 
     assert json.loads(raw)[0]["wbs_code"] == "DM-01"
     result = next(e for e in events if e.type == "harness_phase_result" and e.phase_name == "WBS Matching")
     assert result.detail.startswith("matcher=llm ")
-    assert any("falling back to matcher=llm" in r.getMessage() for r in caplog.records)
+    assert any("matcher=jev phases will run on the LLM matcher" in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.asyncio

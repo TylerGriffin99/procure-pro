@@ -50,7 +50,7 @@ from app.schemas.assessment import (
     ReclassifyRequest,
 )
 from app.schemas.assessment_aggregate import AggregatedAssessment, AssessmentAggregate, ReclassifyCarry
-from app.schemas.payment_recommendation import ExportFile, PaymentRecommendation, RetentionDetail
+from app.schemas.payment_recommendation import ExportFile, PaymentRecommendation
 from app.schemas.retention import RetentionTier
 from app.services.assessment_aggregate import aggregate_assessment, recompute_item, rollup_status, summarise_assessment
 from app.utils.assessment_engine import calculate_retention_per_tier
@@ -303,6 +303,8 @@ async def generate_assessment_export(
     assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
     project = require(await project_repo.get_by_id_with_retention(db, project_id), "Project")
     claim = await claim_repo.get_by_id(db, assessment.claim_id)
+    if claim is None:
+        raise InternalError("Associated claim missing")
 
     aggregate = (await aggregate_assessment(db, project_id, assessment)).aggregate
     summary = summarise_assessment(aggregate, project)
@@ -312,9 +314,7 @@ async def generate_assessment_export(
         project=project,
         claim=claim,
         summary=summary,
-        retention_details=[
-            RetentionDetail(**detail) for detail in calculate_retention_per_tier(summary.total_recommended, tiers)
-        ],
+        retention_details=calculate_retention_per_tier(summary.total_recommended, tiers),
     )
     return render_export(recommendation, format)
 
@@ -504,6 +504,8 @@ async def reclassify_item(
     assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
     source, claim_line_item_id = find_source_row(assessment, data)
     cli = await claim_line_item_repo.get_by_id(db, claim_line_item_id)
+    if cli is None:
+        raise InternalError("Claim line item missing")
 
     if isinstance(source, AssessmentLineItem) and data.target_type == AssessmentItemKind.line_item:
         await assessment_line_item_repo.update(db, source, wbs_code_id=require_target_wbs(data))
@@ -515,8 +517,8 @@ async def reclassify_item(
         claim_line_item_id=claim_line_item_id,
         contractor_claim_to_date=source.contractor_claim_to_date,
         recommended_this_period=source.recommended_this_period,
-        description=cli.description if cli else "",
-        contract_value=cli.contract_value if cli else Decimal("0"),
+        description=cli.description,
+        contract_value=cli.contract_value,
     )
     await delete_source_row(db, source)
     # Expire so the collections reload fresh instead of returning the deleted row.

@@ -13,7 +13,7 @@ from app.constants.enums import ClaimItemType
 from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
 from app.harness.extract_shared import ITEM_MONEY_FIELDS, extract_metadata, money_warnings, summary_totals
 from app.harness.schemas import ParsedClaim, ParsedClaimItem, ParsedClaimMetadata, RawExtraction, RawPage
-from app.schemas.claim_extraction import DroppedRow, MoneyFormatWarning
+from app.schemas.claim_extraction import DroppedRow, ParseWarning
 from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def money_slice(row: list[str | None], section: str) -> list[str | None]:
     return row[3:9] if section == SECTION_VARIATION else row[2:8]
 
 
-def row_warnings(item: ParsedClaimItem, row: list[str | None], section: str) -> list[MoneyFormatWarning]:
+def row_warnings(item: ParsedClaimItem, row: list[str | None], section: str) -> list[ParseWarning]:
     cells = zip(ITEM_MONEY_FIELDS, money_slice(row, section), strict=True)
     return money_warnings((item.ref_code, field, cell) for field, cell in cells)
 
@@ -129,7 +129,7 @@ def dropped_row(page: int, row_index: int, row: list[str | None]) -> DroppedRow:
 def parse_wbpro(raw_extraction: RawExtraction) -> ParsedClaim:
     metadata = extract_metadata(raw_extraction.all_text())
     line_items: list[ParsedClaimItem] = []
-    format_warnings: list[MoneyFormatWarning] = []
+    format_warnings: list[ParseWarning] = []
     dropped_rows: list[DroppedRow] = []
     for page, row_index, row, section in page_rows(raw_extraction):
         item = map_row_to_item(row, section, len(line_items))

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Final
 
-from app.constants.enums import Country
+from app.constants.enums import Country, LlmProvider
 
 CENTS: Final = Decimal("0.01")
 
@@ -34,3 +34,11 @@ PDF_MEDIA_TYPE: Final = "application/pdf"
 XLSX_MEDIA_TYPE: Final = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 CURRENCY_BY_COUNTRY: Final[dict[Country, str]] = {Country.NZ: "NZD", Country.AU: "AUD"}
+
+# (base_url, or None for the OpenAI SDK default; name of the settings field holding the API key)
+PROVIDER_TABLE: Final[dict[LlmProvider, tuple[str | None, str]]] = {
+    LlmProvider.anthropic: ("https://api.anthropic.com/v1/", "anthropic_api_key"),
+    LlmProvider.openai: (None, "openai_api_key"),
+    LlmProvider.openrouter: ("https://openrouter.ai/api/v1", "open_router_api_key"),
+    LlmProvider.deepseek: ("https://api.deepseek.com", "deepseek_api_key"),
+}

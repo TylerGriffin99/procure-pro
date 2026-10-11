@@ -14,6 +14,7 @@ from app.schemas.assessment_aggregate import (
     AssessmentSummary,
 )
 from app.schemas.base import StrictModel
+from app.schemas.retention import RetentionDetail
 from app.utils.dates import auto_fill_dates, format_long_date
 
 
@@ -33,12 +34,6 @@ def export_display(history_row: Any, child_rows: list[Any]) -> tuple[str, str]:
     else:
         status = ""
     return comments.strip(), status
-
-
-class RetentionDetail(StrictModel):
-    percentage: str
-    base: Decimal
-    amount: Decimal
 
 
 class ContractWorkLine(StrictModel):

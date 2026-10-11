@@ -95,53 +95,6 @@ async def test_wbs_count_mismatch_raises(db_session: AsyncSession, test_user, te
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="D8 keeps the VPS count mismatch a warning; pinned by tests/unit/test_create_records_inputs.py"
-)
-async def test_vps_count_mismatch_raises(db_session: AsyncSession, test_user, test_project, test_document):
-    """VPS matches returning wrong count should fail."""
-    session = await harness_repo.create_session(
-        document_id=test_document.id,
-        db=db_session,
-        user_id=test_user.id,
-        project_id=test_project.id,
-        harness_type="claim_parse",
-    )
-
-    items = [contract_item(0), variation_item(1, desc="Extra work")]
-    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", parsed_claim_json(items))
-    await harness_repo.write_workspace_file(
-        db_session,
-        session.id,
-        "wbs_matches.json",
-        json.dumps(
-            [
-                {
-                    "item_index": 0,
-                    "wbs_code": "EX-01",
-                    "wbs_code_id": None,
-                    "wbs_description": "Item",
-                    "parent_code": "EX",
-                    "is_new": False,
-                    "confidence": 0.9,
-                }
-            ]
-        ),
-    )
-    # VPS matches empty but there's 1 variation
-    await harness_repo.write_workspace_file(db_session, session.id, "vps_matches.json", json.dumps([]))
-    await db_session.flush()
-
-    with pytest.raises(
-        ExternalServiceError,
-        match=("VPS matching returned 0 variation/PS matches but extraction has 1 variation/provisional_sum items"),
-    ):
-        await execute_create_records(
-            db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
-        )
-
-
-@pytest.mark.asyncio
 async def test_out_of_range_item_index_raises(db_session: AsyncSession, test_user, test_project, test_document):
     """An item_index outside the line_items range should fail."""
     session = await harness_repo.create_session(

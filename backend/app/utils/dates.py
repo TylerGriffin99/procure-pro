@@ -2,21 +2,28 @@ import calendar
 from datetime import date, datetime, timedelta
 
 from app.constants.values import DMY_DATE_PARTS, TWO_DIGIT_YEAR_CEILING, TWO_DIGIT_YEAR_CENTURY, WORKING_DAYS_OFFSET
+from app.schemas.base import StrictModel
 
 
-def parse_ddmmyy(raw: str | None) -> date | None:
+class DateParse(StrictModel):
+    value: date | None
+    warning: str | None = None  # set when a present date was unreadable; value is then None
+
+
+def parse_ddmmyy(raw: str | None) -> DateParse:
     if not raw:
-        return None
+        return DateParse(value=None)
+    unreadable = DateParse(value=None, warning=f"unparseable date {raw!r}")
     parts = raw.split("/")
     if len(parts) != DMY_DATE_PARTS:
-        return None
+        return unreadable
     try:
         day, month, year = (int(part) for part in parts)
         if year < TWO_DIGIT_YEAR_CEILING:
             year += TWO_DIGIT_YEAR_CENTURY
-        return date(year, month, day)
+        return DateParse(value=date(year, month, day))
     except ValueError:
-        return None
+        return unreadable
 
 
 def add_working_days(start: date, days: int) -> date:

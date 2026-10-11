@@ -5,7 +5,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from app.constants.values import CENTS
 from app.schemas.assessment_aggregate import AssessmentSummary, AssessmentTotals
-from app.schemas.retention import RetentionTier
+from app.schemas.retention import RetentionDetail, RetentionTier
 
 
 def calculate_retention(total_recommended: Decimal, tiers: Sequence[RetentionTier]) -> Decimal:
@@ -34,21 +34,18 @@ def calculate_retention(total_recommended: Decimal, tiers: Sequence[RetentionTie
     return total_retention
 
 
-def calculate_retention_per_tier(total_recommended: Decimal, tiers: Sequence[RetentionTier]) -> list[dict]:
-    """Calculate retention per tier for display in the PDF.
-
-    Returns list of dicts with 'percentage', 'base' (amount in this tier's bracket),
-    and 'amount' (retention for this tier).
-    """
+def calculate_retention_per_tier(total_recommended: Decimal, tiers: Sequence[RetentionTier]) -> list[RetentionDetail]:
     remaining = total_recommended
-    details = []
+    details: list[RetentionDetail] = []
 
     for tier in sorted(tiers, key=lambda t: t.up_to_amount or Decimal("999999999")):
         pct = tier.percentage
         up_to = tier.up_to_amount
 
         if remaining <= 0:
-            details.append({"percentage": f"{float(pct) * 100:.1f}%", "base": Decimal("0"), "amount": Decimal("0")})
+            details.append(
+                RetentionDetail(percentage=f"{float(pct) * 100:.1f}%", base=Decimal("0"), amount=Decimal("0"))
+            )
             continue
 
         if up_to is None:
@@ -59,7 +56,7 @@ def calculate_retention_per_tier(total_recommended: Decimal, tiers: Sequence[Ret
             remaining -= applicable
 
         retention = (applicable * pct).quantize(CENTS, rounding=ROUND_HALF_UP)
-        details.append({"percentage": f"{float(pct) * 100:.1f}%", "base": applicable, "amount": retention})
+        details.append(RetentionDetail(percentage=f"{float(pct) * 100:.1f}%", base=applicable, amount=retention))
 
     return details
 

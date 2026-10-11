@@ -6,12 +6,14 @@ import json
 import pytest
 
 from app.config import settings
+from app.constants.enums import ClaimFormat
 from app.database import get_session_factory
 from app.dependencies import get_llm_client, get_matchers
 from app.exceptions import BadRequestError
 from app.harness.factory import engine_builder
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
 from app.harness.phase_context import build_phase_context
+from app.harness.schemas import FormatDetection
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import document_repo, harness_repo
 from app.services import harness_service
@@ -117,8 +119,8 @@ async def test_stream_events_wraps_engine_level_error(db_session, stream_deps, m
     db_session.expire_all()
     stored = await harness_repo.get_session(db_session, session_id)
     assert stored is not None
-    assert stored.status == HarnessSessionStatus.failed
-    assert stored.error_message == "RuntimeError"
+    assert stored.status == HarnessSessionStatus.pending
+    assert stored.error_message is None
 
 
 def _builder_raises(**_):
@@ -146,8 +148,81 @@ async def test_stream_events_wraps_engine_builder_error(db_session, stream_deps)
     db_session.expire_all()
     stored = await harness_repo.get_session(db_session, session_id)
     assert stored is not None
+    assert stored.status == HarnessSessionStatus.pending
+    assert stored.error_message is None
+
+
+async def test_failing_second_consumer_leaves_a_session_claimed_by_another_stream_running(db_session, stream_deps):
+    user_id, project_id, session_id = await _pending_session(db_session)
+    assert await harness_repo.try_claim_running(db_session, session_id)
+    await db_session.commit()
+
+    frames = [
+        frame
+        async for frame in harness_service.stream_events(
+            definition=_failing_definition(),
+            session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            **{**stream_deps, "build": _builder_raises},
+        )
+    ]
+
+    assert frames[-1] == "data: [DONE]\n\n"
+    db_session.expire_all()
+    stored = await harness_repo.get_session(db_session, session_id)
+    assert stored is not None
+    assert stored.status == HarnessSessionStatus.running
+    assert stored.error_message is None
+
+
+async def _complete_raises(db, session_id):
+    raise RuntimeError("boom")
+
+
+async def test_error_after_claim_fails_the_running_session(db_session, stream_deps, monkeypatch):
+    user_id, project_id, session_id = await _pending_session(db_session)
+    monkeypatch.setattr("app.harness.engine.harness_repo.complete_if_running", _complete_raises)
+
+    frames = [
+        frame
+        async for frame in harness_service.stream_events(
+            definition=_succeeding_definition(),
+            session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            **stream_deps,
+        )
+    ]
+
+    assert frames[-1] == "data: [DONE]\n\n"
+    assert json.loads(frames[-2].removeprefix("data: "))["error"] == "RuntimeError"
+    db_session.expire_all()
+    stored = await harness_repo.get_session(db_session, session_id)
+    assert stored is not None
     assert stored.status == HarnessSessionStatus.failed
     assert stored.error_message == "RuntimeError"
+
+
+async def _detect(**_):
+    return FormatDetection(format=ClaimFormat.generic, confidence=1.0, markers_found=[])
+
+
+def _succeeding_definition() -> HarnessDefinition:
+    return HarnessDefinition(
+        harness_type=HarnessType.CLAIM_PARSE,
+        display_name="Succeeding",
+        description="One phase that returns",
+        phases=[
+            PhaseDefinition(
+                name="detect",
+                description="Returns a detection",
+                phase_type=PhaseType.PROGRAMMATIC,
+                workspace_output="detected.json",
+                executor=_detect,
+            )
+        ],
+    )
 
 
 # --- a cancelled stream does not leave the session running (hunter M6) ---

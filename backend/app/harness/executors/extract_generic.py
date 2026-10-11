@@ -24,7 +24,7 @@ from app.harness.schemas import (
     ParsedClaimSummary,
     RawExtraction,
 )
-from app.schemas.claim_extraction import MoneyFormatWarning
+from app.schemas.claim_extraction import ParseWarning
 from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
@@ -41,15 +41,12 @@ def money_text(value: str | float | int | None) -> str:
 
 
 def normalise_item(index: int, raw_item: GenericLineItem) -> ParsedClaimItem:
-    item_type = raw_item.item_type or ClaimItemType.contract_work
-    if item_type not in ClaimItemType:
-        logger.warning("Unknown item_type %r on item %d; coercing to contract_work", item_type, index)
-        item_type = ClaimItemType.contract_work
+    known = raw_item.item_type in ClaimItemType
     return ParsedClaimItem(
         item_index=index,
         ref_code=raw_item.ref_code or "",
         description=raw_item.description or "",
-        item_type=ClaimItemType(item_type),
+        item_type=ClaimItemType(raw_item.item_type) if known else ClaimItemType.contract_work,
         **{field: money_text(getattr(raw_item, field)) for field in ITEM_MONEY_FIELDS},
     )
 
@@ -58,7 +55,7 @@ def uses_raw_summary(raw_summary: GenericSummary) -> bool:
     return all(getattr(raw_summary, k) for k in SUMMARY_FIELDS)
 
 
-def extraction_warnings(extraction: GenericExtraction) -> list[MoneyFormatWarning]:
+def extraction_warnings(extraction: GenericExtraction) -> list[ParseWarning]:
     cells: list[MoneyCell] = [
         (item.ref_code or "", field, getattr(item, field))
         for item in extraction.line_items
@@ -66,7 +63,20 @@ def extraction_warnings(extraction: GenericExtraction) -> list[MoneyFormatWarnin
     ]
     if uses_raw_summary(extraction.summary):
         cells += [(None, field, getattr(extraction.summary, field)) for field in SUMMARY_FIELDS]
-    return money_warnings(cells)
+    return money_warnings(cells) + item_type_warnings(extraction.line_items)
+
+
+def item_type_warnings(items: list[GenericLineItem]) -> list[ParseWarning]:
+    # A blank item_type is the extractor's default, not an unknown type.
+    return [
+        ParseWarning(
+            ref=item.ref_code or "",
+            field="item_type",
+            description=f"item_type {item.item_type!r} unknown; recorded as {ClaimItemType.contract_work.value}",
+        )
+        for item in items
+        if item.item_type and item.item_type not in ClaimItemType
+    ]
 
 
 def normalise_summary(raw_summary: GenericSummary, line_items: list[ParsedClaimItem]) -> ParsedClaimSummary:

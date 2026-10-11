@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from app.utils.dates import add_working_days, auto_fill_dates, parse_ddmmyy, payment_due_20th
+from app.utils.dates import DateParse, add_working_days, auto_fill_dates, parse_ddmmyy, payment_due_20th
 
 
 @pytest.mark.parametrize(
@@ -10,12 +10,19 @@ from app.utils.dates import add_working_days, auto_fill_dates, parse_ddmmyy, pay
     [("05/03/2024", date(2024, 3, 5)), ("05/03/24", date(2024, 3, 5)), ("31/12/99", date(2099, 12, 31))],
 )
 def test_parse_ddmmyy_reads_day_first(raw, expected):
-    assert parse_ddmmyy(raw) == expected
+    assert parse_ddmmyy(raw) == DateParse(value=expected)
 
 
-@pytest.mark.parametrize("raw", ["", "31/13/2024", "2024-03-05", "aa/bb/cc", "1/2"])
-def test_parse_ddmmyy_returns_none_when_unreadable(raw):
-    assert parse_ddmmyy(raw) is None
+@pytest.mark.parametrize("raw", ["31/13/2024", "2024-03-05", "aa/bb/cc", "1/2"])
+def test_parse_ddmmyy_warns_when_a_present_date_is_unreadable(raw):
+    parsed = parse_ddmmyy(raw)
+    assert parsed.value is None
+    assert parsed.warning == f"unparseable date {raw!r}"
+
+
+@pytest.mark.parametrize("raw", ["", None])
+def test_parse_ddmmyy_is_silent_when_the_date_is_absent(raw):
+    assert parse_ddmmyy(raw) == DateParse(value=None)
 
 
 def test_add_working_days_skips_weekends():
@@ -46,7 +53,3 @@ def test_auto_fill_dates_chains_two_offsets_then_the_20th():
 
 def test_auto_fill_dates_without_a_received_date_is_empty():
     assert auto_fill_dates(None) == {}
-
-
-def test_parse_ddmmyy_accepts_none():
-    assert parse_ddmmyy(None) is None

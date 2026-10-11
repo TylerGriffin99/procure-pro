@@ -124,7 +124,7 @@ def test_unset_jev_key_warning_logs_once_per_process(fresh_providers, monkeypatc
         for _ in range(3):
             dependencies.get_engine_builder(settings, get_llm_client(), get_matchers())
 
-    warnings = [r for r in caplog.records if "falling back to matcher=llm" in r.getMessage()]
+    warnings = [r for r in caplog.records if "matcher=jev phases will run on the LLM matcher" in r.getMessage()]
     assert len(warnings) == 1
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Final
+from typing import Any
 
 from pydantic import TypeAdapter
 from pydantic_ai import Agent
@@ -11,18 +11,10 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.config import Settings
 from app.constants.enums import LlmProvider
+from app.constants.values import PROVIDER_TABLE
 from app.schemas.base import StrictModel
 
 logger = logging.getLogger(__name__)
-
-
-# (base_url, or None for the OpenAI SDK default; name of the settings field holding the API key)
-PROVIDER_TABLE: Final[dict[LlmProvider, tuple[str | None, str]]] = {
-    LlmProvider.anthropic: ("https://api.anthropic.com/v1/", "anthropic_api_key"),
-    LlmProvider.openai: (None, "openai_api_key"),
-    LlmProvider.openrouter: ("https://openrouter.ai/api/v1", "open_router_api_key"),
-    LlmProvider.deepseek: ("https://api.deepseek.com", "deepseek_api_key"),
-}
 
 
 class StructuredResult[T](StrictModel):

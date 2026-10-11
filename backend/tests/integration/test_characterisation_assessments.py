@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from app.exceptions import BadRequestError, ConflictError
+from app.exceptions import BadRequestError, ConflictError, InternalError
 from app.models.assessment import AdjustmentType, AssessmentStatus, LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
@@ -101,6 +101,18 @@ async def test_export_unknown_format_today_falls_back_to_pdf(db_session):
     export = await assessment_service.generate_assessment_export(db_session, s.project.id, s.assessment.id, "csv")
     assert export.content.startswith(b"%PDF")
     assert export.media_type == "application/pdf"
+
+
+async def no_claim(db, claim_id, project_id=None):
+    return None
+
+
+async def test_export_raises_when_the_assessed_claim_is_missing(db_session, monkeypatch):
+    s = await seed_scenario(db_session)
+    monkeypatch.setattr(assessment_service.claim_repo, "get_by_id", no_claim)
+
+    with pytest.raises(InternalError, match="Associated claim missing"):
+        await assessment_service.generate_assessment_export(db_session, s.project.id, s.assessment.id, "pdf")
 
 
 # --- finalise / revert ---

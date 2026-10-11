@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, MatcherName, VpsKind
 from app.schemas.assessment_aggregate import AssessmentAggregate
 from app.schemas.base import StrictModel
-from app.schemas.claim_extraction import ClaimMetadata, DroppedRow, MoneyFormatWarning
+from app.schemas.claim_extraction import ClaimMetadata, DroppedRow, ParseWarning
 from app.schemas.common import Confidence, ItemIndex
 
 # Decimal-ish fields arrive as strings ("$1,234.56", "(500.00)") or numbers;
@@ -70,8 +70,8 @@ class ParsedClaim(BaseModel):
     metadata: ParsedClaimMetadata = Field(default_factory=ParsedClaimMetadata)
     line_items: list[ParsedClaimItem]
     summary: ParsedClaimSummary = Field(default_factory=ParsedClaimSummary)
-    # Malformed cells seen before the extractor normalised them to "0.00"; create_records flags each one.
-    format_warnings: list[MoneyFormatWarning] = Field(default_factory=list)
+    # Malformed cells or unknown item types the extractor normalised ("0.00", contract_work); create_records flags each.
+    format_warnings: list[ParseWarning] = Field(default_factory=list)
     # Table rows the deterministic parser could not map (wrong column count); each one understates the claim.
     dropped_rows: list[DroppedRow] = Field(default_factory=list)
 
@@ -280,7 +280,7 @@ class GenericLineItem(BaseModel):
     ref_code: str = ""
     description: str = ""
     # Kept as a plain string (not Literal) so a stray type does not fail the whole
-    # extraction — `validate_and_normalise` coerces unknown types to contract_work.
+    # extraction — `validate_and_normalise` records unknown types as contract_work with a format warning.
     item_type: str = ClaimItemType.contract_work
     contract_value: _Numeric = None
     percentage: _Numeric = None
@@ -302,3 +302,8 @@ class GenericExtraction(BaseModel):
     metadata: GenericMetadata = Field(default_factory=GenericMetadata)
     line_items: list[GenericLineItem]
     summary: GenericSummary = Field(default_factory=GenericSummary)
+
+
+VPS_KINDS: Final = frozenset({ClaimItemType.variation, ClaimItemType.provisional_sum})
+WBS_MATCHES: Final = TypeAdapter(list[WbsMatch])
+VPS_MATCHES: Final = TypeAdapter(list[VpsMatch])

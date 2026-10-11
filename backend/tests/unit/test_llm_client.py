@@ -5,9 +5,10 @@ from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from app.clients.llm_client import PROVIDER_TABLE, LlmClient, StructuredResult
+from app.clients.llm_client import LlmClient, StructuredResult
 from app.config import Settings
 from app.constants import LlmProvider
+from app.constants.values import PROVIDER_TABLE
 
 KEYS = {
     "anthropic_api_key": "k-anthropic",
@@ -34,10 +35,13 @@ def _test_client(model) -> LlmClient:
 class TestSettings:
     def test_unknown_provider_is_rejected_at_settings_load(self):
         with pytest.raises(ValidationError, match="llm_provider"):
-            Settings(secret_key="k", llm_provider="bogus", llm_model="m")
+            Settings(secret_key="k", llm_provider="bogus", llm_model="m", **KEYS)
 
     def test_provider_is_case_insensitive_at_settings_load(self):
-        assert Settings(secret_key="k", llm_provider="OpenRouter", llm_model="m").llm_provider is LlmProvider.openrouter
+        assert (
+            Settings(secret_key="k", llm_provider="OpenRouter", llm_model="m", **KEYS).llm_provider
+            is LlmProvider.openrouter
+        )
 
 
 class TestFromSettings:

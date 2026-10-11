@@ -10,10 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants.enums import FlagSeverity, FlagType
 from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
 from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings
-from app.harness.schemas import ClaimLinks, FlagSpec, ParsedClaim, ParsedClaimItem, ParsedClaimSummary
+from app.harness.schemas import (
+    ClaimLinks,
+    FlagSpec,
+    ParsedClaim,
+    ParsedClaimItem,
+    ParsedClaimMetadata,
+    ParsedClaimSummary,
+)
 from app.models.claim import Claim
 from app.repos import claim_repo, harness_repo
-from app.schemas.claim_extraction import ClaimLineValues, MoneyFormatWarning
+from app.schemas.claim_extraction import ClaimLineValues, ParseWarning
 from app.utils.dates import parse_ddmmyy
 from app.utils.money import parse_money
 
@@ -28,14 +35,32 @@ SUMMARY_MONEY_FIELDS: Final = (
 )
 
 
-def money_format_warnings(
-    line_items: Sequence[ParsedClaimItem], summary: ParsedClaimSummary
-) -> list[MoneyFormatWarning]:
+def money_format_warnings(line_items: Sequence[ParsedClaimItem], summary: ParsedClaimSummary) -> list[ParseWarning]:
     cells: list[MoneyCell] = [
         (item.ref_code, field, getattr(item, field)) for item in line_items for field in ITEM_MONEY_FIELDS
     ]
     cells += [(None, field, getattr(summary, field)) for field in SUMMARY_MONEY_FIELDS]
     return money_warnings(cells)
+
+
+METADATA_DATE_FIELDS: Final = ("period_from", "period_to", "payment_due")
+
+
+def parse_claim_number(raw: str) -> int | None:
+    text = raw.strip()
+    return int(text) if text.isdecimal() else None
+
+
+def metadata_warnings(metadata: ParsedClaimMetadata) -> list[ParseWarning]:
+    warnings = [
+        ParseWarning(ref=None, field=field, description=f"{field}: {warning}; recorded as blank")
+        for field in METADATA_DATE_FIELDS
+        if (warning := parse_ddmmyy(getattr(metadata, field)).warning) is not None
+    ]
+    if parse_claim_number(metadata.claim_number) is None:
+        description = f"claim_number {metadata.claim_number!r} missing or unparseable; recorded as 0"
+        warnings.append(ParseWarning(ref=None, field="claim_number", description=description))
+    return warnings
 
 
 def money(raw: str | float | int | None) -> Decimal:
@@ -70,10 +95,10 @@ async def build_claim(
         db,
         line_items=[claim_line_values(i, item, links, user_id) for i, item in enumerate(parsed.line_items)],
         project_id=project_id,
-        claim_number=int(metadata.claim_number or 0),
-        period_from=parse_ddmmyy(metadata.period_from),
-        period_to=parse_ddmmyy(metadata.period_to),
-        payment_due=parse_ddmmyy(metadata.payment_due),
+        claim_number=parse_claim_number(metadata.claim_number) or 0,
+        period_from=parse_ddmmyy(metadata.period_from).value,
+        period_to=parse_ddmmyy(metadata.period_to).value,
+        payment_due=parse_ddmmyy(metadata.payment_due).value,
         parsed_at=datetime.now(UTC),
         original_contract_total=money(summary.original_contract_total),
         variations_total=money(summary.variations_total),
@@ -86,8 +111,12 @@ async def build_claim(
 
 def parse_warning_flags(parsed: ParsedClaim) -> list[FlagSpec]:
     # Extractor warnings cover cells already normalised to "0.00"; the re-parse covers a hand-written parsed_claim.
-    money = [*parsed.format_warnings, *money_format_warnings(parsed.line_items, parsed.summary)]
-    flags = [format_warning(w.description, w.ref) for w in money]
+    warnings = [
+        *parsed.format_warnings,
+        *money_format_warnings(parsed.line_items, parsed.summary),
+        *metadata_warnings(parsed.metadata),
+    ]
+    flags = [format_warning(w.description, w.ref) for w in warnings]
     flags += [
         format_warning(
             f"Table row dropped: {row.column_count} columns (expected {STANDARD_COLUMNS} or {VARIATION_COLUMNS}) "

@@ -53,8 +53,6 @@ async def mark_session_failed(db: AsyncSession, session_id: uuid.UUID, error: st
 
 @dataclass
 class HarnessEngine:
-    """Walks through phases, dispatching by type, yielding SSE events."""
-
     definition: HarnessDefinition
     session_id: uuid.UUID
     user_id: uuid.UUID
@@ -67,7 +65,6 @@ class HarnessEngine:
     claimed: bool = field(default=False, init=False)
 
     async def run(self) -> AsyncGenerator[HarnessEvent, None]:
-        """Execute harness from current_phase, yielding SSE events."""
         claimed = await harness_repo.try_claim_running(self.db, self.session_id)
         if not claimed:
             yield HarnessErrorEvent(session_id=self.session_id, error="Session already running")

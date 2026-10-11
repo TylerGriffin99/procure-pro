@@ -12,7 +12,7 @@ class ClaimMetadata(StrictModel):
     payment_due: str | None = None
 
 
-class MoneyFormatWarning(StrictModel):
+class ParseWarning(StrictModel):
     ref: str | None
     field: str
     description: str

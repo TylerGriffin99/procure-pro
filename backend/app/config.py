@@ -4,6 +4,7 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 from app.constants.enums import LlmProvider, MatcherName
+from app.constants.values import PROVIDER_TABLE
 
 
 class Settings(BaseSettings):
@@ -32,6 +33,13 @@ class Settings(BaseSettings):
     open_router_api_key: str = ""
     deepseek_api_key: str = ""
 
+    @model_validator(mode="after")
+    def require_provider_key(self):
+        _, key_field = PROVIDER_TABLE[self.llm_provider]
+        if not getattr(self, key_field):
+            raise ValueError(f"{key_field.upper()} must be set when LLM_PROVIDER={self.llm_provider.value}")
+        return self
+
     matcher_default: MatcherName = MatcherName.llm
     jev_model: str = "typesafe/jev-1.13"
     jev_decisions_url: str = "https://openrouter.ai/api/alpha/decisions"
@@ -52,7 +60,7 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    model_config = {"env_file": ".env", "extra": "ignore", "hide_input_in_errors": True}
 
 
 @functools.cache

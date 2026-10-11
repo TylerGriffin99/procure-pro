@@ -46,8 +46,8 @@ def test_unset_jev_key_runs_jev_phases_on_the_llm_and_logs_once(caplog):
 
     assert table[MatcherName.jev] is table[MatcherName.llm]
     assert table[MatcherName.jev].func is match_with_llm
-    warnings = [r.getMessage() for r in caplog.records if "falling back to matcher=llm" in r.getMessage()]
-    assert len(warnings) == 1
+    warnings = [r.getMessage() for r in caplog.records if r.name == "app.harness.factory"]
+    assert warnings == ["open_router_api_key unset: matcher=jev phases will run on the LLM matcher"]
 
 
 def test_engine_builder_wires_default_matcher_and_shared_llm():

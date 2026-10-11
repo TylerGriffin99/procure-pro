@@ -34,10 +34,7 @@ class EngineBuilder(Protocol):
 def build_matchers(settings: Settings, *, llm: LlmClient) -> dict[MatcherName, Matcher]:
     llm_matcher = functools.partial(match_with_llm, llm=llm)
     if not settings.open_router_api_key:
-        logger.warning(
-            "matcher=jev requested but open_router_api_key is unset; "
-            "falling back to matcher=llm for every matcher=jev phase."
-        )
+        logger.warning("open_router_api_key unset: matcher=jev phases will run on the LLM matcher")
         return {MatcherName.llm: llm_matcher, MatcherName.jev: llm_matcher}
     tuning = JevTuning(confidence_floor=settings.jev_confidence_floor, max_concurrency=settings.jev_max_concurrency)
     jev_matcher = functools.partial(match_with_jev, client=JevClient.from_settings(settings), llm=llm, tuning=tuning)

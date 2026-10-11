@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import BadRequestError
+from app.exceptions import BadRequestError, InternalError
 from app.models.assessment import Assessment, AssessmentStatus, LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_variation import AssessmentVariation
@@ -293,3 +293,22 @@ async def test_reclassify_roundtrip_line_item_to_ps_and_back(db_session: AsyncSe
     assert li.recommended_this_period == Decimal("8000")
     assert li.total_recommended == Decimal("8000")
     assert li.contractor_claim_to_date == Decimal("10000")
+
+
+async def no_claim_line_item(db, claim_line_item_id):
+    return None
+
+
+@pytest.mark.asyncio
+async def test_reclassify_raises_when_the_claim_line_item_is_missing(db_session: AsyncSession, monkeypatch):
+    user, project, claim, cli, assessment, ali, wbs_a, wbs_b = await _seed(db_session)
+    monkeypatch.setattr(assessment_service.claim_line_item_repo, "get_by_id", no_claim_line_item)
+    req = ReclassifyRequest(
+        source_item_id=ali.id,
+        source_type="line-item",
+        target_type="variation",
+        new_record=ReclassifyNewRecord(description="Concrete Works Variation"),
+    )
+
+    with pytest.raises(InternalError, match="Claim line item missing"):
+        await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
