@@ -7,7 +7,8 @@ reports a warning, and create_records turns that warning into a format_warning f
 from datetime import date
 from decimal import Decimal
 
-from app.harness.executors.create_records import money_format_warnings
+from app.harness.executors.create_records.claim import money_format_warnings
+from app.harness.schemas import ParsedClaimItem, ParsedClaimSummary
 from app.utils.dates import parse_ddmmyy
 from app.utils.money import parse_money
 
@@ -39,10 +40,10 @@ def test_parse_date_reads_day_first_and_pivots_two_digit_years():
 
 def test_create_records_reports_one_warning_per_malformed_persisted_field():
     items = [
-        {"ref_code": "1.1", "contract_value": "1,2OO.00", "ptd": "10.00", "current": "abc"},
-        {"ref_code": "1.2", "contract_value": "500.00", "balance": None},
+        ParsedClaimItem(item_index=0, ref_code="1.1", contract_value="1,2OO.00", ptd="10.00", current="abc"),
+        ParsedClaimItem(item_index=1, ref_code="1.2", contract_value="500.00", balance=None),
     ]
-    summary = {"claimed_amount": "12x", "original_contract_total": "100.00"}
+    summary = ParsedClaimSummary(claimed_amount="12x", original_contract_total="100.00")
 
     warnings = money_format_warnings(items, summary)
 
@@ -55,4 +56,5 @@ def test_create_records_reports_one_warning_per_malformed_persisted_field():
 
 
 def test_create_records_reports_nothing_for_clean_input():
-    assert money_format_warnings([{"ref_code": "1", "contract_value": "1.00"}], {}) == []
+    clean = [ParsedClaimItem(item_index=0, ref_code="1", contract_value="1.00")]
+    assert money_format_warnings(clean, ParsedClaimSummary()) == []

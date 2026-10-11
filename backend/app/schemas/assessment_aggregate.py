@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.constants.enums import LineItemStatus
 from app.schemas.base import StrictModel
 
 
@@ -63,6 +64,43 @@ class AssessmentTotals(StrictModel):
     total_recommended: Decimal
     value_claimed_to_date: Decimal
     adjustments: Decimal
+
+
+class AssessmentSummary(StrictModel):
+    contract_sum: Decimal
+    approved_variation_orders: Decimal
+    adjustment_to_provisional_sums: Decimal
+    adjusted_contract_sum: Decimal
+    value_claimed_to_date: Decimal
+    adjustments: Decimal
+    total_recommended: Decimal
+    total_retention: Decimal
+    total_payment_to_date: Decimal
+    recommended_this_period: Decimal
+    gst_amount: Decimal
+    total_including_gst: Decimal
+
+
+class AssessmentRowValues(StrictModel):
+    master_id: uuid.UUID | None
+    claim_line_item_id: uuid.UUID | None
+    contractor_claim_to_date: Decimal
+    total_recommended: Decimal
+    percentage: Decimal
+    variance_to_claim: Decimal
+    previously_paid: Decimal
+    recommended_this_period: Decimal
+    status: LineItemStatus
+    comments: str | None = None
+    description: str | None = None
+    sort_order: int | None = None
+    created_by: uuid.UUID
+
+
+class AssessmentRows(StrictModel):
+    line_items: list[AssessmentRowValues]
+    variation_items: list[AssessmentRowValues]
+    provisional_sum_items: list[AssessmentRowValues]
 
 
 class AssessmentAggregate(BaseModel):

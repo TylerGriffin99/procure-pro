@@ -1,10 +1,21 @@
 import uuid
+from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.claim import Claim
+from app.models.claim_line_item import ClaimLineItem
+from app.schemas.claim_extraction import ClaimLineValues
+
+
+async def create(db: AsyncSession, *, line_items: Sequence[ClaimLineValues], **fields: Any) -> Claim:
+    claim = Claim(**fields, line_items=[ClaimLineItem(**item.model_dump()) for item in line_items])
+    db.add(claim)
+    await db.flush()
+    return claim
 
 
 async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[Claim]:

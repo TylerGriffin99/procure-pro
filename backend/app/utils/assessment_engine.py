@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.constants.values import CENTS
+from app.schemas.assessment_aggregate import AssessmentSummary, AssessmentTotals
 from app.schemas.retention import RetentionTier
 
 
@@ -71,57 +72,29 @@ def calculate_retention_per_tier(total_recommended: Decimal, tiers: Sequence[Ret
     return details
 
 
-def calculate_assessment_totals(
+def assessment_summary(
+    totals: AssessmentTotals,
+    *,
     contract_sum: Decimal,
-    sub_total_contract_works: Decimal,
-    sub_total_provisional_sums: Decimal,
-    sub_total_variations_recommended: Decimal,
-    variations_claimed: Decimal,
     retention_tiers: Sequence[RetentionTier],
     previously_certified: Decimal,
     gst_rate: Decimal,
-) -> dict:
-    """Calculate all assessment summary totals.
-
-    Returns dict with all summary fields matching the payment recommendation format.
-    """
-    # Adjusted contract sum = base + approved variations only
-    approved_variation_orders = sub_total_variations_recommended
-    adjusted_contract_sum = contract_sum + approved_variation_orders
-
-    # Value claimed to date = contract works + provisional sums + variations (claimed amounts)
-    value_claimed = sub_total_contract_works + sub_total_provisional_sums + variations_claimed
-
-    # Adjustments = recommended variations - claimed variations (the variance)
-    adjustments = sub_total_variations_recommended - variations_claimed
-
-    # Total recommended = contract works + provisional sums + recommended variations
-    total_recommended = sub_total_contract_works + sub_total_provisional_sums + sub_total_variations_recommended
-
-    # Retention
-    total_retention = calculate_retention(total_recommended, retention_tiers)
-
-    # Total payment to date (after retention)
-    total_payment_to_date = total_recommended - total_retention
-
-    # This period
+) -> AssessmentSummary:
+    total_retention = calculate_retention(totals.total_recommended, retention_tiers)
+    total_payment_to_date = totals.total_recommended - total_retention
     recommended_this_period = total_payment_to_date - previously_certified
-
-    # GST
     gst_amount = (recommended_this_period * gst_rate).quantize(CENTS, rounding=ROUND_HALF_UP)
-    total_including_gst = recommended_this_period + gst_amount
-
-    return {
-        "contract_sum": contract_sum,
-        "approved_variation_orders": approved_variation_orders,
-        "adjusted_contract_sum": adjusted_contract_sum,
-        "value_claimed_to_date": value_claimed,
-        "adjustments": adjustments,
-        "total_recommended": total_recommended,
-        "total_retention": total_retention,
-        "total_payment_to_date": total_payment_to_date,
-        "previously_certified": previously_certified,
-        "recommended_this_period": recommended_this_period,
-        "gst_amount": gst_amount,
-        "total_including_gst": total_including_gst,
-    }
+    return AssessmentSummary(
+        contract_sum=contract_sum,
+        approved_variation_orders=totals.approved_variation_orders,
+        adjustment_to_provisional_sums=totals.adjustment_to_provisional_sums,
+        adjusted_contract_sum=contract_sum + totals.approved_variation_orders + totals.adjustment_to_provisional_sums,
+        value_claimed_to_date=totals.value_claimed_to_date,
+        adjustments=totals.adjustments,
+        total_recommended=totals.total_recommended,
+        total_retention=total_retention,
+        total_payment_to_date=total_payment_to_date,
+        recommended_this_period=recommended_this_period,
+        gst_amount=gst_amount,
+        total_including_gst=recommended_this_period + gst_amount,
+    )

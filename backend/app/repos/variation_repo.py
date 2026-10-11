@@ -13,6 +13,13 @@ async def create(db: AsyncSession, **kwargs) -> Variation:
     return variation
 
 
+async def update(db: AsyncSession, variation: Variation, **fields) -> Variation:
+    for field, value in fields.items():
+        setattr(variation, field, value)
+    await db.flush()
+    return variation
+
+
 async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[Variation]:
     result = await db.execute(select(Variation).where(Variation.project_id == project_id))
     return list(result.scalars().all())

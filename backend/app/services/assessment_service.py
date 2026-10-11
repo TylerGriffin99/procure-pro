@@ -121,9 +121,7 @@ async def create_assessment(db: AsyncSession, project_id: uuid.UUID, data: Asses
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
     previously_certified = prev_assessment.total_payment_to_date if prev_assessment else Decimal("0")
 
-    # Determine version
-    latest_version = await assessment_repo.get_latest_version_number(db, data.claim_id)
-    version = latest_version + 1
+    version = await assessment_repo.next_version_number(db, data.claim_id)
 
     assessment = Assessment(
         claim_id=data.claim_id,

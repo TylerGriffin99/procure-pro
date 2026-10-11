@@ -195,3 +195,33 @@ async def test_malformed_amount_persists_zero_and_records_a_format_warning_flag(
     stmt = select(ClaimLineItem).where(ClaimLineItem.claim_id == result.claim_id)
     line = (await db_session.execute(stmt)).scalars().one()
     assert line.contract_value == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_draft_totals_come_from_the_aggregator(db_session: AsyncSession, test_user, test_project, test_document):
+    session = await harness_repo.create_session(
+        document_id=test_document.id,
+        db=db_session,
+        user_id=test_user.id,
+        project_id=test_project.id,
+        harness_type="claim_parse",
+    )
+    items = [{**_variation_item(0, ref="CI-01", desc="New var"), "ptd": "400.00", "current": "400.00"}]
+    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
+    await db_session.flush()
+
+    result = await execute_create_records(
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+    )
+
+    assessment = await db_session.get(Assessment, result.assessment_id)
+    assert assessment is not None
+    assert assessment.version == 1
+    assert (assessment.total_recommended, assessment.value_claimed_to_date) == (Decimal("400.00"), Decimal("400.00"))
+    assert (assessment.approved_variation_orders, assessment.adjustment_to_provisional_sums) == (
+        Decimal("400.00"),
+        Decimal("0.00"),
+    )
+    assert assessment.adjusted_contract_sum == Decimal("1000400.00")
+    assert assessment.adjustments == Decimal("0.00")
+    assert (assessment.gst_amount, assessment.total_including_gst) == (Decimal("60.00"), Decimal("460.00"))

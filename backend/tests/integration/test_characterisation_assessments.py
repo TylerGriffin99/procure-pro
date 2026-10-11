@@ -4,7 +4,6 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import MultipleResultsFound
 
 from app.exceptions import BadRequestError, ConflictError
 from app.models.assessment import AdjustmentType, AssessmentStatus, LineItemStatus
@@ -40,7 +39,7 @@ from tests.integration.characterisation_fixtures import (
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-# --- version numbering (D10 flips the MultipleResultsFound) ---
+# --- version numbering (D10: max(version) + 1) ---
 
 
 async def test_second_assessment_today_gets_version_two(db_session):
@@ -56,7 +55,7 @@ async def test_second_assessment_today_gets_version_two(db_session):
     assert (first.version, second.version) == (1, 2)
 
 
-async def test_third_assessment_today_raises_multiple_results(db_session):
+async def test_third_assessment_gets_version_three(db_session):
     user = await seed_user(db_session)
     project = await seed_project(db_session, user)
     claim, _ = await seed_claim(db_session, project, user)
@@ -65,8 +64,9 @@ async def test_third_assessment_today_raises_multiple_results(db_session):
     await assessment_service.create_assessment(db_session, project.id, data, user)
     await assessment_service.create_assessment(db_session, project.id, data, user)
 
-    with pytest.raises(MultipleResultsFound):
-        await assessment_service.create_assessment(db_session, project.id, data, user)
+    third = await assessment_service.create_assessment(db_session, project.id, data, user)
+
+    assert third.version == 3
 
 
 # --- export ---

@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from app.schemas.retention import RetentionTier
-from app.utils.assessment_engine import calculate_assessment_totals, calculate_retention
+from app.utils.assessment_engine import calculate_retention
 
 
 def test_retention_tiered():
@@ -31,27 +31,3 @@ def test_retention_small_amount():
     # 10% of 68,587.39 = 6,858.74
     result = calculate_retention(Decimal("68587.39"), tiers)
     assert result == Decimal("6858.74")
-
-
-def test_assessment_totals():
-    """Test full assessment total calculation matching PR8."""
-    result = calculate_assessment_totals(
-        contract_sum=Decimal("4172492.92"),
-        sub_total_contract_works=Decimal("2047173.24"),
-        sub_total_provisional_sums=Decimal("54201.48"),
-        sub_total_variations_recommended=Decimal("221276.98"),
-        variations_claimed=Decimal("229189.67"),
-        retention_tiers=[
-            RetentionTier(percentage=Decimal("0.10"), up_to_amount=Decimal("200000")),
-            RetentionTier(percentage=Decimal("0.05"), up_to_amount=Decimal("800000")),
-            RetentionTier(percentage=Decimal("0.0175"), up_to_amount=None),
-        ],
-        previously_certified=Decimal("1877003.99"),
-        gst_rate=Decimal("0.15"),
-    )
-    assert result["adjusted_contract_sum"] == Decimal("4393769.90")
-    assert result["total_recommended"] == Decimal("2322651.70")
-    assert result["adjustments"] == Decimal("-7912.69")
-    assert result["total_retention"] == Decimal("83146.40")
-    assert result["total_payment_to_date"] == Decimal("2239505.30")
-    assert result["recommended_this_period"] == Decimal("362501.31")  # May differ by rounding

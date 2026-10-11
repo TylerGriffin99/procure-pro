@@ -10,6 +10,9 @@ from app.models.assessment_variation import AssessmentVariation
 from app.models.provisional_sum import ProvisionalSum
 from app.models.variation import Variation
 from app.models.wbs_code import WBSCode
+from app.schemas.assessment_aggregate import AssessmentTotals
+from app.schemas.retention import RetentionTier
+from app.utils.assessment_engine import assessment_summary
 
 ZERO = Decimal("0.00")
 
@@ -506,3 +509,32 @@ class TestComputeAssessmentTotals:
         assert totals.total_recommended == Decimal("56000.00")
         assert totals.value_claimed_to_date == Decimal("66000.00")
         assert totals.adjustments == Decimal("-10000.00")
+
+
+def test_assessment_summary_uses_the_aggregator_totals_pr8():
+    totals = AssessmentTotals(
+        sub_contract_works=Decimal("2047173.24"),
+        approved_variation_orders=Decimal("221276.98"),
+        adjustment_to_provisional_sums=Decimal("54201.48"),
+        total_recommended=Decimal("2322651.70"),
+        value_claimed_to_date=Decimal("2330564.39"),
+        adjustments=Decimal("-7912.69"),
+    )
+    summary = assessment_summary(
+        totals,
+        contract_sum=Decimal("4172492.92"),
+        retention_tiers=[
+            RetentionTier(percentage=Decimal("0.10"), up_to_amount=Decimal("200000")),
+            RetentionTier(percentage=Decimal("0.05"), up_to_amount=Decimal("800000")),
+            RetentionTier(percentage=Decimal("0.0175"), up_to_amount=None),
+        ],
+        previously_certified=Decimal("1877003.99"),
+        gst_rate=Decimal("0.15"),
+    )
+    assert summary.adjusted_contract_sum == Decimal("4447971.38")  # contract + variations + provisional sums (D9)
+    assert summary.adjustments == Decimal("-7912.69")
+    assert summary.total_retention == Decimal("83146.40")
+    assert summary.total_payment_to_date == Decimal("2239505.30")
+    assert summary.recommended_this_period == Decimal("362501.31")
+    assert summary.gst_amount == Decimal("54375.20")
+    assert summary.total_including_gst == Decimal("416876.51")

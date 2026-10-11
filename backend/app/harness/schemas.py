@@ -17,6 +17,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, VpsKind
+from app.schemas.assessment_aggregate import AssessmentAggregate
 from app.schemas.base import StrictModel
 from app.schemas.claim_extraction import ClaimMetadata
 
@@ -115,6 +116,49 @@ class FlagSpec(StrictModel):
     line_item_ref: str | None = None
     expected_value: Decimal | None = None
     actual_value: Decimal | None = None
+
+
+class CreateRecordsInputs(StrictModel):
+    parsed: ParsedClaim
+    wbs_matches: list[WbsMatch]
+    vps_matches: list[VpsMatch] | None
+
+
+class VpsLinks(StrictModel):
+    variations: dict[int, uuid.UUID]
+    provisional_sums: dict[int, uuid.UUID]
+
+
+class ClaimLinks(StrictModel):
+    wbs: dict[int, uuid.UUID]
+    vps: VpsLinks
+    confidence: dict[int, Decimal]
+
+
+class MasterRef(StrictModel):
+    id: uuid.UUID
+    denominator: Decimal | None
+    description: str | None = None
+    sort_order: int | None = None
+
+
+class KindHistory(StrictModel):
+    recommended: dict[uuid.UUID, Decimal]
+    claimed: dict[uuid.UUID, Decimal]
+    comments: dict[uuid.UUID, str]
+    accepted: dict[uuid.UUID, Decimal]
+
+
+class HistorySource(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    claim_lines: list[Any]
+    previous: AssessmentAggregate | None
+    latest: Any
+    wbs_codes: list[Any]
+    variations: list[Any]
+    provisional_sums: list[Any]
+    user_id: uuid.UUID
 
 
 ExecutorResult = RawExtraction | FormatDetection | ParsedClaim | ValidationSummary | CreationSummary

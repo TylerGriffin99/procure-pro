@@ -94,7 +94,9 @@ async def test_wbs_count_mismatch_raises(db_session: AsyncSession, test_user, te
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="legacy: stale against current API/enum; port to testcontainers fixtures")
+@pytest.mark.skip(
+    reason="D8 keeps the VPS count mismatch a warning; pinned by tests/unit/test_create_records_inputs.py"
+)
 async def test_vps_count_mismatch_raises(db_session: AsyncSession, test_user, test_project, test_document):
     """VPS matches returning wrong count should fail."""
     session = await harness_repo.create_session(

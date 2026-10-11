@@ -13,6 +13,13 @@ async def create(db: AsyncSession, **kwargs) -> ProvisionalSum:
     return ps
 
 
+async def update(db: AsyncSession, ps: ProvisionalSum, **fields) -> ProvisionalSum:
+    for field, value in fields.items():
+        setattr(ps, field, value)
+    await db.flush()
+    return ps
+
+
 async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[ProvisionalSum]:
     result = await db.execute(select(ProvisionalSum).where(ProvisionalSum.project_id == project_id))
     return list(result.scalars().all())
