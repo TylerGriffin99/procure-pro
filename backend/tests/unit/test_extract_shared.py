@@ -1,5 +1,6 @@
 from app.constants.enums import ClaimItemType
 from app.harness.extract_shared import extract_metadata, summary_totals
+from app.harness.schemas import ParsedClaimItem
 
 
 def test_extract_metadata_matches_the_claim_no_form():
@@ -30,11 +31,11 @@ def test_extract_metadata_leaves_missing_fields_unset():
 
 def test_summary_totals_sums_contract_work_and_all_items():
     items = [
-        {"item_type": ClaimItemType.contract_work, "contract_value": "100.00", "ptd": "10.00"},
-        {"item_type": ClaimItemType.variation, "contract_value": "50.50", "ptd": "5.25"},
-        {"item_type": ClaimItemType.provisional_sum, "contract_value": "20.00", "ptd": "0.00"},
+        ParsedClaimItem(item_index=0, item_type=ClaimItemType.contract_work, contract_value="100.00", ptd="10.00"),
+        ParsedClaimItem(item_index=1, item_type=ClaimItemType.variation, contract_value="50.50", ptd="5.25"),
+        ParsedClaimItem(item_index=2, item_type=ClaimItemType.provisional_sum, contract_value="20.00", ptd="0.00"),
     ]
-    assert summary_totals(items).model_dump() == {
+    assert summary_totals(items).model_dump(exclude_none=True) == {
         "original_contract_total": "100.00",
         "revised_contract_total": "170.50",
         "claimed_amount": "15.25",
@@ -42,7 +43,7 @@ def test_summary_totals_sums_contract_work_and_all_items():
 
 
 def test_summary_totals_of_nothing_is_zero():
-    assert summary_totals([]).model_dump() == {
+    assert summary_totals([]).model_dump(exclude_none=True) == {
         "original_contract_total": "0.00",
         "revised_contract_total": "0.00",
         "claimed_amount": "0.00",

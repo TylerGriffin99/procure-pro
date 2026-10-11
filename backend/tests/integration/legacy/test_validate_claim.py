@@ -32,7 +32,7 @@ def _make_parsed_claim_json(line_items: list[dict] | None = None, summary: dict 
     return json.dumps(
         {
             "metadata": {"claim_number": "1"},
-            "line_items": line_items or default_items,
+            "line_items": [{"item_index": i, **item} for i, item in enumerate(line_items or default_items)],
             "summary": summary or default_summary,
         }
     )
@@ -50,12 +50,12 @@ async def test_valid_claim_no_flags(db_session: AsyncSession, test_user, test_pr
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _make_parsed_claim_json())
 
     result = await execute_validate_claim(
-        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
     )
 
     flags = await list_flags_by_session(db_session, session.id)
     assert len(flags) == 0
-    assert result["total_items"] == 1
+    assert result.total_items == 1
 
 
 @pytest.mark.asyncio
@@ -85,7 +85,7 @@ async def test_over_claim_flagged(db_session: AsyncSession, test_user, test_proj
     )
 
     await execute_validate_claim(
-        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
     )
 
     flags = await list_flags_by_session(db_session, session.id)
@@ -139,7 +139,7 @@ async def test_project_over_budget_flagged(db_session: AsyncSession, test_user, 
     )
 
     await execute_validate_claim(
-        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
     )
 
     flags = await list_flags_by_session(db_session, session.id)
@@ -191,7 +191,7 @@ async def test_duplicate_refs_flagged(db_session: AsyncSession, test_user, test_
     )
 
     await execute_validate_claim(
-        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
     )
 
     flags = await list_flags_by_session(db_session, session.id)

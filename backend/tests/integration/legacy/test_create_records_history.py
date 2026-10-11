@@ -2,7 +2,6 @@
 """Tests for create_records.py variation/PS history bug fixes."""
 
 import json
-import uuid
 from decimal import Decimal
 
 import pytest
@@ -77,11 +76,13 @@ async def test_zero_activity_variation_gets_history_row(
         db_session,
         session.id,
         "vps_matches.json",
-        json.dumps([{"item_index": 0, "item_type": "variation", "matched_id": str(var.id)}]),
+        json.dumps([{"item_index": 0, "item_type": "variation", "matched_id": str(var.id), "confidence": 0.9}]),
     )
     await db_session.flush()
 
-    await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
+    await execute_create_records(
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+    )
 
     # The assessment should have variation items — a Phase 1 history row + a Phase 2 current row
     # Eager-load: the identity map holds the executor's Assessment only weakly, so once GC collects it
@@ -140,11 +141,13 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
         db_session,
         session.id,
         "vps_matches.json",
-        json.dumps([{"item_index": 0, "item_type": "variation", "matched_id": str(var_in_claim.id)}]),
+        json.dumps([{"item_index": 0, "item_type": "variation", "matched_id": str(var_in_claim.id), "confidence": 0.9}]),
     )
     await db_session.flush()
 
-    await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
+    await execute_create_records(
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+    )
 
     stmt = (
         select(Assessment)
@@ -176,17 +179,19 @@ async def test_malformed_amount_persists_zero_and_records_a_format_warning_flag(
     await harness_repo.write_workspace_file(db_session, session.id, "wbs_matches.json", json.dumps([]))
     await db_session.flush()
 
-    result = await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
+    result = await execute_create_records(
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+    )
 
     flags = sorted(await list_flags_by_session(db_session, session.id), key=lambda f: f.description)
     assert [(f.flag_type, f.severity, f.line_item_ref) for f in flags] == [
         (FlagType.format_warning, FlagSeverity.warning, "CI-09"),
         (FlagType.format_warning, FlagSeverity.warning, "CI-09"),
     ]
-    assert all(str(f.claim_id) == result["claim_id"] for f in flags)
+    assert all(f.claim_id == result.claim_id for f in flags)
     assert flags[0].description.startswith("balance:")
     assert flags[1].description.startswith("contract_value:")
 
-    stmt = select(ClaimLineItem).where(ClaimLineItem.claim_id == uuid.UUID(result["claim_id"]))
+    stmt = select(ClaimLineItem).where(ClaimLineItem.claim_id == result.claim_id)
     line = (await db_session.execute(stmt)).scalars().one()
     assert line.contract_value == Decimal("0")

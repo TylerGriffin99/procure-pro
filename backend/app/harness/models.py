@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from app.constants.enums import MatcherName, PhaseStatus
+from app.harness.schemas import ExecutorResult
 
 
 class PhaseType(StrEnum):
@@ -19,6 +20,9 @@ class PhaseType(StrEnum):
 
 class HarnessType(StrEnum):
     CLAIM_PARSE = "claim_parse"
+
+
+Executor = Callable[..., Awaitable[ExecutorResult]]
 
 
 @dataclass
@@ -33,7 +37,7 @@ class PhaseDefinition:
     # pydantic-ai output spec for LLM phases: a BaseModel subclass or list[Model].
     output_schema: Any = None
     workspace_inputs: list[str] = field(default_factory=list)
-    executor: Callable | None = None
+    executor: Executor | None = None
     context_loaders: list[Callable] = field(default_factory=list)  # async (db, project_id, session_id) -> dict
     internal: bool = False
 

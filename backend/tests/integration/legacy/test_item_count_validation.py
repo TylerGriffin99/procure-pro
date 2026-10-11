@@ -88,7 +88,9 @@ async def test_wbs_count_mismatch_raises(db_session: AsyncSession, test_user, te
         ValueError,
         match=("WBS categorisation returned 1 contract_work matches but extraction has 2 contract_work items"),
     ):
-        await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
+        await execute_create_records(
+            db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+        )
 
 
 @pytest.mark.asyncio
@@ -131,7 +133,9 @@ async def test_vps_count_mismatch_raises(db_session: AsyncSession, test_user, te
         ValueError,
         match=("VPS matching returned 0 variation/PS matches but extraction has 1 variation/provisional_sum items"),
     ):
-        await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
+        await execute_create_records(
+            db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+        )
 
 
 @pytest.mark.asyncio
@@ -170,4 +174,6 @@ async def test_out_of_range_item_index_raises(db_session: AsyncSession, test_use
     await db_session.flush()
 
     with pytest.raises(ValueError, match="out-of-range item_index"):
-        await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
+        await execute_create_records(
+            db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+        )

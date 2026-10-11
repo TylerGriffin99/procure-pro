@@ -8,12 +8,6 @@ class ClaimMetadata(StrictModel):
     payment_due: str | None = None
 
 
-class ClaimSummary(StrictModel):
-    original_contract_total: str
-    revised_contract_total: str
-    claimed_amount: str
-
-
 class MoneyFormatWarning(StrictModel):
     ref: str | None
     field: str

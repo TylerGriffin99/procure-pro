@@ -13,15 +13,15 @@ from app.config import settings
 from app.constants import LlmProvider
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
-from app.harness.schemas import MatchOutcome, WbsMatch
+from app.harness.schemas import MatchOutcome, ParsedClaim, ParsedClaimItem, WbsMatch
 from app.repos import harness_repo
 from tests.integration.test_harness_llm_single import _make_session
 from tests.unit.jev_fakes import fake_client
 
 
 def _batch_harness(matcher: str | None) -> HarnessDefinition:
-    async def seed(db, session_id, user_id, project_id, config):
-        return {"line_items": [{"item_index": 0, "item_type": "contract_work"}]}
+    async def seed(**_):
+        return ParsedClaim(line_items=[ParsedClaimItem(item_index=0)])
 
     return HarnessDefinition(
         harness_type=HarnessType.CLAIM_PARSE,

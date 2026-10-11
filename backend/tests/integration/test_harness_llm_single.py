@@ -10,7 +10,7 @@ from app.clients.llm_client import LlmClient
 from app.constants import LlmProvider
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
-from app.harness.schemas import WbsMatch
+from app.harness.schemas import ParsedClaim, ParsedClaimItem, WbsMatch
 from app.repos import document_repo, harness_repo, user_repo
 from tests.e2e.fixtures.gilmours_claim1 import PROJECT
 from tests.e2e.helpers import get_auth_headers
@@ -19,8 +19,8 @@ from tests.e2e.helpers import get_auth_headers
 def _llm_single_harness() -> HarnessDefinition:
     """A programmatic seed phase feeding one LLM_SINGLE phase (output: list[WbsMatch])."""
 
-    async def seed(db, session_id, user_id, project_id, config):
-        return {"line_items": [{"item_index": 0, "item_type": "contract_work"}]}
+    async def seed(**_):
+        return ParsedClaim(line_items=[ParsedClaimItem(item_index=0)])
 
     return HarnessDefinition(
         harness_type=HarnessType.CLAIM_PARSE,

@@ -10,7 +10,7 @@ from app.services import harness_service
 from tests.integration.characterisation_fixtures import seed_project, seed_user
 
 
-async def _boom(db, session_id, user_id, project_id, config):
+async def _boom(**_):
     raise RuntimeError("boom")
 
 

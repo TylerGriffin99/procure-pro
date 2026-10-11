@@ -1,6 +1,5 @@
 """Phase 5: Create domain records from workspace data."""
 
-import json
 import logging
 import re
 import uuid
@@ -9,8 +8,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Final
 
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.llm_client import LlmClient
 from app.constants.enums import (
     ClaimItemType,
     FlagSeverity,
@@ -20,6 +21,7 @@ from app.constants.enums import (
     WBSLevel,
     WorkspaceFile,
 )
+from app.harness.schemas import CreationSummary, FlagSpec, ParsedClaim, VpsMatch, WbsMatch
 from app.models.assessment import Assessment
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
@@ -40,6 +42,8 @@ from app.utils.money import parse_money
 logger = logging.getLogger(__name__)
 
 ZERO = Decimal("0")
+WBS_MATCHES: Final = TypeAdapter(list[WbsMatch])
+VPS_MATCHES: Final = TypeAdapter(list[VpsMatch])
 _U_PREFIX = re.compile(r"^\(U\)\s*")
 _ITEM_MONEY_FIELDS: Final = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
 _SUMMARY_MONEY_FIELDS: Final = (
@@ -64,8 +68,14 @@ def money_format_warnings(
 
 
 async def execute_create_records(
-    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
-) -> dict:
+    *,
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    config: dict[str, Any],
+    llm: LlmClient,
+) -> CreationSummary:
     """Create Claim, Assessment, and all line item records from workspace data."""
     # Load workspace files
     parsed_raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.parsed_claim)
@@ -75,9 +85,9 @@ async def execute_create_records(
     if not parsed_raw:
         raise ValueError("parsed_claim.json not found")
 
-    parsed = json.loads(parsed_raw)
-    wbs_matches = json.loads(wbs_raw) if wbs_raw else []
-    vps_matches = json.loads(vps_raw) if vps_raw else []
+    parsed = ParsedClaim.model_validate_json(parsed_raw).model_dump()
+    wbs_matches = [m.model_dump() for m in WBS_MATCHES.validate_json(wbs_raw)] if wbs_raw else []
+    vps_matches = [m.model_dump() for m in VPS_MATCHES.validate_json(vps_raw)] if vps_raw else []
 
     metadata = parsed.get("metadata", {})
     line_items = parsed.get("line_items", [])
@@ -656,10 +666,12 @@ async def execute_create_records(
         await harness_repo.create_flag(
             db,
             session_id,
-            FlagType.format_warning,
-            FlagSeverity.warning,
-            warning.description,
-            line_item_ref=warning.ref,
+            FlagSpec(
+                flag_type=FlagType.format_warning,
+                severity=FlagSeverity.warning,
+                description=warning.description,
+                line_item_ref=warning.ref,
+            ),
         )
 
     # Link flags to claim
@@ -676,4 +688,4 @@ async def execute_create_records(
         assessment.total_retention,
     )
 
-    return {"claim_id": str(claim.id), "assessment_id": str(assessment.id), "line_items_created": len(claim.line_items)}
+    return CreationSummary(claim_id=claim.id, assessment_id=assessment.id, line_items_created=len(claim.line_items))

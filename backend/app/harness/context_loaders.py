@@ -4,14 +4,15 @@ These provide project-level data (WBS codes, variations, provisional sums) and
 format-specific playbook content that LLM phases need.
 """
 
-import json
 import logging
 import uuid
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.enums import ClaimFormat, WBSLevel, WorkspaceFile
+from app.constants.enums import WBSLevel, WorkspaceFile
 from app.harness.prompts import load_playbook
+from app.harness.schemas import FormatDetection
 from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
 
 logger = logging.getLogger(__name__)
@@ -79,12 +80,11 @@ async def load_format_playbook(db: AsyncSession, project_id: uuid.UUID, session_
         return {"playbook_content": FALLBACK_PLAYBOOK}
 
     try:
-        detection = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("format_detection.json is invalid JSON — using fallback playbook")
+        fmt = FormatDetection.model_validate_json(raw).format
+    except ValidationError:
+        logger.warning("format_detection.json is invalid — using fallback playbook", exc_info=True)
         return {"playbook_content": FALLBACK_PLAYBOOK}
 
-    fmt = detection.get("format", ClaimFormat.generic)
     try:
         playbook_text = load_playbook(fmt)
     except FileNotFoundError:

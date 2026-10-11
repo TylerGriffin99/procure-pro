@@ -17,7 +17,7 @@ async def test_unresolvable_parent_logs_warning(monkeypatch, caplog):
         "summary": {},
         "line_items": [{"item_index": 0, "item_type": "contract_work", "description": "x"}],
     }
-    matches = [{"item_index": 0, "wbs_code": "NEW-01", "is_new": True, "parent_code": ""}]
+    matches = [{"item_index": 0, "wbs_code": "NEW-01", "is_new": True, "parent_code": "", "confidence": 0.9}]
     files = {"parsed_claim.json": json.dumps(parsed), "wbs_matches.json": json.dumps(matches)}
 
     async def read(db, sid, name):
@@ -39,5 +39,7 @@ async def test_unresolvable_parent_logs_warning(monkeypatch, caplog):
 
     with caplog.at_level("WARNING", logger=cr.__name__):
         with pytest.raises(_Stop):
-            await cr.execute_create_records(None, uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), {})
+            await cr.execute_create_records(
+                db=None, session_id=uuid.uuid4(), user_id=uuid.uuid4(), project_id=uuid.uuid4(), config={}, llm=None
+            )
     assert any("unresolvable parent_code" in r.getMessage() and "NEW-01" in r.getMessage() for r in caplog.records)

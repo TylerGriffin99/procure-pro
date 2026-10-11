@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.harness.schemas import FlagSpec
 from app.models.claim_parse_flag import FlagSeverity, FlagType
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
@@ -115,21 +116,21 @@ async def test_create_and_list_flags(db_session: AsyncSession, test_user, test_p
         harness_type="claim_parse",
     )
     await harness_repo.create_flag(
-        db=db_session,
-        session_id=session.id,
-        flag_type=FlagType.over_claim,
-        severity=FlagSeverity.warning,
-        description="PTD exceeds contract value",
-        line_item_ref="1001",
-        expected_value=Decimal("100000"),
-        actual_value=Decimal("120000"),
+        db_session,
+        session.id,
+        FlagSpec(
+            flag_type=FlagType.over_claim,
+            severity=FlagSeverity.warning,
+            description="PTD exceeds contract value",
+            line_item_ref="1001",
+            expected_value=Decimal("100000"),
+            actual_value=Decimal("120000"),
+        ),
     )
     await harness_repo.create_flag(
-        db=db_session,
-        session_id=session.id,
-        flag_type=FlagType.total_mismatch,
-        severity=FlagSeverity.error,
-        description="Section total mismatch",
+        db_session,
+        session.id,
+        FlagSpec(flag_type=FlagType.total_mismatch, severity=FlagSeverity.error, description="Section total mismatch"),
     )
     flags = await list_flags_by_session(db_session, session.id)
     assert len(flags) == 2

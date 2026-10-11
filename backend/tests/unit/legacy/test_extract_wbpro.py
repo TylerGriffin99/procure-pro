@@ -6,8 +6,10 @@ from app.harness.executors.extract_wbpro import (
     SECTION_VARIATION,
     detect_sections,
     is_skip_row,
+    map_row_to_item,
     parse_wbpro,
 )
+from app.harness.schemas import ParsedClaimMetadata, RawExtraction, RawPage
 from app.utils.money import format_money, parse_money
 
 
@@ -16,8 +18,8 @@ def parse_decimal(value: str | None) -> str:
     return format_money(parse_money(value).value)
 
 
-def extract_metadata(text: str) -> dict[str, str]:
-    return parse_wbpro({"pages": [{"page_num": 1, "text": text, "tables": []}]})["metadata"]
+def extract_metadata(text: str) -> ParsedClaimMetadata:
+    return parse_wbpro(RawExtraction(pages=[RawPage(page_num=1, text=text)])).metadata
 
 
 class TestParseWbpro:
@@ -104,46 +106,46 @@ class TestParseWbpro:
         }
 
     def test_line_item_count(self):
-        result = parse_wbpro(self._make_raw_extraction())
-        assert len(result["line_items"]) == 5  # 2 contract + 2 variation + 1 PS
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
+        assert len(result.line_items) == 5  # 2 contract + 2 variation + 1 PS
 
     def test_item_indexes_sequential(self):
-        result = parse_wbpro(self._make_raw_extraction())
-        indexes = [item["item_index"] for item in result["line_items"]]
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
+        indexes = [item.item_index for item in result.line_items]
         assert indexes == [0, 1, 2, 3, 4]
 
     def test_item_types(self):
-        result = parse_wbpro(self._make_raw_extraction())
-        types = [item["item_type"] for item in result["line_items"]]
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
+        types = [item.item_type for item in result.line_items]
         assert types == ["contract_work", "contract_work", "variation", "variation", "provisional_sum"]
 
     def test_total_row_skipped(self):
-        result = parse_wbpro(self._make_raw_extraction())
-        descs = [item["description"] for item in result["line_items"]]
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
+        descs = [item.description for item in result.line_items]
         assert "Total Contract Works" not in descs
 
     def test_contract_value_parsed(self):
-        result = parse_wbpro(self._make_raw_extraction())
-        assert result["line_items"][0]["contract_value"] == "100000.00"
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
+        assert result.line_items[0].contract_value == "100000.00"
 
     def test_variation_value_parsed(self):
-        result = parse_wbpro(self._make_raw_extraction())
-        assert result["line_items"][2]["contract_value"] == "5000.00"
-        assert result["line_items"][2]["ref_code"] == "CI-01"
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
+        assert result.line_items[2].contract_value == "5000.00"
+        assert result.line_items[2].ref_code == "CI-01"
 
     def test_metadata_extracted(self):
-        result = parse_wbpro(self._make_raw_extraction())
-        assert result["metadata"]["claim_number"] == "3"
-        assert result["metadata"]["period_from"] == "01/09/2025"
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
+        assert result.metadata.claim_number == "3"
+        assert result.metadata.period_from == "01/09/2025"
 
     def test_summary_totals(self):
-        result = parse_wbpro(self._make_raw_extraction())
+        result = parse_wbpro(RawExtraction.model_validate(self._make_raw_extraction()))
         # original = sum of contract_work values = 100000 + 200000 = 300000
-        assert result["summary"]["original_contract_total"] == "300000.00"
+        assert result.summary.original_contract_total == "300000.00"
         # revised = all items = 300000 + 5000 + 10000 + 15000 = 330000
-        assert result["summary"]["revised_contract_total"] == "330000.00"
+        assert result.summary.revised_contract_total == "330000.00"
         # claimed = sum of all ptd values = 50000 + 50000 + 5000 + 0 + 0 = 105000
-        assert result["summary"]["claimed_amount"] == "105000.00"
+        assert result.summary.claimed_amount == "105000.00"
 
     def test_mixed_tables_on_variation_page(self):
         """A page with VARIATION WORKS header can have an 8-col contract table followed by 9-col variations."""
@@ -167,11 +169,11 @@ class TestParseWbpro:
                 },
             ],
         }
-        result = parse_wbpro(raw)
-        assert len(result["line_items"]) == 3
-        assert result["line_items"][0]["item_type"] == "contract_work"
-        assert result["line_items"][1]["item_type"] == "contract_work"  # 8-col on variation page
-        assert result["line_items"][2]["item_type"] == "variation"  # 9-col
+        result = parse_wbpro(RawExtraction.model_validate(raw))
+        assert len(result.line_items) == 3
+        assert result.line_items[0].item_type == "contract_work"
+        assert result.line_items[1].item_type == "contract_work"  # 8-col on variation page
+        assert result.line_items[2].item_type == "variation"  # 9-col
 
 
 class TestParseDecimal:
@@ -227,7 +229,7 @@ class TestIsSkipRow:
 class TestDetectSections:
     def test_single_page_contract_works(self):
         pages = [{"page_num": 1, "text": "Some header\nCONTRACT WORKS\nmore text", "tables": []}]
-        result = detect_sections(pages)
+        result = detect_sections([RawPage.model_validate(p) for p in pages])
         assert result == {1: SECTION_CONTRACT}
 
     def test_variation_on_page_2(self):
@@ -235,13 +237,13 @@ class TestDetectSections:
             {"page_num": 1, "text": "CONTRACT WORKS\nstuff", "tables": []},
             {"page_num": 2, "text": "VARIATION WORKS\nstuff", "tables": []},
         ]
-        result = detect_sections(pages)
+        result = detect_sections([RawPage.model_validate(p) for p in pages])
         assert result[1] == SECTION_CONTRACT
         assert result[2] == SECTION_VARIATION
 
     def test_provisional_sums(self):
         pages = [{"page_num": 1, "text": "PROVISIONAL SUMS\nstuff", "tables": []}]
-        result = detect_sections(pages)
+        result = detect_sections([RawPage.model_validate(p) for p in pages])
         assert result[1] == SECTION_PS
 
     def test_inherit_previous_section(self):
@@ -250,20 +252,20 @@ class TestDetectSections:
             {"page_num": 1, "text": "CONTRACT WORKS\nstuff", "tables": []},
             {"page_num": 2, "text": "more items no header", "tables": []},
         ]
-        result = detect_sections(pages)
+        result = detect_sections([RawPage.model_validate(p) for p in pages])
         assert result[1] == SECTION_CONTRACT
         assert result[2] == SECTION_CONTRACT
 
     def test_multiple_sections_same_page(self):
         """When multiple section headers appear, the LAST one wins for that page."""
         pages = [{"page_num": 1, "text": "CONTRACT WORKS\nstuff\nVARIATION WORKS\nmore", "tables": []}]
-        result = detect_sections(pages)
+        result = detect_sections([RawPage.model_validate(p) for p in pages])
         assert result[1] == SECTION_VARIATION
 
     def test_no_section_header_defaults_to_contract(self):
         """First page with no header defaults to contract works."""
         pages = [{"page_num": 1, "text": "some random text", "tables": []}]
-        result = detect_sections(pages)
+        result = detect_sections([RawPage.model_validate(p) for p in pages])
         assert result[1] == SECTION_CONTRACT
 
 
@@ -271,40 +273,32 @@ class TestColumnMapping:
     """Verify column counts are validated per section type."""
 
     def test_contract_works_8_cols(self):
-        from app.harness.executors.extract_wbpro import map_row_to_item
-
         row = ["1.0", "Excavation", "100000.00", "50.00", "50000.00", "30000.00", "20000.00", "50000.00"]
         item = map_row_to_item(row, SECTION_CONTRACT, item_index=0)
         assert item is not None
-        assert item["ref_code"] == "1.0"
-        assert item["description"] == "Excavation"
-        assert item["contract_value"] == "100000.00"
-        assert item["item_type"] == "contract_work"
-        assert item["item_index"] == 0
+        assert item.ref_code == "1.0"
+        assert item.description == "Excavation"
+        assert item.contract_value == "100000.00"
+        assert item.item_type == "contract_work"
+        assert item.item_index == 0
 
     def test_variation_9_cols(self):
-        from app.harness.executors.extract_wbpro import map_row_to_item
-
         row = ["CI-01", "Variation desc", "ClientRef", "5000.00", "0.00", "0.00", "0.00", "0.00", "5000.00"]
         item = map_row_to_item(row, SECTION_VARIATION, item_index=5)
         assert item is not None
-        assert item["ref_code"] == "CI-01"
-        assert item["description"] == "Variation desc"
-        assert item["contract_value"] == "5000.00"
-        assert item["item_type"] == "variation"
-        assert item["item_index"] == 5
+        assert item.ref_code == "CI-01"
+        assert item.description == "Variation desc"
+        assert item.contract_value == "5000.00"
+        assert item.item_type == "variation"
+        assert item.item_index == 5
 
     def test_provisional_sum_8_cols(self):
-        from app.harness.executors.extract_wbpro import map_row_to_item
-
         row = ["PS-01", "Provisional Sum Item", "25000.00", "0.00", "0.00", "0.00", "0.00", "25000.00"]
         item = map_row_to_item(row, SECTION_PS, item_index=10)
         assert item is not None
-        assert item["item_type"] == "provisional_sum"
+        assert item.item_type == "provisional_sum"
 
     def test_wrong_col_count_returns_none(self):
-        from app.harness.executors.extract_wbpro import map_row_to_item
-
         row = ["1.0", "Too few cols", "100000.00"]
         item = map_row_to_item(row, SECTION_CONTRACT, item_index=0)
         assert item is None
@@ -314,28 +308,28 @@ class TestExtractMetadata:
     def test_claim_number(self):
         text = "CONTRACTOR PROGRESS CLAIM\nClaim No. 5\nPeriod From: 01/10/2025"
         result = extract_metadata(text)
-        assert result["claim_number"] == "5"
+        assert result.claim_number == "5"
 
     def test_claim_number_alt_format(self):
         text = "Claim Number: 12"
         result = extract_metadata(text)
-        assert result["claim_number"] == "12"
+        assert result.claim_number == "12"
 
     def test_period_dates(self):
         text = "Period From: 01/10/2025\nPeriod To: 31/10/2025"
         result = extract_metadata(text)
-        assert result["period_from"] == "01/10/2025"
-        assert result["period_to"] == "31/10/2025"
+        assert result.period_from == "01/10/2025"
+        assert result.period_to == "31/10/2025"
 
     def test_payment_due(self):
         text = "Payment Due: 18/12/2025"
         result = extract_metadata(text)
-        assert result["payment_due"] == "18/12/2025"
+        assert result.payment_due == "18/12/2025"
 
     def test_missing_fields_return_empty_strings(self):
         text = "Nothing useful here"
         result = extract_metadata(text)
-        assert result["claim_number"] == ""
-        assert result["period_from"] == ""
-        assert result["period_to"] == ""
-        assert result["payment_due"] == ""
+        assert result.claim_number == ""
+        assert result.period_from == ""
+        assert result.period_to == ""
+        assert result.payment_due == ""

@@ -31,9 +31,10 @@ async def test_raw_extraction_reads_bytes_from_document(client, db_session):
         user_id=uuid.uuid4(),
         project_id=project_id,
         config={"document_id": str(doc.id)},
+        llm=None,
     )
-    assert len(result["pages"]) > 0
-    assert any(p["text"] for p in result["pages"])
+    assert len(result.pages) > 0
+    assert any(p.text for p in result.pages)
 
 
 @pytest.mark.asyncio
@@ -45,4 +46,5 @@ async def test_raw_extraction_missing_document_raises(db_session):
             user_id=uuid.uuid4(),
             project_id=uuid.uuid4(),
             config={"document_id": str(uuid.uuid4())},
+            llm=None,
         )

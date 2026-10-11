@@ -46,11 +46,13 @@ async def test_wbpro_routes_to_deterministic(db_session: AsyncSession, test_user
     await harness_repo.write_workspace_file(db_session, session.id, "raw_extraction.json", json.dumps(raw))
     await db_session.flush()
 
-    result = await execute_extract_line_items(db_session, session.id, test_user.id, test_project.id, {}, llm=_LLM)
+    result = await execute_extract_line_items(
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=_LLM
+    )
 
-    assert len(result["line_items"]) == 1
-    assert result["line_items"][0]["description"] == "Test Item"
-    assert result["line_items"][0]["item_type"] == "contract_work"
+    assert len(result.line_items) == 1
+    assert result.line_items[0].description == "Test Item"
+    assert result.line_items[0].item_type == "contract_work"
 
 
 @pytest.mark.asyncio
@@ -77,4 +79,6 @@ async def test_generic_routes_to_llm_placeholder(db_session: AsyncSession, test_
     await db_session.flush()
 
     with pytest.raises(NotImplementedError, match="LLM extraction fallback"):
-        await execute_extract_line_items(db_session, session.id, test_user.id, test_project.id, {}, llm=_LLM)
+        await execute_extract_line_items(
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=_LLM
+    )

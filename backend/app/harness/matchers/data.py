@@ -5,16 +5,14 @@ Mirrors the queries in ``app.harness.context_loaders``.
 
 from __future__ import annotations
 
-import json
 import uuid
-from typing import TYPE_CHECKING
+
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import ClaimItemType, WBSLevel, WorkspaceFile
-from app.harness.schemas import ParsedClaimItem, Subcat, VpsRecord
+from app.harness.schemas import ParsedClaim, ParsedClaimItem, Subcat, VpsRecord
 from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
-
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _num(v) -> float | None:
@@ -62,12 +60,10 @@ async def vps_records(*, db, project_id) -> list[VpsRecord]:
 
 
 async def read_parsed_items(db: AsyncSession, session_id: uuid.UUID) -> list[ParsedClaimItem]:
-    """Load and validate the parsed claim's line items from the session workspace."""
     raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.parsed_claim)
     if not raw:
         raise ValueError(f"parsed_claim.json missing or empty for session {session_id}")
-    parsed = json.loads(raw)
-    line_items = parsed.get("line_items") if isinstance(parsed, dict) else None
-    if line_items is None:
-        raise ValueError(f"parsed_claim.json has no 'line_items' for session {session_id}")
-    return [ParsedClaimItem.model_validate(i) for i in line_items]
+    try:
+        return ParsedClaim.model_validate_json(raw).line_items
+    except ValidationError as exc:
+        raise ValueError(f"parsed_claim.json is malformed for session {session_id}: {exc}") from exc

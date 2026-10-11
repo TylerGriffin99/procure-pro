@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
-import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,11 +29,10 @@ from app.harness.models import (
     UsageEvent,
 )
 from app.harness.phase_context import build_phase_context, render_system_prompt
+from app.harness.schemas import FormatDetection
 from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
-
-EXECUTOR_LLM_KWARG: Final = "llm"
 
 
 def describe_error(exc: BaseException) -> str:
@@ -129,23 +126,21 @@ class HarnessEngine:
         if not phase_def.executor:
             raise ValueError(f"Programmatic phase '{phase_def.name}' has no executor")
 
-        extra = (
-            {EXECUTOR_LLM_KWARG: self.llm}
-            if EXECUTOR_LLM_KWARG in inspect.signature(phase_def.executor).parameters
-            else {}
-        )
         result = await phase_def.executor(
             db=self.db,
             session_id=self.session_id,
             user_id=self.user_id,
             project_id=self.project_id,
             config=session_config,
-            **extra,
+            llm=self.llm,
         )
 
-        result_str = json.dumps(result) if isinstance(result, dict) else str(result)
         await harness_repo.write_workspace_file(
-            self.db, self.session_id, phase_def.workspace_output, result_str, internal=phase_def.internal
+            self.db,
+            self.session_id,
+            phase_def.workspace_output,
+            result.model_dump_json(exclude_none=True),
+            internal=phase_def.internal,
         )
 
         await harness_repo.update_phase(
@@ -157,12 +152,7 @@ class HarnessEngine:
         )
         await self.db.commit()
 
-        # Extract detail string from result for SSE event
-        detail = None
-        if isinstance(result, dict) and (fmt := result.get("format")):
-            fmt = fmt.upper()
-            confidence = result.get("confidence")
-            detail = f"Format: {fmt}" + (f" ({int(confidence * 100)}%)" if confidence else "")
+        detail = result.detail() if isinstance(result, FormatDetection) else None
 
         yield HarnessPhaseResultEvent(
             phase_index=phase_index, phase_name=phase_def.name, status=PhaseStatus.COMPLETED, detail=detail

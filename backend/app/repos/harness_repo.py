@@ -1,13 +1,13 @@
 import uuid
-from decimal import Decimal
 
 from sqlalchemy import func as sa_func
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.enums import FlagSeverity, FlagType, HarnessSessionStatus
+from app.constants.enums import HarnessSessionStatus
 from app.harness.models import HarnessType
+from app.harness.schemas import FlagSpec
 from app.models.claim_parse_flag import ClaimParseFlag
 from app.models.harness_session import HarnessSession
 from app.models.harness_workspace_file import HarnessWorkspaceFile
@@ -89,7 +89,7 @@ async def set_claim_id(db: AsyncSession, session_id: uuid.UUID, claim_id: uuid.U
 
 
 async def write_workspace_file(
-    db: AsyncSession, session_id: uuid.UUID, file_path: str, content: str, internal: bool = False
+    db: AsyncSession, session_id: uuid.UUID, file_path: str, content: str, *, internal: bool = False
 ) -> None:
     """Upsert a workspace file."""
     stmt = pg_insert(HarnessWorkspaceFile).values(
@@ -113,7 +113,7 @@ async def read_workspace_file(db: AsyncSession, session_id: uuid.UUID, file_path
 
 
 async def list_workspace_files(
-    db: AsyncSession, session_id: uuid.UUID, include_internal: bool = False
+    db: AsyncSession, session_id: uuid.UUID, *, include_internal: bool = False
 ) -> list[HarnessWorkspaceFile]:
     stmt = select(HarnessWorkspaceFile).where(HarnessWorkspaceFile.session_id == session_id)
     if not include_internal:
@@ -125,27 +125,8 @@ async def list_workspace_files(
 # -- Flags --
 
 
-async def create_flag(
-    db: AsyncSession,
-    session_id: uuid.UUID,
-    flag_type: FlagType,
-    severity: FlagSeverity,
-    description: str,
-    line_item_ref: str | None = None,
-    expected_value: Decimal | None = None,
-    actual_value: Decimal | None = None,
-    claim_id: uuid.UUID | None = None,
-) -> ClaimParseFlag:
-    flag = ClaimParseFlag(
-        session_id=session_id,
-        claim_id=claim_id,
-        flag_type=flag_type,
-        severity=severity,
-        line_item_ref=line_item_ref,
-        description=description,
-        expected_value=expected_value,
-        actual_value=actual_value,
-    )
+async def create_flag(db: AsyncSession, session_id: uuid.UUID, spec: FlagSpec) -> ClaimParseFlag:
+    flag = ClaimParseFlag(session_id=session_id, **spec.model_dump())
     db.add(flag)
     await db.flush()
     return flag

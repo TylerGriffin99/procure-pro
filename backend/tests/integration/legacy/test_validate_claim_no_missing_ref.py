@@ -41,9 +41,11 @@ async def test_missing_ref_code_does_not_create_flag(db_session: AsyncSession, t
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", json.dumps(parsed))
     await db_session.flush()
 
-    result = await execute_validate_claim(db_session, session.id, test_user.id, test_project.id, {})
+    result = await execute_validate_claim(
+        db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
+    )
 
     flags = await list_flags_by_session(db_session, session.id)
     flag_types = [f.flag_type.value for f in flags]
     assert "missing_ref" not in flag_types
-    assert result["flags_created"] == 0
+    assert result.flags_created == 0

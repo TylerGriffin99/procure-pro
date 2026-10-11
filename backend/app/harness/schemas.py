@@ -10,12 +10,15 @@ contract is unchanged — only now it is typed and validated at the source.
 
 from __future__ import annotations
 
+import uuid
+from decimal import Decimal
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.constants.enums import ClaimItemType, VpsKind
+from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, VpsKind
 from app.schemas.base import StrictModel
+from app.schemas.claim_extraction import ClaimMetadata
 
 _Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
 _ItemIndex = Annotated[int, Field(ge=0)]
@@ -26,20 +29,95 @@ _Numeric = str | float | int | None
 
 
 class ParsedClaimItem(BaseModel):
-    """A single line item as stored in ``parsed_claim.json`` and read by the
-    matchers. Only the fields matchers consume are declared; any other keys the
-    extraction wrote (``ref_code``, ``percentage``, ``ptd``, …) are ignored.
-
-    ``contract_value`` keeps its raw extracted form (it is forwarded verbatim to
-    the Jev decisions API and never used arithmetically here).
-    """
+    """Money fields keep their raw extracted form: ``contract_value`` is forwarded verbatim to the Jev
+    decisions API, and ``parse_money`` converts at the point of use."""
 
     model_config = ConfigDict(extra="ignore")
 
     item_index: _ItemIndex
+    ref_code: str = ""
     description: str = ""
     item_type: ClaimItemType = ClaimItemType.contract_work
     contract_value: _Numeric = None
+    percentage: _Numeric = None
+    ptd: _Numeric = None
+    previous: _Numeric = None
+    current: _Numeric = None
+    balance: _Numeric = None
+
+
+class ParsedClaimMetadata(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    claim_number: str = ""
+    period_from: str = ""
+    period_to: str = ""
+    payment_due: str = ""
+
+
+class ParsedClaimSummary(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    original_contract_total: _Numeric = None
+    variations_total: _Numeric = None
+    revised_contract_total: _Numeric = None
+    retention_amount: _Numeric = None
+    claimed_amount: _Numeric = None
+
+
+class ParsedClaim(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    metadata: ParsedClaimMetadata = Field(default_factory=ParsedClaimMetadata)
+    line_items: list[ParsedClaimItem]
+    summary: ParsedClaimSummary = Field(default_factory=ParsedClaimSummary)
+
+
+class RawPage(StrictModel):
+    page_num: int
+    text: str = ""
+    tables: list[list[list[str | None]]] = Field(default_factory=list)
+
+
+class RawExtraction(StrictModel):
+    metadata: ClaimMetadata = Field(default_factory=ClaimMetadata)
+    pages: list[RawPage] = Field(default_factory=list)
+
+    def all_text(self) -> str:
+        return "\n".join(p.text for p in self.pages)
+
+
+class FormatDetection(StrictModel):
+    format: ClaimFormat
+    confidence: float
+    markers_found: list[str]
+
+    def detail(self) -> str:
+        percent = f" ({int(self.confidence * 100)}%)" if self.confidence else ""
+        return f"Format: {self.format.upper()}{percent}"
+
+
+class ValidationSummary(StrictModel):
+    total_items: int
+    flags_created: int
+
+
+class CreationSummary(StrictModel):
+    claim_id: uuid.UUID
+    assessment_id: uuid.UUID
+    line_items_created: int
+
+
+class FlagSpec(StrictModel):
+    flag_type: FlagType
+    severity: FlagSeverity
+    description: str
+    line_item_ref: str | None = None
+    expected_value: Decimal | None = None
+    actual_value: Decimal | None = None
+
+
+ExecutorResult = RawExtraction | FormatDetection | ParsedClaim | ValidationSummary | CreationSummary
 
 
 class JevAnswer(BaseModel):
