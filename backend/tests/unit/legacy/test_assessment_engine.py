@@ -1,14 +1,15 @@
 from decimal import Decimal
 
+from app.schemas.retention import RetentionTier
 from app.utils.assessment_engine import calculate_assessment_totals, calculate_retention
 
 
 def test_retention_tiered():
     """Test the 10/5/1.75 tiered retention from Gilmours project."""
     tiers = [
-        {"percentage": Decimal("0.10"), "up_to_amount": Decimal("200000")},
-        {"percentage": Decimal("0.05"), "up_to_amount": Decimal("800000")},
-        {"percentage": Decimal("0.0175"), "up_to_amount": None},  # remainder
+        RetentionTier(percentage=Decimal("0.10"), up_to_amount=Decimal("200000")),
+        RetentionTier(percentage=Decimal("0.05"), up_to_amount=Decimal("800000")),
+        RetentionTier(percentage=Decimal("0.0175"), up_to_amount=None),  # remainder
     ]
     # PR8: total recommended = 2,322,651.70, retention = 83,146.40
     # 10% of first 200K = 20,000
@@ -22,9 +23,9 @@ def test_retention_tiered():
 def test_retention_small_amount():
     """When total is less than first tier."""
     tiers = [
-        {"percentage": Decimal("0.10"), "up_to_amount": Decimal("200000")},
-        {"percentage": Decimal("0.05"), "up_to_amount": Decimal("800000")},
-        {"percentage": Decimal("0.0175"), "up_to_amount": None},
+        RetentionTier(percentage=Decimal("0.10"), up_to_amount=Decimal("200000")),
+        RetentionTier(percentage=Decimal("0.05"), up_to_amount=Decimal("800000")),
+        RetentionTier(percentage=Decimal("0.0175"), up_to_amount=None),
     ]
     # PR1: total recommended = 68,587.39
     # 10% of 68,587.39 = 6,858.74
@@ -41,9 +42,9 @@ def test_assessment_totals():
         sub_total_variations_recommended=Decimal("221276.98"),
         variations_claimed=Decimal("229189.67"),
         retention_tiers=[
-            {"percentage": Decimal("0.10"), "up_to_amount": Decimal("200000")},
-            {"percentage": Decimal("0.05"), "up_to_amount": Decimal("800000")},
-            {"percentage": Decimal("0.0175"), "up_to_amount": None},
+            RetentionTier(percentage=Decimal("0.10"), up_to_amount=Decimal("200000")),
+            RetentionTier(percentage=Decimal("0.05"), up_to_amount=Decimal("800000")),
+            RetentionTier(percentage=Decimal("0.0175"), up_to_amount=None),
         ],
         previously_certified=Decimal("1877003.99"),
         gst_rate=Decimal("0.15"),

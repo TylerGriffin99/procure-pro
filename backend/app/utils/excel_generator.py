@@ -1,20 +1,12 @@
 """Generate payment recommendation Excel workbook using openpyxl."""
 
 import io
-from decimal import Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-
-def _dec(value) -> float:
-    """Convert Decimal or any numeric to float for openpyxl."""
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (int, float)):
-        return float(value)
-    return 0.0
+from app.utils.money import parse_money
 
 
 def _apply_header_style(ws, row_num: int, col_count: int):
@@ -94,7 +86,7 @@ def _write_summary_sheet(wb: Workbook, data: dict):
 
     for label, value in financials:
         ws.cell(row=row, column=1, value=label).font = label_font
-        cell = ws.cell(row=row, column=2, value=_dec(value))
+        cell = ws.cell(row=row, column=2, value=float(parse_money(value).value))
         cell.font = value_font
         cell.number_format = NUMBER_FMT
         ws.cell(row=row, column=1).border = thin_border
@@ -108,7 +100,7 @@ def _write_summary_sheet(wb: Workbook, data: dict):
         row += 1
         for tier in retention_details:
             ws.cell(row=row, column=1, value=tier.get("percentage", "")).font = value_font
-            cell = ws.cell(row=row, column=2, value=_dec(tier.get("amount", 0)))
+            cell = ws.cell(row=row, column=2, value=float(parse_money(tier.get("amount", 0)).value))
             cell.font = value_font
             cell.number_format = NUMBER_FMT
             row += 1
@@ -137,13 +129,17 @@ def _write_contract_works_sheet(wb: Workbook, data: dict):
 
     for i, item in enumerate(data.get("contract_works", []), 2):
         ws.cell(row=i, column=1, value=item.get("description", ""))
-        ws.cell(row=i, column=2, value=_dec(item.get("contract_sum"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=3, value=_dec(item.get("contractor_claim"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=4, value=_dec(item.get("recommended"))).number_format = NUMBER_FMT
+        ws.cell(row=i, column=2, value=float(parse_money(item.get("contract_sum")).value)).number_format = NUMBER_FMT
+        ws.cell(
+            row=i, column=3, value=float(parse_money(item.get("contractor_claim")).value)
+        ).number_format = NUMBER_FMT
+        ws.cell(row=i, column=4, value=float(parse_money(item.get("recommended")).value)).number_format = NUMBER_FMT
         ws.cell(row=i, column=5, value=item.get("percentage", ""))
-        ws.cell(row=i, column=6, value=_dec(item.get("variance"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=7, value=_dec(item.get("previously_paid"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=8, value=_dec(item.get("recommended_this_period"))).number_format = NUMBER_FMT
+        ws.cell(row=i, column=6, value=float(parse_money(item.get("variance")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=7, value=float(parse_money(item.get("previously_paid")).value)).number_format = NUMBER_FMT
+        ws.cell(
+            row=i, column=8, value=float(parse_money(item.get("recommended_this_period")).value)
+        ).number_format = NUMBER_FMT
         ws.cell(row=i, column=9, value=item.get("comments", ""))
 
     _set_column_widths(ws, [30, 15, 15, 18, 12, 15, 15, 20, 30])
@@ -172,12 +168,12 @@ def _write_variations_sheet(wb: Workbook, data: dict):
     for i, item in enumerate(data.get("variation_works", []), 2):
         ws.cell(row=i, column=1, value=item.get("ci_number", ""))
         ws.cell(row=i, column=2, value=item.get("description", ""))
-        ws.cell(row=i, column=3, value=_dec(item.get("submission"))).number_format = NUMBER_FMT
+        ws.cell(row=i, column=3, value=float(parse_money(item.get("submission")).value)).number_format = NUMBER_FMT
         ws.cell(row=i, column=4, value=item.get("type", ""))
-        ws.cell(row=i, column=5, value=_dec(item.get("claimed_to_date"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=6, value=_dec(item.get("recommended"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=7, value=_dec(item.get("previously_paid"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=8, value=_dec(item.get("this_period"))).number_format = NUMBER_FMT
+        ws.cell(row=i, column=5, value=float(parse_money(item.get("claimed_to_date")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=6, value=float(parse_money(item.get("recommended")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=7, value=float(parse_money(item.get("previously_paid")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=8, value=float(parse_money(item.get("this_period")).value)).number_format = NUMBER_FMT
         ws.cell(row=i, column=9, value=item.get("status", ""))
         ws.cell(row=i, column=10, value=item.get("comments", ""))
 
@@ -207,11 +203,11 @@ def _write_provisional_sums_sheet(wb: Workbook, data: dict):
     for i, item in enumerate(data.get("provisional_sums", []), 2):
         ws.cell(row=i, column=1, value=item.get("ps_number", ""))
         ws.cell(row=i, column=2, value=item.get("description", ""))
-        ws.cell(row=i, column=3, value=_dec(item.get("contract_sum"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=4, value=_dec(item.get("claimed_to_date"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=5, value=_dec(item.get("recommended"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=6, value=_dec(item.get("previously_paid"))).number_format = NUMBER_FMT
-        ws.cell(row=i, column=7, value=_dec(item.get("this_period"))).number_format = NUMBER_FMT
+        ws.cell(row=i, column=3, value=float(parse_money(item.get("contract_sum")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=4, value=float(parse_money(item.get("claimed_to_date")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=5, value=float(parse_money(item.get("recommended")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=6, value=float(parse_money(item.get("previously_paid")).value)).number_format = NUMBER_FMT
+        ws.cell(row=i, column=7, value=float(parse_money(item.get("this_period")).value)).number_format = NUMBER_FMT
         ws.cell(row=i, column=8, value=item.get("percentage", ""))
         ws.cell(row=i, column=9, value=item.get("status", ""))
         ws.cell(row=i, column=10, value=item.get("comments", ""))

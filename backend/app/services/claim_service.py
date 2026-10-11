@@ -1,8 +1,6 @@
 import asyncio
-import calendar
 import logging
 import uuid
-from datetime import date, timedelta
 from io import BytesIO
 
 import pdfplumber
@@ -30,39 +28,9 @@ from app.repos import (
 )
 from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate, ClaimUploadResponse
 from app.services.guardrails import screen_text
+from app.utils.dates import auto_fill_dates
 
 logger = logging.getLogger(__name__)
-
-WORKING_DAYS_OFFSET = 5
-
-
-def _add_working_days(start: date, days: int) -> date:
-    """Add N working days (Mon-Fri) to a date."""
-    current = start
-    added = 0
-    while added < days:
-        current += timedelta(days=1)
-        if current.weekday() < calendar.SATURDAY:
-            added += 1
-    return current
-
-
-def _payment_due_20th(reference: date) -> date:
-    """Return the 20th of the next month after the reference date."""
-    if reference.month == calendar.DECEMBER:
-        return date(reference.year + 1, 1, 20)
-    return reference.replace(month=reference.month + 1, day=20)
-
-
-def auto_fill_dates(claim_received: date | None) -> dict[str, date | None]:
-    """Derive schedule dates from claim_received using 5 working-day offsets."""
-    if not claim_received:
-        return {}
-    provisional = _add_working_days(claim_received, WORKING_DAYS_OFFSET)
-    schedule = _add_working_days(provisional, WORKING_DAYS_OFFSET)
-    payment = _payment_due_20th(schedule)
-    return {"provisional_payment_schedule_due": provisional, "payment_schedule_due": schedule, "payment_due": payment}
-
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 

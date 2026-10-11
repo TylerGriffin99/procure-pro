@@ -8,60 +8,27 @@ the response into the parsed_claim.json schema.
 import json
 import logging
 import string
-from decimal import Decimal, InvalidOperation
 
 from pydantic_ai.models import Model
 
 from app.constants.enums import ClaimFormat, ClaimItemType
-from app.constants.values import BLANK_CELL, CENTS
 from app.harness.agent_runner import run_structured
+from app.harness.extract_shared import summary_totals
 from app.harness.prompts import load_playbook, load_prompt
 from app.harness.schemas import GenericExtraction, GenericSummary
+from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
 
 _DECIMAL_FIELDS = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
 
 
-def _normalise_decimal(value) -> str:
-    """Normalise any value to a 2-decimal-place string.
-
-    Handles: strings, ints, floats, None, empty strings, dashes,
-    parenthesised negatives like "(1,234.56)", dollar signs, commas, spaces.
-    """
-    if value is None:
-        return "0.00"
-
-    if isinstance(value, (int, float)):
-        return str(Decimal(str(value)).quantize(CENTS))
-
-    s = str(value).strip()
-    if not s or s == BLANK_CELL:
-        return "0.00"
-
-    # Strip dollar signs and spaces
-    s = s.replace("$", "").replace(" ", "")
-
-    # Parenthesised negative: (1,234.56) -> -1234.56
-    neg = False
-    if s.startswith("(") and s.endswith(")"):
-        neg = True
-        s = s[1:-1]
-
-    # Strip commas
-    s = s.replace(",", "")
-
-    try:
-        d = Decimal(s)
-    except InvalidOperation:
+def money_text(value: str | float | None) -> str:
+    parsed = parse_money(value)
+    if parsed.warning is not None:
         # A non-empty value we couldn't parse is bad data, not a true zero — surface it.
         logger.warning("Could not parse decimal value %r; defaulting to 0.00", value)
-        return "0.00"
-
-    if neg:
-        d = -d
-
-    return str(d.quantize(CENTS))
+    return format_money(parsed.value)
 
 
 def validate_and_normalise(raw_response: dict) -> dict:
@@ -97,7 +64,7 @@ def validate_and_normalise(raw_response: dict) -> dict:
             "item_type": item_type,
         }
         for field in _DECIMAL_FIELDS:
-            item[field] = _normalise_decimal(raw_item.get(field))
+            item[field] = money_text(raw_item.get(field))
 
         line_items.append(item)
 
@@ -107,25 +74,12 @@ def validate_and_normalise(raw_response: dict) -> dict:
     needs_recompute = not raw_summary or not all(raw_summary.get(k) for k in GenericSummary.model_fields)
 
     if needs_recompute:
-        contract_total = Decimal("0")
-        revised_total = Decimal("0")
-        claimed_total = Decimal("0")
-        for item in line_items:
-            val = Decimal(item["contract_value"])
-            revised_total += val
-            if item["item_type"] == ClaimItemType.contract_work:
-                contract_total += val
-            claimed_total += Decimal(item["ptd"])
-        summary = {
-            "original_contract_total": str(contract_total.quantize(CENTS)),
-            "revised_contract_total": str(revised_total.quantize(CENTS)),
-            "claimed_amount": str(claimed_total.quantize(CENTS)),
-        }
+        summary = summary_totals(line_items).model_dump()
     else:
         summary = {
-            "original_contract_total": _normalise_decimal(raw_summary["original_contract_total"]),
-            "revised_contract_total": _normalise_decimal(raw_summary["revised_contract_total"]),
-            "claimed_amount": _normalise_decimal(raw_summary["claimed_amount"]),
+            "original_contract_total": money_text(raw_summary["original_contract_total"]),
+            "revised_contract_total": money_text(raw_summary["revised_contract_total"]),
+            "claimed_amount": money_text(raw_summary["claimed_amount"]),
         }
 
     return {"metadata": metadata, "line_items": line_items, "summary": summary}

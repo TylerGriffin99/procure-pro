@@ -1,16 +1,18 @@
 """Deterministic assessment calculations — no AI needed here."""
 
+from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.constants.values import CENTS
+from app.schemas.retention import RetentionTier
 
 
-def calculate_retention(total_recommended: Decimal, tiers: list[dict]) -> Decimal:
+def calculate_retention(total_recommended: Decimal, tiers: Sequence[RetentionTier]) -> Decimal:
     """Calculate tiered retention.
 
     Args:
         total_recommended: Total value of works recommended for payment
-        tiers: List of dicts with 'percentage' and 'up_to_amount' (None = remainder)
+        tiers: Retention tiers; an up_to_amount of None is the remainder tier
 
     Returns:
         Total retention amount (positive number)
@@ -18,12 +20,12 @@ def calculate_retention(total_recommended: Decimal, tiers: list[dict]) -> Decima
     remaining = total_recommended
     total_retention = Decimal("0")
 
-    for tier in sorted(tiers, key=lambda t: t.get("up_to_amount") or Decimal("999999999")):
+    for tier in sorted(tiers, key=lambda t: t.up_to_amount or Decimal("999999999")):
         if remaining <= 0:
             break
 
-        up_to = tier.get("up_to_amount")
-        pct = tier["percentage"]
+        up_to = tier.up_to_amount
+        pct = tier.percentage
 
         if up_to is None:
             # Remainder tier
@@ -39,7 +41,7 @@ def calculate_retention(total_recommended: Decimal, tiers: list[dict]) -> Decima
     return total_retention
 
 
-def calculate_retention_per_tier(total_recommended: Decimal, tiers: list[dict]) -> list[dict]:
+def calculate_retention_per_tier(total_recommended: Decimal, tiers: Sequence[RetentionTier]) -> list[dict]:
     """Calculate retention per tier for display in the PDF.
 
     Returns list of dicts with 'percentage', 'base' (amount in this tier's bracket),
@@ -48,9 +50,9 @@ def calculate_retention_per_tier(total_recommended: Decimal, tiers: list[dict]) 
     remaining = total_recommended
     details = []
 
-    for tier in sorted(tiers, key=lambda t: t.get("up_to_amount") or Decimal("999999999")):
-        pct = tier["percentage"]
-        up_to = tier.get("up_to_amount")
+    for tier in sorted(tiers, key=lambda t: t.up_to_amount or Decimal("999999999")):
+        pct = tier.percentage
+        up_to = tier.up_to_amount
 
         if remaining <= 0:
             details.append({"percentage": f"{float(pct) * 100:.1f}%", "base": Decimal("0"), "amount": Decimal("0")})
@@ -75,7 +77,7 @@ def calculate_assessment_totals(
     sub_total_provisional_sums: Decimal,
     sub_total_variations_recommended: Decimal,
     variations_claimed: Decimal,
-    retention_tiers: list[dict],
+    retention_tiers: Sequence[RetentionTier],
     previously_certified: Decimal,
     gst_rate: Decimal,
 ) -> dict:

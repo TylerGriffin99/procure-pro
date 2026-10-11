@@ -6,39 +6,14 @@ so no LLM is needed.
 """
 
 import logging
-import re
-from decimal import Decimal, InvalidOperation
 from typing import Final
 
 from app.constants.enums import ClaimItemType
-from app.constants.values import BLANK_CELL, CENTS, STANDARD_COLUMNS, VARIATION_COLUMNS
+from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
+from app.harness.extract_shared import extract_metadata, summary_totals
+from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
-
-
-def parse_decimal(value: str | None) -> str:
-    """Parse a string value into a normalised decimal string.
-
-    Handles: commas, parenthesised negatives, blanks, dashes.
-    Returns a string like "1234.56" or "0.00".
-    """
-    if not value or not value.strip() or value.strip() == BLANK_CELL:
-        return "0.00"
-    s = value.strip()
-    # Parenthesised negative: (1,234.56) -> -1234.56
-    neg = False
-    if s.startswith("(") and s.endswith(")"):
-        neg = True
-        s = s[1:-1]
-    s = s.replace(",", "")
-    try:
-        d = Decimal(s)
-    except InvalidOperation:
-        return "0.00"
-    if neg:
-        d = -d
-    # Normalise to 2dp string
-    return str(d.quantize(CENTS))
 
 
 SECTION_CONTRACT: Final = ClaimItemType.contract_work
@@ -103,12 +78,12 @@ def map_row_to_item(row: list[str | None], section: str, item_index: int) -> dic
             "ref_code": str(row[0] or "").strip(),
             "description": str(row[1] or "").strip(),
             "item_type": ClaimItemType.variation,
-            "contract_value": parse_decimal(row[3]),
-            "percentage": parse_decimal(row[4]),
-            "ptd": parse_decimal(row[5]),
-            "previous": parse_decimal(row[6]),
-            "current": parse_decimal(row[7]),
-            "balance": parse_decimal(row[8]),
+            "contract_value": format_money(parse_money(row[3]).value),
+            "percentage": format_money(parse_money(row[4]).value),
+            "ptd": format_money(parse_money(row[5]).value),
+            "previous": format_money(parse_money(row[6]).value),
+            "current": format_money(parse_money(row[7]).value),
+            "balance": format_money(parse_money(row[8]).value),
         }
     else:
         # Contract Works or Provisional Sums — both 8 cols
@@ -121,31 +96,13 @@ def map_row_to_item(row: list[str | None], section: str, item_index: int) -> dic
             "ref_code": str(row[0] or "").strip(),
             "description": str(row[1] or "").strip(),
             "item_type": item_type,
-            "contract_value": parse_decimal(row[2]),
-            "percentage": parse_decimal(row[3]),
-            "ptd": parse_decimal(row[4]),
-            "previous": parse_decimal(row[5]),
-            "current": parse_decimal(row[6]),
-            "balance": parse_decimal(row[7]),
+            "contract_value": format_money(parse_money(row[2]).value),
+            "percentage": format_money(parse_money(row[3]).value),
+            "ptd": format_money(parse_money(row[4]).value),
+            "previous": format_money(parse_money(row[5]).value),
+            "current": format_money(parse_money(row[6]).value),
+            "balance": format_money(parse_money(row[7]).value),
         }
-
-
-_METADATA_PATTERNS = {
-    "claim_number": re.compile(r"Claim\s*(?:No\.?|Number)\s*[:\-]?\s*(\d+)", re.IGNORECASE),
-    "period_from": re.compile(r"Period\s*From\s*[:\-]?\s*([\d/]+)", re.IGNORECASE),
-    "period_to": re.compile(r"Period\s*To\s*[:\-]?\s*([\d/]+)", re.IGNORECASE),
-    "payment_due": re.compile(r"Payment\s*Due\s*[:\-]?\s*([\d/]+)", re.IGNORECASE),
-}
-
-
-def extract_metadata(all_pages_text: str) -> dict[str, str]:
-    """Extract claim metadata from the combined text of all pages."""
-    result: dict[str, str] = {"claim_number": "", "period_from": "", "period_to": "", "payment_due": ""}
-    for key, pattern in _METADATA_PATTERNS.items():
-        match = pattern.search(all_pages_text)
-        if match:
-            result[key] = match.group(1)
-    return result
 
 
 def is_skip_row(row: list[str | None]) -> bool:
@@ -177,7 +134,7 @@ def parse_wbpro(raw_extraction: dict) -> dict:
 
     # 2. Extract metadata from all page text
     all_text = "\n".join(p.get("text", "") for p in pages)
-    metadata = extract_metadata(all_text)
+    metadata = {key: value or "" for key, value in extract_metadata(all_text).model_dump().items()}
 
     # 3. Walk pages → tables → rows, map each row to a line item
     line_items: list[dict] = []
@@ -216,21 +173,7 @@ def parse_wbpro(raw_extraction: dict) -> dict:
                 item_index += 1
 
     # 4. Compute summary totals
-    contract_total = Decimal("0")
-    revised_total = Decimal("0")
-    claimed_total = Decimal("0")
-    for item in line_items:
-        val = Decimal(item["contract_value"])
-        revised_total += val
-        if item["item_type"] == ClaimItemType.contract_work:
-            contract_total += val
-        claimed_total += Decimal(item["ptd"])
-
-    summary = {
-        "original_contract_total": str(contract_total.quantize(CENTS)),
-        "revised_contract_total": str(revised_total.quantize(CENTS)),
-        "claimed_amount": str(claimed_total.quantize(CENTS)),
-    }
+    summary = summary_totals(line_items).model_dump()
 
     logger.info(
         "WBPRO parse: %d line items (%d contract, %d variation, %d PS)",

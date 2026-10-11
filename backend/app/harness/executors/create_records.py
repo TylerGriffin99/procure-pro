@@ -4,15 +4,22 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from datetime import date as dt_date
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.enums import ClaimItemType, LineItemStatus, VariationStatus, WBSLevel, WorkspaceFile
-from app.constants.values import DMY_DATE_PARTS, TWO_DIGIT_YEAR_CEILING, TWO_DIGIT_YEAR_CENTURY
+from app.constants.enums import (
+    ClaimItemType,
+    FlagSeverity,
+    FlagType,
+    LineItemStatus,
+    VariationStatus,
+    WBSLevel,
+    WorkspaceFile,
+)
 from app.models.assessment import Assessment
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
@@ -23,37 +30,38 @@ from app.models.provisional_sum import ProvisionalSum
 from app.models.variation import Variation
 from app.models.wbs_code import WBSCode
 from app.repos import assessment_repo, harness_repo, project_repo, provisional_sum_repo, variation_repo, wbs_code_repo
-from app.utils.assessment_aggregator import aggregate_line_items, aggregate_provisional_sums, aggregate_variations
+from app.schemas.claim_extraction import MoneyFormatWarning
+from app.schemas.retention import RetentionTier
+from app.services.assessment_aggregate import aggregate_assessment
 from app.utils.assessment_engine import calculate_assessment_totals
+from app.utils.dates import parse_ddmmyy
+from app.utils.money import parse_money
 
 logger = logging.getLogger(__name__)
 
 ZERO = Decimal("0")
 _U_PREFIX = re.compile(r"^\(U\)\s*")
+_ITEM_MONEY_FIELDS: Final = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
+_SUMMARY_MONEY_FIELDS: Final = (
+    "original_contract_total",
+    "variations_total",
+    "revised_contract_total",
+    "retention_amount",
+    "claimed_amount",
+)
 
 
-def _dec(value: str | None) -> Decimal:
-    if not value:
-        return ZERO
-    try:
-        return Decimal(str(value).replace(",", ""))
-    except Exception:
-        return ZERO
-
-
-def _parse_date(date_str: str | None) -> dt_date | None:
-    if not date_str:
-        return None
-    try:
-        parts = date_str.split("/")
-        if len(parts) == DMY_DATE_PARTS:
-            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
-            if year < TWO_DIGIT_YEAR_CEILING:
-                year += TWO_DIGIT_YEAR_CENTURY
-            return dt_date(year, month, day)
-    except (ValueError, IndexError):
-        pass
-    return None
+def money_format_warnings(
+    line_items: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]
+) -> list[MoneyFormatWarning]:
+    """D6: one warning per persisted money cell parse_money could not read (it persists as 0)."""
+    cells = [(item.get("ref_code"), field, item.get(field)) for item in line_items for field in _ITEM_MONEY_FIELDS]
+    cells += [(None, field, summary.get(field)) for field in _SUMMARY_MONEY_FIELDS]
+    return [
+        MoneyFormatWarning(ref=ref, field=field, description=f"{field}: {warning}; recorded as 0")
+        for ref, field, raw in cells
+        if (warning := parse_money(raw).warning) is not None
+    ]
 
 
 async def execute_create_records(
@@ -216,7 +224,7 @@ async def execute_create_records(
                     var_id_by_index[item_idx] = mid
                     # Update contractor_submission from latest claim (contractor
                     # may revise their submission value between claims)
-                    new_submission = _dec(item.get("contract_value"))
+                    new_submission = parse_money(item.get("contract_value")).value
                     existing_var = next(v for v in existing_vars if v.id == mid)
                     if new_submission and new_submission != existing_var.contractor_submission:
                         logger.info(
@@ -238,7 +246,7 @@ async def execute_create_records(
                 if mid in valid_ps_ids:
                     ps_id_by_index[item_idx] = mid
                     # Update contract_sum from latest claim
-                    new_sum = _dec(item.get("contract_value"))
+                    new_sum = parse_money(item.get("contract_value")).value
                     existing_ps_rec = next(ps for ps in existing_ps if ps.id == mid)
                     if new_sum and new_sum != existing_ps_rec.contract_sum:
                         logger.info("Updating PS %s contract_sum: %s -> %s", mid, existing_ps_rec.contract_sum, new_sum)
@@ -261,7 +269,7 @@ async def execute_create_records(
                     ci_number=next_ci,
                     contractor_ref=ref,
                     description=desc,
-                    contractor_submission=_dec(item.get("contract_value")),
+                    contractor_submission=parse_money(item.get("contract_value")).value,
                     status=VariationStatus.unapproved,
                     created_by=user_id,
                 )
@@ -274,7 +282,7 @@ async def execute_create_records(
                     project_id=project_id,
                     ps_number=next_ps,
                     description=item.get("description", ""),
-                    contract_sum=_dec(item.get("contract_value")),
+                    contract_sum=parse_money(item.get("contract_value")).value,
                     status=VariationStatus.unapproved,
                     created_by=user_id,
                 )
@@ -319,7 +327,7 @@ async def execute_create_records(
                     ci_number=next_ci,
                     contractor_ref=ref,
                     description=_U_PREFIX.sub("", desc),
-                    contractor_submission=_dec(item.get("contract_value")),
+                    contractor_submission=parse_money(item.get("contract_value")).value,
                     status=VariationStatus.unapproved,
                     created_by=user_id,
                 )
@@ -346,7 +354,7 @@ async def execute_create_records(
                     project_id=project_id,
                     ps_number=next_ps,
                     description=desc,
-                    contract_sum=_dec(item.get("contract_value")),
+                    contract_sum=parse_money(item.get("contract_value")).value,
                     status=VariationStatus.unapproved,
                     created_by=user_id,
                 )
@@ -360,15 +368,15 @@ async def execute_create_records(
     claim = Claim(
         project_id=project_id,
         claim_number=int(metadata.get("claim_number", 0) or 0),
-        period_from=_parse_date(metadata.get("period_from")),
-        period_to=_parse_date(metadata.get("period_to")),
-        payment_due=_parse_date(metadata.get("payment_due")),
+        period_from=parse_ddmmyy(metadata.get("period_from")),
+        period_to=parse_ddmmyy(metadata.get("period_to")),
+        payment_due=parse_ddmmyy(metadata.get("payment_due")),
         parsed_at=datetime.now(UTC),
-        original_contract_total=_dec(summary.get("original_contract_total")),
-        variations_total=_dec(summary.get("variations_total")),
-        revised_contract_total=_dec(summary.get("revised_contract_total")),
-        retention_amount=_dec(summary.get("retention_amount")),
-        claimed_amount=_dec(summary.get("claimed_amount")),
+        original_contract_total=parse_money(summary.get("original_contract_total")).value,
+        variations_total=parse_money(summary.get("variations_total")).value,
+        revised_contract_total=parse_money(summary.get("revised_contract_total")).value,
+        retention_amount=parse_money(summary.get("retention_amount")).value,
+        claimed_amount=parse_money(summary.get("claimed_amount")).value,
         created_by=user_id,
     )
 
@@ -378,12 +386,12 @@ async def execute_create_records(
                 item_type=ClaimItemType(item.get("item_type", ClaimItemType.contract_work)),
                 ref_code=item.get("ref_code", ""),
                 description=item.get("description", ""),
-                contract_value=_dec(item.get("contract_value")),
-                percentage=_dec(item.get("percentage")),
-                ptd=_dec(item.get("ptd")),
-                previous=_dec(item.get("previous")),
-                current=_dec(item.get("current")),
-                balance=_dec(item.get("balance")),
+                contract_value=parse_money(item.get("contract_value")).value,
+                percentage=parse_money(item.get("percentage")).value,
+                ptd=parse_money(item.get("ptd")).value,
+                previous=parse_money(item.get("previous")).value,
+                current=parse_money(item.get("current")).value,
+                balance=parse_money(item.get("balance")).value,
                 sort_order=i,
                 suggested_wbs_code_id=index_to_wbs_id.get(i),
                 variation_id=var_id_by_index.get(i),
@@ -424,18 +432,16 @@ async def execute_create_records(
     prev_ps_recommended: dict[uuid.UUID, Decimal] = {}
     prev_ps_contractor_claim: dict[uuid.UUID, Decimal] = {}
     if latest_assessment:
-        prev_wbs_groups = aggregate_line_items(latest_assessment.line_items, all_wbs)
-        for g in prev_wbs_groups:
+        prev = await aggregate_assessment(db, project_id, latest_assessment)
+        for g in prev.wbs_groups:
             prev_recommended_by_wbs[g.wbs_code_id] = g.total_recommended
             prev_contractor_claim_by_wbs[g.wbs_code_id] = g.contractor_claim_to_date
 
-        prev_var_groups = aggregate_variations(latest_assessment.variation_items, existing_vars)
-        for g in prev_var_groups:
+        for g in prev.variation_groups:
             prev_variation_recommended[g.variation_id] = g.total_recommended
             prev_variation_contractor_claim[g.variation_id] = g.contractor_claim_to_date
 
-        prev_ps_groups = aggregate_provisional_sums(latest_assessment.provisional_sum_items, existing_ps)
-        for g in prev_ps_groups:
+        for g in prev.ps_groups:
             prev_ps_recommended[g.provisional_sum_id] = g.total_recommended
             prev_ps_contractor_claim[g.provisional_sum_id] = g.contractor_claim_to_date
 
@@ -616,7 +622,9 @@ async def execute_create_records(
     sub_total_variations_recommended = sum(((av.total_recommended or ZERO) for av in assessment.variation_items), ZERO)
     variations_claimed = sum(((av.contractor_claim_to_date or ZERO) for av in assessment.variation_items), ZERO)
 
-    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
+    retention_tiers = [
+        RetentionTier(percentage=t.percentage, up_to_amount=t.up_to_amount) for t in project.retention_tiers
+    ]
 
     totals = calculate_assessment_totals(
         contract_sum=project.contract_sum or ZERO,
@@ -643,6 +651,17 @@ async def execute_create_records(
 
     db.add(assessment)
     await db.flush()
+
+    for warning in money_format_warnings(line_items, summary):
+        logger.warning("create_records: %s (ref=%s)", warning.description, warning.ref)
+        await harness_repo.create_flag(
+            db,
+            session_id,
+            FlagType.format_warning,
+            FlagSeverity.warning,
+            warning.description,
+            line_item_ref=warning.ref,
+        )
 
     # Link flags to claim
     await harness_repo.link_flags_to_claim(db, session_id, claim.id)

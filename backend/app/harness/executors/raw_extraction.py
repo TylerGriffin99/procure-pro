@@ -1,7 +1,6 @@
 """Phase 0: Extract raw text and tables from PDF using pdfplumber."""
 
 import logging
-import re
 import uuid
 from io import BytesIO
 from typing import Any
@@ -9,6 +8,7 @@ from typing import Any
 import pdfplumber
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.harness.extract_shared import extract_metadata
 from app.repos import document_repo
 
 logger = logging.getLogger(__name__)
@@ -47,27 +47,8 @@ async def execute_raw_extraction(
             pages_data.append({"page_num": page.page_number, "text": text, "tables": clean_tables})
 
         first_text = pages_data[0]["text"] if pages_data else ""
-        metadata = _extract_metadata(first_text)
+        metadata = extract_metadata(first_text).model_dump(exclude_none=True)
 
     logger.info("Raw extraction: %d pages, %d tables total", len(pages_data), sum(len(p["tables"]) for p in pages_data))
 
     return {"metadata": metadata, "pages": pages_data}
-
-
-def _extract_metadata(text: str) -> dict[str, str]:
-    """Extract basic metadata from first page text via simple pattern matching."""
-    metadata = {}
-
-    patterns = {
-        "claim_number": r"Claim\s*No\.?\s*[:\-]?\s*(\d+)",
-        "period_from": r"Period\s*From\s*[:\-]?\s*([\d/]+)",
-        "period_to": r"Period\s*To\s*[:\-]?\s*([\d/]+)",
-        "payment_due": r"Payment\s*Due\s*[:\-]?\s*([\d/]+)",
-    }
-
-    for key, pattern in patterns.items():
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            metadata[key] = match.group(1)
-
-    return metadata

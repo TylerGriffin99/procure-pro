@@ -19,7 +19,6 @@ from app.constants.values import (
     COMMENT_PREFIX_CLOSED_OUT,
     COMMENT_PREFIX_INTERIM,
     COMMENT_SEPARATOR,
-    EXPORT_STRIPPED_COMMENT_PREFIXES,
     PDF_MEDIA_TYPE,
     XLSX_MEDIA_TYPE,
 )
@@ -39,7 +38,6 @@ from app.repos import (
     project_repo,
     provisional_sum_repo,
     variation_repo,
-    wbs_code_repo,
 )
 from app.schemas.assessment import (
     AssessmentCreate,
@@ -53,14 +51,11 @@ from app.schemas.assessment import (
     ReclassifyRequest,
 )
 from app.schemas.assessment_aggregate import AssessmentAggregate
-from app.services.claim_service import auto_fill_dates
-from app.utils.assessment_aggregator import (
-    aggregate_line_items,
-    aggregate_provisional_sums,
-    aggregate_variations,
-    compute_assessment_totals,
-)
+from app.schemas.retention import RetentionTier
+from app.services.assessment_aggregate import aggregate_assessment, export_display, recompute_item, rollup_status
+from app.utils.assessment_aggregator import compute_assessment_totals
 from app.utils.assessment_engine import calculate_retention, calculate_retention_per_tier
+from app.utils.dates import auto_fill_dates
 from app.utils.excel_generator import generate_payment_recommendation_excel
 from app.utils.pdf_generator import generate_payment_recommendation_pdf
 
@@ -183,10 +178,7 @@ async def update_line_item(
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
-        item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
-        if item.contract_sum and item.contract_sum > 0:
-            item.percentage = (data.total_recommended / item.contract_sum * 100).quantize(CENTS)
-        item.recommended_this_period = data.total_recommended - item.previously_paid
+        recompute_item(item, denominator=item.contract_sum)
 
     if data.status is not None:
         item.status = data.status
@@ -209,18 +201,7 @@ async def get_aggregated_assessment(
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
         raise NotFoundError("Assessment not found")
-
-    all_wbs = await wbs_code_repo.get_by_project(db, project_id)
-    all_variations = await variation_repo.get_by_project(db, project_id)
-    all_ps = await provisional_sum_repo.get_by_project(db, project_id)
-
-    wbs_groups = aggregate_line_items(assessment.line_items, all_wbs)
-    var_groups = aggregate_variations(assessment.variation_items, all_variations)
-    ps_groups = aggregate_provisional_sums(assessment.provisional_sum_items, all_ps)
-
-    return AssessmentAggregate(
-        assessment=assessment, wbs_groups=wbs_groups, variation_groups=var_groups, ps_groups=ps_groups
-    )
+    return await aggregate_assessment(db, project_id, assessment)
 
 
 async def get_prior_interims(
@@ -445,15 +426,8 @@ async def generate_assessment_export(
         raise NotFoundError("Project not found")
     claim = await claim_repo.get_by_id(db, assessment.claim_id)
 
-    # Fetch master records for aggregation
-    all_wbs = await wbs_code_repo.get_by_project(db, project_id)
-    all_variations = await variation_repo.get_by_project(db, project_id)
-    all_ps = await provisional_sum_repo.get_by_project(db, project_id)
-
-    # Aggregate using shared utility
-    wbs_groups = aggregate_line_items(assessment.line_items, all_wbs)
-    var_groups = aggregate_variations(assessment.variation_items, all_variations)
-    ps_groups = aggregate_provisional_sums(assessment.provisional_sum_items, all_ps)
+    aggregate = await aggregate_assessment(db, project_id, assessment)
+    wbs_groups, var_groups, ps_groups = aggregate.wbs_groups, aggregate.variation_groups, aggregate.ps_groups
 
     # Build contract_works list for PDF
     contract_works = []
@@ -477,27 +451,7 @@ async def generate_assessment_export(
     # Build variation_works list for PDF
     variation_works = []
     for g in var_groups:
-        all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
-        comments = "; ".join(r.comments for r in all_rows if r.comments)
-        # Strip "Closed Out - " / "Interim - " prefixes from PDF comments
-        display_comments = comments
-        for prefix in EXPORT_STRIPPED_COMMENT_PREFIXES:
-            if display_comments.startswith(prefix):
-                display_comments = display_comments[len(prefix) :]
-                break
-        display_comments = display_comments.strip()
-
-        # Determine display status: check is_closed_out flag on any row
-        is_closed_out = any(getattr(r, "is_closed_out", False) for r in all_rows)
-        if is_closed_out:
-            display_status = "Closed Out"
-        elif g.child_rows:
-            display_status = g.child_rows[0].status.value.capitalize()
-        elif g.history_row:
-            display_status = g.history_row.status.value.capitalize()
-        else:
-            display_status = ""
-
+        display_comments, display_status = export_display(g.history_row, g.child_rows)
         variation_works.append(
             {
                 "ci_number": g.contractor_ref,
@@ -516,25 +470,7 @@ async def generate_assessment_export(
     # Build provisional_sums list for PDF
     provisional_sums = []
     for g in ps_groups:
-        all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
-        comments = "; ".join(r.comments for r in all_rows if r.comments)
-        display_comments = comments
-        for prefix in EXPORT_STRIPPED_COMMENT_PREFIXES:
-            if display_comments.startswith(prefix):
-                display_comments = display_comments[len(prefix) :]
-                break
-        display_comments = display_comments.strip()
-
-        is_closed_out = any(getattr(r, "is_closed_out", False) for r in all_rows)
-        if is_closed_out:
-            display_status = "Closed Out"
-        elif g.child_rows:
-            display_status = g.child_rows[0].status.value.capitalize()
-        elif g.history_row:
-            display_status = g.history_row.status.value.capitalize()
-        else:
-            display_status = ""
-
+        display_comments, display_status = export_display(g.history_row, g.child_rows)
         provisional_sums.append(
             {
                 "ps_number": g.ps_number,
@@ -557,7 +493,9 @@ async def generate_assessment_export(
     value_claimed = totals.value_claimed_to_date
     adjustments = totals.adjustments
 
-    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
+    retention_tiers = [
+        RetentionTier(percentage=t.percentage, up_to_amount=t.up_to_amount) for t in project.retention_tiers
+    ]
     total_retention = calculate_retention(total_recommended, retention_tiers)
     retention_details = calculate_retention_per_tier(total_recommended, retention_tiers)
 
@@ -629,10 +567,7 @@ async def update_variation_item(
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
-        item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
-        if item.variation and item.variation.contractor_submission > 0:
-            item.percentage = (data.total_recommended / item.variation.contractor_submission * 100).quantize(CENTS)
-        item.recommended_this_period = data.total_recommended - item.previously_paid
+        recompute_item(item, denominator=item.variation.contractor_submission if item.variation else None)
 
     if data.status is not None:
         item.status = data.status
@@ -657,10 +592,7 @@ async def update_provisional_sum_item(
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
-        item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
-        if item.provisional_sum and item.provisional_sum.contract_sum > 0:
-            item.percentage = (data.total_recommended / item.provisional_sum.contract_sum * 100).quantize(CENTS)
-        item.recommended_this_period = data.total_recommended - item.previously_paid
+        recompute_item(item, denominator=item.provisional_sum.contract_sum if item.provisional_sum else None)
 
     if data.status is not None:
         item.status = data.status
@@ -855,46 +787,28 @@ async def finalise_assessment(
     if not assessment:
         raise NotFoundError("Assessment not found")
 
-    # Calculate summary totals via aggregator
-    all_wbs = await wbs_code_repo.get_by_project(db, project_id)
-    all_variations = await variation_repo.get_by_project(db, project_id)
-    all_ps = await provisional_sum_repo.get_by_project(db, project_id)
+    aggregate = await aggregate_assessment(db, project_id, assessment)
+    var_groups, ps_groups = aggregate.variation_groups, aggregate.ps_groups
+    totals = compute_assessment_totals(aggregate.wbs_groups, var_groups, ps_groups)
 
-    wbs_groups = aggregate_line_items(assessment.line_items, all_wbs)
-    var_groups = aggregate_variations(assessment.variation_items, all_variations)
-    ps_groups = aggregate_provisional_sums(assessment.provisional_sum_items, all_ps)
-    totals = compute_assessment_totals(wbs_groups, var_groups, ps_groups)
-
-    # Sync variation master records from aggregated groups (not individual items)
-    var_map = {v.id: v for v in all_variations}
+    # Sync variation master records from aggregated groups (not individual items).
+    # The re-fetch returns the identity-mapped rows aggregate_assessment already loaded.
+    var_map = {v.id: v for v in await variation_repo.get_by_project(db, project_id)}
     for g in var_groups:
         master = var_map.get(g.variation_id)
         if master:
             master.approved_amount = g.total_recommended
             master.contractor_submission = g.contractor_claim_to_date
-            # Aggregate status: all approved → approved, any interim → in_review, else unapproved
-            all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
-            if all(r.status == LineItemStatus.approved for r in all_rows):
-                master.status = VariationStatus.approved
-            elif any(r.status == LineItemStatus.interim for r in all_rows):
-                master.status = VariationStatus.in_review
-            else:
-                master.status = VariationStatus.unapproved
+            master.status = rollup_status(([g.history_row] if g.history_row else []) + g.child_rows)
             master.updated_by = user.id
 
     # Sync provisional sum master records from aggregated groups
-    ps_map = {p.id: p for p in all_ps}
+    ps_map = {p.id: p for p in await provisional_sum_repo.get_by_project(db, project_id)}
     for g in ps_groups:
         master = ps_map.get(g.provisional_sum_id)
         if master:
             master.approved_amount = g.total_recommended
-            all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
-            if all(r.status == LineItemStatus.approved for r in all_rows):
-                master.status = VariationStatus.approved
-            elif any(r.status == LineItemStatus.interim for r in all_rows):
-                master.status = VariationStatus.in_review
-            else:
-                master.status = VariationStatus.unapproved
+            master.status = rollup_status(([g.history_row] if g.history_row else []) + g.child_rows)
             master.updated_by = user.id
 
     project = await project_repo.get_by_id_with_retention(db, project_id)
@@ -910,7 +824,9 @@ async def finalise_assessment(
     assessment.total_recommended = total_recommended
 
     # Calculate retention and payment-to-date for use by future assessments
-    retention_tiers = [{"percentage": t.percentage, "up_to_amount": t.up_to_amount} for t in project.retention_tiers]
+    retention_tiers = [
+        RetentionTier(percentage=t.percentage, up_to_amount=t.up_to_amount) for t in project.retention_tiers
+    ]
     total_retention = calculate_retention(total_recommended, retention_tiers)
     assessment.total_retention = total_retention
     total_payment_to_date = total_recommended - total_retention

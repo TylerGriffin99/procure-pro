@@ -4,29 +4,20 @@ import json
 import logging
 import uuid
 from collections import Counter
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import ClaimItemType, FlagSeverity, FlagType, WorkspaceFile
 from app.repos import harness_repo, project_repo
+from app.utils.money import parse_money
 
 logger = logging.getLogger(__name__)
 
 TOLERANCE = Decimal("0.02")
 ZERO = Decimal("0")
 HUNDRED = Decimal("100")
-
-
-def _dec(value: str | None) -> Decimal:
-    """Safely parse a string to Decimal."""
-    if not value:
-        return ZERO
-    try:
-        return Decimal(str(value).replace(",", ""))
-    except (InvalidOperation, ValueError):
-        return ZERO
 
 
 async def execute_validate_claim(
@@ -67,9 +58,9 @@ async def execute_validate_claim(
     # -- Per-item checks --
     for item in line_items:
         ref = item.get("ref_code", "")
-        contract_value = _dec(item.get("contract_value"))
-        percentage = _dec(item.get("percentage"))
-        ptd = _dec(item.get("ptd"))
+        contract_value = parse_money(item.get("contract_value")).value
+        percentage = parse_money(item.get("percentage")).value
+        ptd = parse_money(item.get("ptd")).value
 
         # Percentage bounds
         if percentage < ZERO or percentage > HUNDRED:
@@ -110,11 +101,11 @@ async def execute_validate_claim(
     var_items = [i for i in line_items if i.get("item_type") == ClaimItemType.variation]
     ps_items = [i for i in line_items if i.get("item_type") == ClaimItemType.provisional_sum]
 
-    sum_cw = sum((_dec(i.get("contract_value")) for i in cw_items), ZERO)
-    sum_var = sum((_dec(i.get("contract_value")) for i in var_items), ZERO)
-    sum_ps = sum((_dec(i.get("contract_value")) for i in ps_items), ZERO)
+    sum_cw = sum((parse_money(i.get("contract_value")).value for i in cw_items), ZERO)
+    sum_var = sum((parse_money(i.get("contract_value")).value for i in var_items), ZERO)
+    sum_ps = sum((parse_money(i.get("contract_value")).value for i in ps_items), ZERO)
 
-    orig_total = _dec(summary.get("original_contract_total"))
+    orig_total = parse_money(summary.get("original_contract_total")).value
 
     # Provisional sums total mismatch against project-level PS total
     project = await project_repo.get_by_id(db, project_id)
@@ -143,8 +134,8 @@ async def execute_validate_claim(
         )
 
     # Total claimed exceeds revised contract total (all current + historic claims)
-    sum_claimed_ptd = sum((_dec(i.get("ptd")) for i in line_items), ZERO)
-    revised_contract = _dec(summary.get("revised_contract_total"))
+    sum_claimed_ptd = sum((parse_money(i.get("ptd")).value for i in line_items), ZERO)
+    revised_contract = parse_money(summary.get("revised_contract_total")).value
     if revised_contract > ZERO and sum_claimed_ptd > revised_contract + TOLERANCE:
         await _flag(
             FlagType.over_claim,

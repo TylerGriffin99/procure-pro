@@ -16,6 +16,9 @@ DMY_DATE_PARTS: Final = 3
 TWO_DIGIT_YEAR_CEILING: Final = 100
 TWO_DIGIT_YEAR_CENTURY: Final = 2000
 
+# Payment-schedule dates sit this many working days after the previous milestone.
+WORKING_DAYS_OFFSET: Final = 5
+
 COMMENT_PREFIX_INTERIM: Final = "Interim"
 COMMENT_PREFIX_CLOSED_OUT: Final = "Closed Out"
 COMMENT_SEPARATOR: Final = " - "

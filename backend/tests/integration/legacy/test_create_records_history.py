@@ -2,14 +2,17 @@
 """Tests for create_records.py variation/PS history bug fixes."""
 
 import json
+import uuid
 from decimal import Decimal
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.enums import FlagSeverity, FlagType
 from app.harness.executors.create_records import execute_create_records
 from app.models.variation import Variation, VariationStatus
 from app.repos import harness_repo
+from tests.integration.legacy.conftest import list_flags_by_session
 
 
 def _parsed_claim(items: list[dict], claim_number: str = "2") -> str:
@@ -78,10 +81,17 @@ async def test_zero_activity_variation_gets_history_row(
 
     # The assessment should have variation items — a Phase 1 history row + a Phase 2 current row
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from app.models.assessment import Assessment
 
-    stmt = select(Assessment).where(Assessment.project_id == test_project.id)
+    # Eager-load: the identity map holds the executor's Assessment only weakly, so once GC collects it
+    # a lazy collection load here would raise MissingGreenlet.
+    stmt = (
+        select(Assessment)
+        .where(Assessment.project_id == test_project.id)
+        .options(selectinload(Assessment.variation_items))
+    )
     assessment = (await db_session.execute(stmt)).scalars().first()
     assert assessment is not None
     var_items = [vi for vi in assessment.variation_items if vi.variation_id == var.id]
@@ -154,3 +164,40 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
     var_ids_in_assessment = {vi.variation_id for vi in assessment.variation_items}
     assert var_in_claim.id in var_ids_in_assessment, "var_in_claim should be in assessment"
     assert var_not_in_claim.id in var_ids_in_assessment, "var_not_in_claim should be carried forward"
+
+
+@pytest.mark.asyncio
+async def test_malformed_amount_persists_zero_and_records_a_format_warning_flag(
+    db_session: AsyncSession, test_user, test_project, test_document
+):
+    """D6: a malformed money cell becomes 0 on the claim and a format_warning flag linked to it."""
+    session = await harness_repo.create_session(
+        document_id=test_document.id,
+        db=db_session,
+        user_id=test_user.id,
+        project_id=test_project.id,
+        harness_type="claim_parse",
+    )
+    items = [_variation_item(0, ref="CI-09", desc="Malformed var", value="1,2OO.00")]
+    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
+    await harness_repo.write_workspace_file(db_session, session.id, "wbs_matches.json", json.dumps([]))
+    await db_session.flush()
+
+    result = await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
+
+    flags = sorted(await list_flags_by_session(db_session, session.id), key=lambda f: f.description)
+    assert [(f.flag_type, f.severity, f.line_item_ref) for f in flags] == [
+        (FlagType.format_warning, FlagSeverity.warning, "CI-09"),
+        (FlagType.format_warning, FlagSeverity.warning, "CI-09"),
+    ]
+    assert all(str(f.claim_id) == result["claim_id"] for f in flags)
+    assert flags[0].description.startswith("balance:")
+    assert flags[1].description.startswith("contract_value:")
+
+    from sqlalchemy import select
+
+    from app.models.claim_line_item import ClaimLineItem
+
+    stmt = select(ClaimLineItem).where(ClaimLineItem.claim_id == uuid.UUID(result["claim_id"]))
+    line = (await db_session.execute(stmt)).scalars().one()
+    assert line.contract_value == Decimal("0")

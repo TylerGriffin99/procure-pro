@@ -3,43 +3,43 @@
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.harness.executors.extract_generic import _normalise_decimal, parse_generic, validate_and_normalise
+from app.harness.executors.extract_generic import money_text, parse_generic, validate_and_normalise
 
 # ---------------------------------------------------------------------------
-# _normalise_decimal
+# money_text
 # ---------------------------------------------------------------------------
 
 
 class TestNormaliseDecimal:
     def test_normal_value(self):
-        assert _normalise_decimal("1234.56") == "1234.56"
+        assert money_text("1234.56") == "1234.56"
 
     def test_comma_thousands(self):
-        assert _normalise_decimal("1,234,567.89") == "1234567.89"
+        assert money_text("1,234,567.89") == "1234567.89"
 
     def test_parenthesised_negative(self):
-        assert _normalise_decimal("(1,234.56)") == "-1234.56"
+        assert money_text("(1,234.56)") == "-1234.56"
 
     def test_none(self):
-        assert _normalise_decimal(None) == "0.00"
+        assert money_text(None) == "0.00"
 
     def test_empty_string(self):
-        assert _normalise_decimal("") == "0.00"
+        assert money_text("") == "0.00"
 
     def test_dash(self):
-        assert _normalise_decimal("-") == "0.00"
+        assert money_text("-") == "0.00"
 
     def test_dollar_sign(self):
-        assert _normalise_decimal("$1,234.56") == "1234.56"
+        assert money_text("$1,234.56") == "1234.56"
 
     def test_integer(self):
-        assert _normalise_decimal(100) == "100.00"
+        assert money_text(100) == "100.00"
 
     def test_float(self):
-        assert _normalise_decimal(99.9) == "99.90"
+        assert money_text(99.9) == "99.90"
 
     def test_rounds_to_2dp(self):
-        assert _normalise_decimal("1234.567") == "1234.57"
+        assert money_text("1234.567") == "1234.57"
 
 
 # ---------------------------------------------------------------------------

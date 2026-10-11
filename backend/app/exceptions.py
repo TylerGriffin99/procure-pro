@@ -43,3 +43,9 @@ class UnprocessableError(AppError):
 
 class ExternalServiceError(AppError):
     status_code = 502
+
+
+def require[T](value: T | None, what: str) -> T:
+    if value is None:
+        raise NotFoundError(f"{what} not found")
+    return value

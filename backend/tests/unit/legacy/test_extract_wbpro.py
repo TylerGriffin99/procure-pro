@@ -5,11 +5,19 @@ from app.harness.executors.extract_wbpro import (
     SECTION_PS,
     SECTION_VARIATION,
     detect_sections,
-    extract_metadata,
     is_skip_row,
-    parse_decimal,
     parse_wbpro,
 )
+from app.utils.money import format_money, parse_money
+
+
+def parse_decimal(value: str | None) -> str:
+    """The WBPRO cell rule: map_row_to_item formats every money cell this way."""
+    return format_money(parse_money(value).value)
+
+
+def extract_metadata(text: str) -> dict[str, str]:
+    return parse_wbpro({"pages": [{"page_num": 1, "text": text, "tables": []}]})["metadata"]
 
 
 class TestParseWbpro:
