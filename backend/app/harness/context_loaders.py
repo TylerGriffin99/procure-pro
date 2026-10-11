@@ -32,7 +32,7 @@ async def load_wbs_context(db: AsyncSession, project_id: uuid.UUID, session_id: 
     categories_text = "\n".join(f"- id={w.id} | code={w.code}: {w.description}" for w in parent_categories)
 
     if subcategories:
-        parent_map = {w.id: w.code for w in parent_categories}
+        parent_map: dict[uuid.UUID | None, str] = {w.id: w.code for w in parent_categories}
         subcategories_text = "\n".join(
             f"- id={w.id} | code={w.code}: {w.description} "
             f"(parent: {parent_map.get(w.parent_id, '?')}) | contract_sum={w.contract_sum or 'N/A'}"

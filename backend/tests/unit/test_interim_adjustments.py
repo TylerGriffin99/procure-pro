@@ -5,37 +5,34 @@ from decimal import Decimal
 import pytest
 
 from app.models.assessment import AdjustmentType, LineItemStatus
+from app.models.assessment_line_item import AssessmentLineItem
+from app.models.wbs_code import WBSCode
 
 
-class FakeLineItem:
-    def __init__(self, **kwargs):
-        defaults = dict(
-            id=uuid.uuid4(),
-            wbs_code_id=None,
-            claim_line_item_id=None,
-            description="Test",
-            contract_sum=Decimal("0"),
-            contractor_claim_to_date=Decimal("0"),
-            total_recommended=Decimal("0"),
-            previously_paid=Decimal("0"),
-            recommended_this_period=Decimal("0"),
-            variance_to_claim=Decimal("0"),
-            percentage=Decimal("0"),
-            status=LineItemStatus.unapproved,
-            sort_order=0,
-            comments=None,
-            adjustment_type=None,
-        )
-        defaults.update(kwargs)
-        for k, v in defaults.items():
-            setattr(self, k, v)
+def _line_item(**kwargs) -> AssessmentLineItem:
+    defaults = dict(
+        id=uuid.uuid4(),
+        wbs_code_id=None,
+        claim_line_item_id=None,
+        description="Test",
+        contract_sum=Decimal("0"),
+        contractor_claim_to_date=Decimal("0"),
+        total_recommended=Decimal("0"),
+        previously_paid=Decimal("0"),
+        recommended_this_period=Decimal("0"),
+        variance_to_claim=Decimal("0"),
+        percentage=Decimal("0"),
+        status=LineItemStatus.unapproved,
+        sort_order=0,
+        comments=None,
+        adjustment_type=None,
+    )
+    defaults.update(kwargs)
+    return AssessmentLineItem(**defaults)
 
 
-class FakeWBS:
-    def __init__(self, id, description="WBS", contract_sum=Decimal("100000")):
-        self.id = id
-        self.description = description
-        self.contract_sum = contract_sum
+def _wbs(id, description="WBS", contract_sum=Decimal("100000")) -> WBSCode:
+    return WBSCode(id=id, description=description, contract_sum=contract_sum)
 
 
 def test_adjustment_type_enum_values():
@@ -47,9 +44,9 @@ def test_adjustment_row_aggregates_normally():
     from app.utils.assessment_aggregator import aggregate_line_items
 
     wbs_id = uuid.uuid4()
-    wbs = FakeWBS(id=wbs_id)
+    wbs = _wbs(id=wbs_id)
 
-    history = FakeLineItem(
+    history = _line_item(
         wbs_code_id=wbs_id,
         claim_line_item_id=None,
         total_recommended=Decimal("80000"),

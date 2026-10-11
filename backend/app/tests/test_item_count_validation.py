@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.harness.executors.create_records import execute_create_records
+from app.harness.models import HarnessType
 from app.repos import harness_repo
 
 
@@ -58,7 +59,7 @@ async def test_wbs_count_mismatch_raises(
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
 
     items = [_contract_item(0, desc="Excavation"), _contract_item(1, desc="Concrete")]
@@ -89,7 +90,7 @@ async def test_vps_count_mismatch_raises(
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
 
     items = [_contract_item(0), _variation_item(1, desc="Extra work")]
@@ -120,7 +121,7 @@ async def test_out_of_range_item_index_raises(
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
 
     items = [_contract_item(0)]

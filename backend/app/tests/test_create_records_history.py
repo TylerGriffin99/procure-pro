@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.harness.executors.create_records import execute_create_records
+from app.harness.models import HarnessType
 from app.models.variation import Variation, VariationStatus
 from app.repos import harness_repo, variation_repo
 
@@ -60,7 +61,7 @@ async def test_zero_activity_variation_gets_history_row(
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
     items = [_variation_item(0, ref="CI-01", desc="Zero activity var")]
     await harness_repo.write_workspace_file(
@@ -80,8 +81,9 @@ async def test_zero_activity_variation_gets_history_row(
     )
 
     # The assessment should have variation items — a Phase 1 history row + a Phase 2 current row
-    from app.models.assessment import Assessment
     from sqlalchemy import select
+
+    from app.models.assessment import Assessment
     stmt = select(Assessment).where(Assessment.project_id == test_project.id)
     assessment = (await db_session.execute(stmt)).scalars().first()
     assert assessment is not None
@@ -115,7 +117,7 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
     items = [_variation_item(0, ref="CI-01", desc="In current claim")]
     await harness_repo.write_workspace_file(
@@ -134,10 +136,11 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
         db_session, session.id, test_user.id, test_project.id, {},
     )
 
-    from app.models.assessment import Assessment
-    from app.models.assessment_variation import AssessmentVariation
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
+
+    from app.models.assessment import Assessment
+    from app.models.assessment_variation import AssessmentVariation
     stmt = (
         select(Assessment)
         .where(Assessment.project_id == test_project.id)

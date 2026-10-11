@@ -1,5 +1,6 @@
 import json
 import pytest
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,12 @@ from app.harness.models import HarnessDefinition, HarnessPrerequisites, PhaseDef
 from app.harness.registry import HarnessRegistry
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
+from app.harness.models import HarnessType
+
+
+# Test-only harness ids that are deliberately not members of HarnessType.
+TEST_HARNESS = cast(HarnessType, "test_harness")
+FAIL_TEST = cast(HarnessType, "fail_test")
 
 
 def _make_test_harness() -> HarnessDefinition:
@@ -18,7 +25,7 @@ def _make_test_harness() -> HarnessDefinition:
         return {"pages": [{"page_num": 1, "text": "test content"}]}
 
     return HarnessDefinition(
-        harness_type="test_harness",
+        harness_type=TEST_HARNESS,
         display_name="Test Harness",
         description="For testing",
         prerequisites=None,
@@ -43,7 +50,7 @@ async def test_engine_runs_programmatic_phase(db_session: AsyncSession, test_use
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="test_harness",
+        harness_type=TEST_HARNESS,
     )
 
     engine = HarnessEngine(
@@ -58,7 +65,7 @@ async def test_engine_runs_programmatic_phase(db_session: AsyncSession, test_use
     async for event in engine.run():
         events.append(event)
 
-    event_types = [e["type"] for e in events]
+    event_types = [e.type for e in events]
     assert "harness_start" in event_types
     assert "harness_phase_start" in event_types
     assert "harness_phase_result" in event_types
@@ -76,7 +83,7 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
         raise RuntimeError("PDF is corrupted")
 
     harness_def = HarnessDefinition(
-        harness_type="fail_test",
+        harness_type=FAIL_TEST,
         display_name="Fail Test",
         description="Test failure",
         prerequisites=None,
@@ -94,7 +101,7 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="fail_test",
+        project_id=test_project.id, harness_type=FAIL_TEST,
     )
 
     engine = HarnessEngine(
@@ -106,7 +113,7 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
     async for event in engine.run():
         events.append(event)
 
-    assert any(e["type"] == "harness_error" for e in events)
+    assert any(e.type == "harness_error" for e in events)
     await db_session.refresh(session)
     assert session.status == HarnessSessionStatus.failed
 
@@ -116,6 +123,6 @@ async def test_registry():
     registry = HarnessRegistry()
     defn = _make_test_harness()
     registry.register(defn)
-    assert registry.get("test_harness") is defn
-    assert registry.get("nonexistent") is None
+    assert registry.get(TEST_HARNESS) is defn
+    assert registry.get(cast(HarnessType, "nonexistent")) is None
     assert len(registry.list_types()) == 1

@@ -7,6 +7,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.harness.executors.validate_claim import execute_validate_claim
+from app.harness.models import HarnessType
 from app.repos import harness_repo
 
 
@@ -20,7 +21,7 @@ async def test_missing_ref_code_does_not_create_flag(
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
 
     parsed = {

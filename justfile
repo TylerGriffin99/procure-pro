@@ -113,8 +113,12 @@ fmt:
 ty:
     cd backend && uvx ty@0.0.84 check
 
-# Everything a commit must pass: ruff, ty, unit tests.
-check: ruff ty test-unit
+# Type-check the backend app with pyright (what Pylance shows in the editor; scoped to app/ via pyrightconfig.json).
+pyright:
+    cd backend && uvx pyright@1.1.414 app
+
+# Everything a commit must pass: ruff, ty, pyright, unit tests.
+check: ruff ty pyright test-unit
 
 # Back-compat aliases.
 lint *args: (ruff args)

@@ -6,6 +6,7 @@ from decimal import Decimal
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 
 
 def _dec(value) -> float:
@@ -40,6 +41,8 @@ NUMBER_FMT = "#,##0.00"
 def _write_summary_sheet(wb: Workbook, data: dict):
     """Write the Summary sheet with project info and financial breakdown."""
     ws = wb.active
+    if not isinstance(ws, Worksheet):
+        raise TypeError("new Workbook has no active worksheet")
     ws.title = "Summary"
 
     title_font = Font(bold=True, size=14, color="1A2744")

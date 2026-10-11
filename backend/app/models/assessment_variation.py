@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from app.models.assessment import Assessment
     from app.models.variation import Variation
 
+if TYPE_CHECKING:
+    from app.models.assessment import Assessment
+    from app.models.variation import Variation
+
 
 class AssessmentVariation(AuditMixin, Base):
     __tablename__ = "assessment_variations"

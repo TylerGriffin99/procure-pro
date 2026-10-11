@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repos import harness_repo
 from app.models.claim import Claim
+from app.harness.models import HarnessType
 
 
 @pytest.mark.asyncio
@@ -21,7 +22,7 @@ async def test_get_session_by_claim(db_session: AsyncSession, test_user, test_pr
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.set_claim_id(db_session, session.id, claim.id)
     await db_session.flush()

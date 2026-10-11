@@ -46,4 +46,4 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
-settings = Settings()
+settings = Settings()  # pyright: ignore[reportCallIssue]  # required fields come from env/.env

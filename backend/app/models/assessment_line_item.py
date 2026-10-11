@@ -12,6 +12,9 @@ from app.models.assessment import AdjustmentType, LineItemStatus
 if TYPE_CHECKING:
     from app.models.assessment import Assessment
 
+if TYPE_CHECKING:
+    from app.models.assessment import Assessment
+
 
 class AssessmentLineItem(AuditMixin, Base):
     __tablename__ = "assessment_line_items"

@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.harness.executors.extract_line_items import execute_extract_line_items
+from app.harness.models import HarnessType
 from app.repos import harness_repo
 
 
@@ -15,7 +16,7 @@ async def test_wbpro_routes_to_deterministic(db_session: AsyncSession, test_user
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
 
     # Write format detection result
@@ -55,7 +56,7 @@ async def test_generic_routes_to_llm_placeholder(db_session: AsyncSession, test_
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
 
     await harness_repo.write_workspace_file(

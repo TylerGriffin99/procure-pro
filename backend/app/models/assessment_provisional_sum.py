@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from app.models.assessment import Assessment
     from app.models.provisional_sum import ProvisionalSum
 
+if TYPE_CHECKING:
+    from app.models.assessment import Assessment
+    from app.models.provisional_sum import ProvisionalSum
+
 
 class AssessmentProvisionalSum(AuditMixin, Base):
     __tablename__ = "assessment_provisional_sums"

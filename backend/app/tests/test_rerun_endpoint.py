@@ -7,6 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.harness.models import HarnessType
 from app.models.assessment import Assessment, AssessmentStatus
 from app.models.claim import Claim
 from app.repos import harness_repo
@@ -14,14 +15,14 @@ from app.repos import harness_repo
 
 @pytest.mark.asyncio
 async def test_rerun_creates_new_session(
-    client: AsyncClient, db_session: AsyncSession, test_user, test_project, auth_headers,
+    client: AsyncClient, db_session: AsyncSession, test_user, test_project, test_document, auth_headers,
 ):
     """POST /rerun should delete old claim, create new harness session."""
     session = await harness_repo.create_session(
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
+        document_id=test_document.id,
         config={"file_path": "/tmp/test.pdf"},
-        input_file_path="/tmp/test.pdf",
     )
     claim = Claim(
         project_id=test_project.id, claim_number=1,
@@ -54,14 +55,14 @@ async def test_rerun_creates_new_session(
 
 @pytest.mark.asyncio
 async def test_rerun_blocks_finalised(
-    client: AsyncClient, db_session: AsyncSession, test_user, test_project, auth_headers,
+    client: AsyncClient, db_session: AsyncSession, test_user, test_project, test_document, auth_headers,
 ):
     """POST /rerun should return 409 for finalised assessments."""
     session = await harness_repo.create_session(
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
+        document_id=test_document.id,
         config={"file_path": "/tmp/test.pdf"},
-        input_file_path="/tmp/test.pdf",
     )
     claim = Claim(
         project_id=test_project.id, claim_number=1,

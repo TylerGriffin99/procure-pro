@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.harness.executors.validate_claim import execute_validate_claim
 from app.models.claim_parse_flag import FlagType, FlagSeverity
 from app.repos import harness_repo
+from app.harness.models import HarnessType
 
 
 def _make_parsed_claim_json(
@@ -45,7 +46,7 @@ async def test_valid_claim_no_flags(db_session: AsyncSession, test_user, test_pr
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db_session, session.id, "parsed_claim.json", _make_parsed_claim_json(),
@@ -77,7 +78,7 @@ async def test_over_claim_flagged(db_session: AsyncSession, test_user, test_proj
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db_session, session.id, "parsed_claim.json",
@@ -131,7 +132,7 @@ async def test_project_over_budget_flagged(db_session: AsyncSession, test_user, 
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db_session, session.id, "parsed_claim.json",
@@ -171,7 +172,7 @@ async def test_duplicate_refs_flagged(db_session: AsyncSession, test_user, test_
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        project_id=test_project.id, harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db_session, session.id, "parsed_claim.json",
