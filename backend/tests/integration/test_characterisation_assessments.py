@@ -407,8 +407,12 @@ async def test_delete_claim_today_cleans_orphan_masters(db_session):
 
     await claim_service.delete_claim(db_session, s.project.id, s.claim.id)
 
-    var_ids = set((await db_session.execute(select(Variation.id))).scalars())
-    ps_ids = set((await db_session.execute(select(ProvisionalSum.id))).scalars())
+    var_ids = set(
+        (await db_session.execute(select(Variation.id).where(Variation.project_id == s.project.id))).scalars()
+    )
+    ps_ids = set(
+        (await db_session.execute(select(ProvisionalSum.id).where(ProvisionalSum.project_id == s.project.id))).scalars()
+    )
     assert var_ids == {kept_var.id}  # a never-assessed project variation is deleted too
     assert never_assessed_var.id not in var_ids
     assert ps_ids == {kept_ps.id}

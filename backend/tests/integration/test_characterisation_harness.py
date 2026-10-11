@@ -3,6 +3,7 @@
 import json
 
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
+from app.harness.phase_context import build_phase_context, render_system_prompt
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import document_repo, harness_repo
 from app.services import harness_service
@@ -96,3 +97,40 @@ async def test_stream_events_today_wraps_engine_level_error(db_session, monkeypa
     assert stored is not None
     assert stored.status == HarnessSessionStatus.failed
     assert stored.error_message == "RuntimeError: boom"
+
+
+# --- phase context fallback against the real repo (D7 flips to pytest.raises) ---
+
+
+def _phase_reading(path: str) -> PhaseDefinition:
+    return PhaseDefinition(
+        name="match",
+        description="Reads a workspace input",
+        phase_type=PhaseType.LLM_SINGLE,
+        workspace_output="out.json",
+        system_prompt_template="Items: $workspace_parsed_claim",
+        workspace_inputs=[path],
+    )
+
+
+async def test_phase_context_today_substitutes_file_not_found_for_missing_file(db_session):
+    _, project_id, session_id = await _pending_session(db_session)
+    phase = _phase_reading("parsed_claim.json")
+
+    assert await harness_repo.read_workspace_file(db_session, session_id, "parsed_claim.json") is None
+    ctx = await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)
+
+    assert ctx["workspace_parsed_claim"] == "FILE NOT FOUND"
+    assert render_system_prompt(phase, ctx) == "Items: FILE NOT FOUND"
+
+
+async def test_phase_context_today_substitutes_file_not_found_for_empty_file(db_session):
+    _, project_id, session_id = await _pending_session(db_session)
+    await harness_repo.write_workspace_file(db_session, session_id, "parsed_claim.json", "")
+    await db_session.commit()
+    phase = _phase_reading("parsed_claim.json")
+
+    assert await harness_repo.read_workspace_file(db_session, session_id, "parsed_claim.json") == ""
+    ctx = await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)
+
+    assert render_system_prompt(phase, ctx) == "Items: FILE NOT FOUND"

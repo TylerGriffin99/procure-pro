@@ -17,8 +17,6 @@ from app.dependencies import get_current_user
 from app.error_handlers import register
 from app.exceptions import BadRequestError
 from app.harness.engine import describe_error
-from app.harness.models import PhaseDefinition, PhaseType
-from app.harness.phase_context import build_phase_context, render_system_prompt
 from app.models.user import User
 from app.schemas.claim import ClaimCreate, ClaimLineItemCreate
 from app.schemas.project import WBSCodeCreate
@@ -190,25 +188,3 @@ def test_describe_error_today_echoes_sql_statement():
     text = describe_error(OperationalError("SELECT 1", {}, Exception("conn refused")))
     assert text.startswith("OperationalError: (builtins.Exception) conn refused")
     assert "SELECT 1" in text
-
-
-# --- phase context fallback (D7 flips to pytest.raises) ---
-
-
-async def _missing_file(db, session_id, path):
-    return None
-
-
-async def test_phase_context_today_substitutes_file_not_found(monkeypatch):
-    monkeypatch.setattr("app.harness.phase_context.harness_repo.read_workspace_file", _missing_file)
-    phase = PhaseDefinition(
-        name="match",
-        description="Reads a missing input",
-        phase_type=PhaseType.LLM_SINGLE,
-        workspace_output="out.json",
-        system_prompt_template="Items: $workspace_parsed_claim",
-        workspace_inputs=["parsed_claim.json"],
-    )
-    ctx = await build_phase_context(db=None, session_id="s", project_id="p", phase_def=phase)
-    assert ctx["workspace_parsed_claim"] == "FILE NOT FOUND"
-    assert render_system_prompt(phase, ctx) == "Items: FILE NOT FOUND"
