@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimItemType, FlagSeverity, FlagType, WorkspaceFile
+from app.harness.extract_shared import parse_cell
 from app.harness.phase_context import load_workspace
 from app.harness.schemas import FlagSpec, ParsedClaim, ParsedClaimItem, ValidationSummary
 from app.models.project import Project
@@ -26,7 +27,7 @@ HUNDRED = Decimal("100")
 
 def item_flags(item: ParsedClaimItem) -> list[FlagSpec]:
     contract_value = parse_money(item.contract_value).value
-    percentage = parse_money(item.percentage).value
+    percentage = parse_cell("percentage", item.percentage).value
     ptd = parse_money(item.ptd).value
     flags = []
     if percentage < ZERO or percentage > HUNDRED:
