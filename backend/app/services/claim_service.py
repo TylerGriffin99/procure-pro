@@ -1,19 +1,13 @@
 import asyncio
 import logging
 import uuid
-from io import BytesIO
 
-import pdfplumber
 from fastapi import UploadFile
-from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.constants.enums import WBSLevel
 from app.constants.values import PDF_MEDIA_TYPE
 from app.exceptions import BadRequestError, NotFoundError
 from app.harness.models import HarnessType
-from app.models.assessment_provisional_sum import AssessmentProvisionalSum
-from app.models.assessment_variation import AssessmentVariation
 from app.models.claim import Claim
 from app.models.claim_line_item import ClaimLineItem
 from app.models.user import User
@@ -27,61 +21,12 @@ from app.repos import (
     wbs_code_repo,
 )
 from app.schemas.claim import ClaimCreate, ClaimResponse, ClaimUpdate, ClaimUploadResponse
-from app.services.guardrails import screen_text
+from app.services import guardrails
 from app.utils.dates import auto_fill_dates
 
 logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
-
-
-def _extract_screenable_text(content: bytes) -> str:
-    """Return the page text + table-cell text a PDF would expose downstream.
-
-    Mirrors what raw_extraction feeds the LLM phases (text and tables) so the
-    screen covers the same surface. Raises if the PDF cannot be read.
-    """
-    parts: list[str] = []
-    with pdfplumber.open(BytesIO(content)) as pdf:
-        if len(pdf.pages) == 0:
-            raise ValueError("PDF has zero pages")
-        for page in pdf.pages:
-            parts.append(page.extract_text() or "")
-            for table in page.extract_tables() or []:
-                for row in table:
-                    parts.extend(cell for cell in row if cell)
-    return "\n".join(parts)
-
-
-def _screen_pdf_content(content: bytes) -> None:
-    """Reject the upload unless it can be read AND is free of disallowed content.
-
-    This is the ingestion trust boundary: a document only reaches the DB if it was
-    successfully screened and found clean, so downstream code can treat stored
-    documents as trusted. We fail CLOSED — an unreadable PDF is rejected rather
-    than stored unscreened, because the screen and a downstream reader are not
-    guaranteed to fail on the same inputs.
-    """
-    try:
-        text = _extract_screenable_text(content)
-    except Exception as e:
-        logger.warning("Rejected upload: PDF could not be read for screening", exc_info=True)
-        raise BadRequestError("Could not read the PDF to screen it") from e
-
-    if not text.strip():
-        # Parsed, but yielded no text/tables to screen (e.g. an image-only scan).
-        # Fail closed: we can't vouch for content we couldn't extract.
-        logger.warning("Rejected upload: PDF has no extractable text to screen")
-        raise BadRequestError("PDF has no extractable text to screen")
-
-    violations = screen_text(text)
-    if violations:
-        categories = sorted({v.category for v in violations})
-        # Snippets are attacker-controlled: log them (repr guards against log
-        # injection) but never reflect them to the client.
-        snippets = "; ".join(f"{v.category}:{v.snippet!r}" for v in violations)
-        logger.warning("Rejected upload: disallowed content [%s] — %s", ", ".join(categories), snippets)
-        raise BadRequestError(f"Document rejected: it contains disallowed content ({', '.join(categories)})")
 
 
 async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, file: UploadFile):
@@ -94,7 +39,7 @@ async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, f
     if len(content) > MAX_UPLOAD_BYTES:
         raise BadRequestError("File exceeds the 25MB limit")
 
-    await asyncio.to_thread(_screen_pdf_content, content)  # PDF parse is blocking
+    await asyncio.to_thread(guardrails.screen_pdf, content)  # PDF parse is blocking
     return await document_repo.create_document(
         db, project_id, file.filename or "upload.pdf", file.content_type, content
     )
@@ -153,17 +98,15 @@ async def create_claim(db: AsyncSession, project_id: uuid.UUID, data: ClaimCreat
 
 async def list_claims(db: AsyncSession, project_id: uuid.UUID) -> list[ClaimResponse]:
     claims = await claim_repo.get_by_project(db, project_id)
-    results = []
-    for c in claims:
-        latest = await assessment_repo.get_latest_by_claim(db, c.id, project_id=project_id)
-        results.append(
-            ClaimResponse.from_claim(
-                c,
-                assessment_id=latest.id if latest else None,
-                assessment_status=latest.status.value if latest else None,
-            )
+    latest = await assessment_repo.latest_assessments_by_claim(db, project_id)
+    return [
+        ClaimResponse.from_claim(
+            c,
+            assessment_id=latest[c.id].id if c.id in latest else None,
+            assessment_status=latest[c.id].status.value if c.id in latest else None,
         )
-    return results
+        for c in claims
+    ]
 
 
 async def get_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> ClaimResponse:
@@ -216,38 +159,12 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
     await assessment_repo.delete_by_claim(db, claim_id)
 
     await claim_repo.delete(db, claim)
-    await db.flush()
-
-    # Clean up orphaned Variation/PS masters created by reclassification
-    # (project-scoped records that may no longer have any assessment rows)
-    all_variations = await variation_repo.get_by_project(db, project_id)
-    for var in all_variations:
-        has_rows = await db.execute(select(exists().where(AssessmentVariation.variation_id == var.id)))
-        if not has_rows.scalar():
-            await db.delete(var)
-
-    all_ps = await provisional_sum_repo.get_by_project(db, project_id)
-    for ps in all_ps:
-        has_rows = await db.execute(select(exists().where(AssessmentProvisionalSum.provisional_sum_id == ps.id)))
-        if not has_rows.scalar():
-            await db.delete(ps)
-
-    await db.flush()
-
-    # Clean up orphaned WBS subcategories
-    if claim_wbs_ids:
-        for wbs_id in claim_wbs_ids:
-            still_in_use = await wbs_code_repo.is_in_use(db, wbs_id)
-            if not still_in_use:
-                wbs_obj = await wbs_code_repo.get_by_id(db, wbs_id)
-                if wbs_obj and wbs_obj.level == WBSLevel.subcategory:
-                    await wbs_code_repo.delete(db, wbs_obj)
-
-    # Delete the source Document (cascades away any remaining sessions on it).
+    # Orphan cleanup is project-wide: masters left without any assessment rows are removed, not just this claim's.
+    await variation_repo.delete_orphans(db, project_id)
+    await provisional_sum_repo.delete_orphans(db, project_id)
+    await wbs_code_repo.delete_unused_subcategories(db, claim_wbs_ids)
     if document_id is not None:
-        document = await document_repo.get_document(db, document_id)
-        if document is not None:
-            await db.delete(document)
-            await db.flush()
+        # Deleting the source Document cascades away any remaining sessions on it.
+        await document_repo.delete(db, document_id)
 
     await db.commit()

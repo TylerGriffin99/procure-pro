@@ -28,3 +28,10 @@ async def create_document(
 async def get_document(db: AsyncSession, document_id: uuid.UUID) -> Document | None:
     result = await db.execute(select(Document).where(Document.id == document_id))
     return result.scalar_one_or_none()
+
+
+async def delete(db: AsyncSession, document_id: uuid.UUID) -> None:
+    document = await get_document(db, document_id)
+    if document is not None:
+        await db.delete(document)
+        await db.flush()

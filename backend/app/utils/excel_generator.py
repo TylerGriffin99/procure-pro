@@ -1,16 +1,21 @@
 """Generate payment recommendation Excel workbook using openpyxl."""
 
 import io
+from collections.abc import Sequence
+from decimal import Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 
-from app.utils.money import parse_money
+from app.schemas.payment_recommendation import PaymentRecommendation
+
+NUMBER_FMT = "#,##0.00"
+Cell = str | int | Decimal | None
 
 
-def _apply_header_style(ws, row_num: int, col_count: int):
-    """Apply header styling to a row."""
+def style_header_row(ws: Worksheet, row_num: int, col_count: int) -> None:
     header_font = Font(bold=True, size=9, color="FFFFFF")
     header_fill = PatternFill(start_color="1A2744", end_color="1A2744", fill_type="solid")
     for col in range(1, col_count + 1):
@@ -20,17 +25,25 @@ def _apply_header_style(ws, row_num: int, col_count: int):
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
 
-def _set_column_widths(ws, widths: list[int]):
-    """Set column widths from a list."""
+def set_column_widths(ws: Worksheet, widths: list[int]) -> None:
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
 
-NUMBER_FMT = "#,##0.00"
+def write_table(ws: Worksheet, headers: list[str], rows: Sequence[Sequence[Cell]], widths: list[int]) -> None:
+    for col, header in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=header)
+    style_header_row(ws, 1, len(headers))
+    for i, row in enumerate(rows, 2):
+        for col, value in enumerate(row, 1):
+            if isinstance(value, Decimal):
+                ws.cell(row=i, column=col, value=float(value)).number_format = NUMBER_FMT
+            else:
+                ws.cell(row=i, column=col, value=value)
+    set_column_widths(ws, widths)
 
 
-def _write_summary_sheet(wb: Workbook, data: dict):
-    """Write the Summary sheet with project info and financial breakdown."""
+def write_summary_sheet(wb: Workbook, rec: PaymentRecommendation) -> None:
     ws = wb.active
     ws.title = "Summary"
 
@@ -41,19 +54,34 @@ def _write_summary_sheet(wb: Workbook, data: dict):
     thin_border = Border(bottom=Side(style="thin", color="CCCCCC"))
 
     ws.merge_cells("A1:D1")
-    ws["A1"] = f"Payment Recommendation #{data.get('pr_number', '')}"
+    ws["A1"] = f"Payment Recommendation #{rec.pr_number}"
     ws["A1"].font = title_font
 
     details = [
-        ("Project", data.get("project_name", "")),
-        ("Project Number", data.get("project_number", "")),
-        ("Principal", data.get("principal", "")),
-        ("Contractor", data.get("contractor", "")),
-        ("Engineer", data.get("engineer", "")),
-        ("Claim Number", data.get("claim_number", "")),
-        ("Issue Date", data.get("issue_date", "")),
-        ("Claim Received", data.get("claim_received", "")),
-        ("Payment Due", data.get("payment_due", "")),
+        ("Project", rec.project_name),
+        ("Project Number", rec.project_number),
+        ("Principal", rec.principal),
+        ("Contractor", rec.contractor),
+        ("Engineer", rec.engineer),
+        ("Claim Number", rec.claim_number),
+        ("Issue Date", rec.issue_date),
+        ("Claim Received", rec.claim_received),
+        ("Payment Due", rec.payment_due),
+    ]
+    financials = [
+        ("Contract Sum", rec.contract_sum),
+        ("Adjustment to Provisional Sums", rec.adjustment_to_provisional_sums),
+        ("Approved Variation Orders", rec.approved_variation_orders),
+        ("Adjusted Contract Sum", rec.adjusted_contract_sum),
+        ("Value of Works Claimed to Date", rec.value_claimed),
+        ("Adjustments", rec.adjustments),
+        ("Total Value Recommended", rec.total_recommended),
+        ("Total Retention", rec.total_retention),
+        ("Total Payment to Date", rec.total_payment_to_date),
+        ("Previously Certified", rec.previously_certified),
+        ("Recommended This Period", rec.recommended_this_period),
+        ("GST Amount", rec.gst_amount),
+        ("Total Including GST", rec.total_including_gst),
     ]
 
     row = 3
@@ -67,50 +95,30 @@ def _write_summary_sheet(wb: Workbook, data: dict):
     row += 1
     ws.cell(row=row, column=1, value="Financial Summary").font = section_font
     row += 1
-
-    financials = [
-        ("Contract Sum", data.get("contract_sum")),
-        ("Adjustment to Provisional Sums", data.get("adjustment_to_provisional_sums")),
-        ("Approved Variation Orders", data.get("approved_variation_orders")),
-        ("Adjusted Contract Sum", data.get("adjusted_contract_sum")),
-        ("Value of Works Claimed to Date", data.get("value_claimed")),
-        ("Adjustments", data.get("adjustments")),
-        ("Total Value Recommended", data.get("total_recommended")),
-        ("Total Retention", data.get("total_retention")),
-        ("Total Payment to Date", data.get("total_payment_to_date")),
-        ("Previously Certified", data.get("previously_certified")),
-        ("Recommended This Period", data.get("recommended_this_period")),
-        ("GST Amount", data.get("gst_amount")),
-        ("Total Including GST", data.get("total_including_gst")),
-    ]
-
-    for label, value in financials:
+    for label, amount in financials:
         ws.cell(row=row, column=1, value=label).font = label_font
-        cell = ws.cell(row=row, column=2, value=float(parse_money(value).value))
+        cell = ws.cell(row=row, column=2, value=float(amount))
         cell.font = value_font
         cell.number_format = NUMBER_FMT
         ws.cell(row=row, column=1).border = thin_border
         cell.border = thin_border
         row += 1
 
-    retention_details = data.get("retention_details", [])
-    if retention_details:
+    if rec.retention_details:
         row += 1
         ws.cell(row=row, column=1, value="Retention Breakdown").font = section_font
         row += 1
-        for tier in retention_details:
-            ws.cell(row=row, column=1, value=tier.get("percentage", "")).font = value_font
-            cell = ws.cell(row=row, column=2, value=float(parse_money(tier.get("amount", 0)).value))
+        for tier in rec.retention_details:
+            ws.cell(row=row, column=1, value=tier.percentage).font = value_font
+            cell = ws.cell(row=row, column=2, value=float(tier.amount))
             cell.font = value_font
             cell.number_format = NUMBER_FMT
             row += 1
 
-    _set_column_widths(ws, [30, 20, 15, 15])
+    set_column_widths(ws, [30, 20, 15, 15])
 
 
-def _write_contract_works_sheet(wb: Workbook, data: dict):
-    """Write the Contract Works sheet."""
-    ws = wb.create_sheet("Contract Works")
+def write_contract_works_sheet(wb: Workbook, rec: PaymentRecommendation) -> None:
     headers = [
         "Description",
         "Contract Sum",
@@ -122,32 +130,24 @@ def _write_contract_works_sheet(wb: Workbook, data: dict):
         "Recommended This Period",
         "Comments",
     ]
-
-    for col, header in enumerate(headers, 1):
-        ws.cell(row=1, column=col, value=header)
-    _apply_header_style(ws, 1, len(headers))
-
-    for i, item in enumerate(data.get("contract_works", []), 2):
-        ws.cell(row=i, column=1, value=item.get("description", ""))
-        ws.cell(row=i, column=2, value=float(parse_money(item.get("contract_sum")).value)).number_format = NUMBER_FMT
-        ws.cell(
-            row=i, column=3, value=float(parse_money(item.get("contractor_claim")).value)
-        ).number_format = NUMBER_FMT
-        ws.cell(row=i, column=4, value=float(parse_money(item.get("recommended")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=5, value=item.get("percentage", ""))
-        ws.cell(row=i, column=6, value=float(parse_money(item.get("variance")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=7, value=float(parse_money(item.get("previously_paid")).value)).number_format = NUMBER_FMT
-        ws.cell(
-            row=i, column=8, value=float(parse_money(item.get("recommended_this_period")).value)
-        ).number_format = NUMBER_FMT
-        ws.cell(row=i, column=9, value=item.get("comments", ""))
-
-    _set_column_widths(ws, [30, 15, 15, 18, 12, 15, 15, 20, 30])
+    rows = [
+        (
+            item.description,
+            item.contract_sum,
+            item.contractor_claim,
+            item.recommended,
+            item.percentage,
+            item.variance,
+            item.previously_paid,
+            item.recommended_this_period,
+            item.comments,
+        )
+        for item in rec.contract_works
+    ]
+    write_table(wb.create_sheet("Contract Works"), headers, rows, [30, 15, 15, 18, 12, 15, 15, 20, 30])
 
 
-def _write_variations_sheet(wb: Workbook, data: dict):
-    """Write the Variations sheet."""
-    ws = wb.create_sheet("Variations")
+def write_variations_sheet(wb: Workbook, rec: PaymentRecommendation) -> None:
     headers = [
         "CI Number",
         "Description",
@@ -160,29 +160,25 @@ def _write_variations_sheet(wb: Workbook, data: dict):
         "Status",
         "Comments",
     ]
-
-    for col, header in enumerate(headers, 1):
-        ws.cell(row=1, column=col, value=header)
-    _apply_header_style(ws, 1, len(headers))
-
-    for i, item in enumerate(data.get("variation_works", []), 2):
-        ws.cell(row=i, column=1, value=item.get("ci_number", ""))
-        ws.cell(row=i, column=2, value=item.get("description", ""))
-        ws.cell(row=i, column=3, value=float(parse_money(item.get("submission")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=4, value=item.get("type", ""))
-        ws.cell(row=i, column=5, value=float(parse_money(item.get("claimed_to_date")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=6, value=float(parse_money(item.get("recommended")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=7, value=float(parse_money(item.get("previously_paid")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=8, value=float(parse_money(item.get("this_period")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=9, value=item.get("status", ""))
-        ws.cell(row=i, column=10, value=item.get("comments", ""))
-
-    _set_column_widths(ws, [15, 30, 15, 12, 15, 15, 15, 15, 12, 30])
+    rows = [
+        (
+            item.ci_number,
+            item.description,
+            item.submission,
+            item.type,
+            item.claimed_to_date,
+            item.recommended,
+            item.previously_paid,
+            item.this_period,
+            item.status,
+            item.comments,
+        )
+        for item in rec.variation_works
+    ]
+    write_table(wb.create_sheet("Variations"), headers, rows, [15, 30, 15, 12, 15, 15, 15, 15, 12, 30])
 
 
-def _write_provisional_sums_sheet(wb: Workbook, data: dict):
-    """Write the Provisional Sums sheet."""
-    ws = wb.create_sheet("Provisional Sums")
+def write_provisional_sums_sheet(wb: Workbook, rec: PaymentRecommendation) -> None:
     headers = [
         "PS Number",
         "Description",
@@ -195,40 +191,30 @@ def _write_provisional_sums_sheet(wb: Workbook, data: dict):
         "Status",
         "Comments",
     ]
-
-    for col, header in enumerate(headers, 1):
-        ws.cell(row=1, column=col, value=header)
-    _apply_header_style(ws, 1, len(headers))
-
-    for i, item in enumerate(data.get("provisional_sums", []), 2):
-        ws.cell(row=i, column=1, value=item.get("ps_number", ""))
-        ws.cell(row=i, column=2, value=item.get("description", ""))
-        ws.cell(row=i, column=3, value=float(parse_money(item.get("contract_sum")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=4, value=float(parse_money(item.get("claimed_to_date")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=5, value=float(parse_money(item.get("recommended")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=6, value=float(parse_money(item.get("previously_paid")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=7, value=float(parse_money(item.get("this_period")).value)).number_format = NUMBER_FMT
-        ws.cell(row=i, column=8, value=item.get("percentage", ""))
-        ws.cell(row=i, column=9, value=item.get("status", ""))
-        ws.cell(row=i, column=10, value=item.get("comments", ""))
-
-    _set_column_widths(ws, [15, 30, 15, 15, 15, 15, 15, 12, 12, 30])
+    rows = [
+        (
+            item.ps_number,
+            item.description,
+            item.contract_sum,
+            item.claimed_to_date,
+            item.recommended,
+            item.previously_paid,
+            item.this_period,
+            item.percentage,
+            item.status,
+            item.comments,
+        )
+        for item in rec.provisional_sums
+    ]
+    write_table(wb.create_sheet("Provisional Sums"), headers, rows, [15, 30, 15, 15, 15, 15, 15, 12, 12, 30])
 
 
-def generate_payment_recommendation_excel(data: dict) -> bytes:
-    """Generate a payment recommendation Excel workbook from assessment data.
-
-    Args:
-        data: Dict containing all PR fields (same structure as PDF generator)
-
-    Returns:
-        Excel (.xlsx) file contents as bytes
-    """
+def generate_payment_recommendation_excel(rec: PaymentRecommendation) -> bytes:
     wb = Workbook()
-    _write_summary_sheet(wb, data)
-    _write_contract_works_sheet(wb, data)
-    _write_variations_sheet(wb, data)
-    _write_provisional_sums_sheet(wb, data)
+    write_summary_sheet(wb, rec)
+    write_contract_works_sheet(wb, rec)
+    write_variations_sheet(wb, rec)
+    write_provisional_sums_sheet(wb, rec)
 
     buffer = io.BytesIO()
     wb.save(buffer)

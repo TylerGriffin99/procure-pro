@@ -2,6 +2,7 @@ import os
 from decimal import Decimal
 
 from app.utils.pdf_generator import generate_payment_recommendation_pdf
+from tests.unit.payment_fixtures import payment_recommendation
 
 
 def test_generate_pr_pdf():
@@ -48,7 +49,7 @@ def test_generate_pr_pdf():
         ],
     }
 
-    pdf_bytes = generate_payment_recommendation_pdf(data)
+    pdf_bytes = generate_payment_recommendation_pdf(payment_recommendation(data))
 
     assert pdf_bytes[:5] == b"%PDF-"
     assert len(pdf_bytes) > 1000
@@ -140,7 +141,7 @@ def test_pdf_includes_closed_out_status_and_comments():
         "is_draft": False,
     }
 
-    pdf_bytes = generate_payment_recommendation_pdf(data)
+    pdf_bytes = generate_payment_recommendation_pdf(payment_recommendation(data))
     assert pdf_bytes[:5] == b"%PDF-"
     assert len(pdf_bytes) > 1000
 

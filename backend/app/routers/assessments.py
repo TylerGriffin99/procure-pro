@@ -93,8 +93,7 @@ async def reclassify_item(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await assessment_service.reclassify_item(db, project_id, assessment_id, body, user)
-    result = await assessment_service.get_aggregated_assessment(db, project_id, assessment_id)
+    result = await assessment_service.reclassify_item(db, project_id, assessment_id, body, user)
     return AggregatedAssessmentResponse.from_aggregate(result)
 
 
@@ -137,10 +136,8 @@ async def download_pr_export(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    export_bytes, media_type = await assessment_service.generate_assessment_export(
-        db, project_id, assessment_id, format
-    )
-    return Response(content=export_bytes, media_type=media_type)
+    export = await assessment_service.generate_assessment_export(db, project_id, assessment_id, format)
+    return Response(content=export.content, media_type=export.media_type)
 
 
 @router.get("/{assessment_id}/prior-interims", response_model=PriorInterimsResponse)

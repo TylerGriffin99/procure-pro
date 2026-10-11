@@ -21,7 +21,7 @@ from app.harness.engine import describe_error
 from app.models.user import User
 from app.schemas.claim import ClaimCreate, ClaimLineItemCreate
 from app.schemas.project import WBSCodeCreate
-from app.services import claim_service, project_service
+from app.services import claim_service, guardrails, project_service
 from app.utils.auth import create_access_token
 
 PROJECT_ID = uuid.uuid4()
@@ -106,7 +106,7 @@ async def client():
 
 @pytest.fixture
 def unreadable_pdf(monkeypatch):
-    monkeypatch.setattr(claim_service, "_extract_screenable_text", _raise_os_error)
+    monkeypatch.setattr(guardrails, "extract_screenable_text", _raise_os_error)
 
 
 @pytest.fixture

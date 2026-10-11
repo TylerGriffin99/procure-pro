@@ -1,5 +1,5 @@
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from app.constants.values import DMY_DATE_PARTS, TWO_DIGIT_YEAR_CEILING, TWO_DIGIT_YEAR_CENTURY, WORKING_DAYS_OFFSET
 
@@ -43,3 +43,10 @@ def auto_fill_dates(claim_received: date | None) -> dict[str, date | None]:
     schedule = add_working_days(provisional, WORKING_DAYS_OFFSET)
     payment = payment_due_20th(schedule)
     return {"provisional_payment_schedule_due": provisional, "payment_schedule_due": schedule, "payment_due": payment}
+
+
+def format_long_date(value: date | datetime | None) -> str:
+    if not value:
+        return ""
+    day = value.date() if isinstance(value, datetime) else value
+    return day.strftime("%-d %B %Y")

@@ -126,11 +126,11 @@ async def test_reclassify_line_item_to_new_variation(db_session: AsyncSession):
     result = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
 
     # Source line item should be deleted
-    assert len(result.line_items) == 0
+    assert len(result.assessment.line_items) == 0
 
     # New variation item should be created
-    assert len(result.variation_items) == 1
-    av = result.variation_items[0]
+    assert len(result.assessment.variation_items) == 1
+    av = result.assessment.variation_items[0]
     assert av.claim_line_item_id == cli.id
     assert av.contractor_claim_to_date == Decimal("10000")
     assert av.recommended_this_period == Decimal("8000")
@@ -185,10 +185,10 @@ async def test_reclassify_line_item_to_existing_variation(db_session: AsyncSessi
 
     result = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
 
-    assert len(result.line_items) == 0
+    assert len(result.assessment.line_items) == 0
     # Should have original history row + new reclassified row
-    assert len(result.variation_items) == 2
-    new_av = next(av for av in result.variation_items if av.claim_line_item_id == cli.id)
+    assert len(result.assessment.variation_items) == 2
+    new_av = next(av for av in result.assessment.variation_items if av.claim_line_item_id == cli.id)
     assert new_av.variation_id == existing_var.id
     assert new_av.contractor_claim_to_date == Decimal("10000")
 
@@ -240,8 +240,8 @@ async def test_reclassify_wbs_to_wbs(db_session: AsyncSession):
     result = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
 
     # Line item should still exist, not deleted
-    assert len(result.line_items) == 1
-    li = result.line_items[0]
+    assert len(result.assessment.line_items) == 1
+    li = result.assessment.line_items[0]
     assert li.id == ali.id
     assert li.wbs_code_id == wbs_b.id
     # Values should be unchanged
@@ -269,9 +269,9 @@ async def test_reclassify_roundtrip_line_item_to_ps_and_back(db_session: AsyncSe
     result1 = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req1, user)
 
     # Source line item deleted, PS row created with correct values
-    assert len(result1.line_items) == 0
-    assert len(result1.provisional_sum_items) == 1
-    ps_row = result1.provisional_sum_items[0]
+    assert len(result1.assessment.line_items) == 0
+    assert len(result1.assessment.provisional_sum_items) == 1
+    ps_row = result1.assessment.provisional_sum_items[0]
     assert ps_row.claim_line_item_id == cli.id
     assert ps_row.recommended_this_period == Decimal("8000")
     assert ps_row.total_recommended == Decimal("8000")
@@ -284,11 +284,11 @@ async def test_reclassify_roundtrip_line_item_to_ps_and_back(db_session: AsyncSe
     result2 = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req2, user)
 
     # PS row should be deleted
-    assert len(result2.provisional_sum_items) == 0
+    assert len(result2.assessment.provisional_sum_items) == 0
 
     # Line item should be recreated with the original financial values
-    assert len(result2.line_items) == 1
-    li = result2.line_items[0]
+    assert len(result2.assessment.line_items) == 1
+    li = result2.assessment.line_items[0]
     assert li.claim_line_item_id == cli.id
     assert li.recommended_this_period == Decimal("8000")
     assert li.total_recommended == Decimal("8000")

@@ -93,6 +93,16 @@ async def next_version_number(db: AsyncSession, claim_id: uuid.UUID) -> int:
     return result.scalar_one()
 
 
+async def latest_assessments_by_claim(db: AsyncSession, project_id: uuid.UUID) -> dict[uuid.UUID, Assessment]:
+    result = await db.execute(
+        select(Assessment)
+        .where(Assessment.project_id == project_id)
+        .distinct(Assessment.claim_id)
+        .order_by(Assessment.claim_id, Assessment.version.desc())
+    )
+    return {a.claim_id: a for a in result.scalars().all()}
+
+
 async def get_latest_finalised(db: AsyncSession, project_id: uuid.UUID) -> Assessment | None:
     result = await db.execute(
         select(Assessment)

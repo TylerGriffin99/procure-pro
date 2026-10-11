@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import assert_never
+from typing import Any, Final, assert_never
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +15,6 @@ from app.constants.enums import (
     VariationStatus,
 )
 from app.constants.values import (
-    CENTS,
     COMMENT_PREFIX_CLOSED_OUT,
     COMMENT_PREFIX_INTERIM,
     COMMENT_SEPARATOR,
@@ -50,65 +49,50 @@ from app.schemas.assessment import (
     PriorInterimsResponse,
     ReclassifyRequest,
 )
-from app.schemas.assessment_aggregate import AssessmentAggregate
+from app.schemas.assessment_aggregate import AggregatedAssessment, AssessmentAggregate, ReclassifyCarry
+from app.schemas.payment_recommendation import ExportFile, PaymentRecommendation, RetentionDetail
 from app.schemas.retention import RetentionTier
-from app.services.assessment_aggregate import aggregate_assessment, export_display, recompute_item, rollup_status
-from app.utils.assessment_aggregator import compute_assessment_totals
-from app.utils.assessment_engine import calculate_retention, calculate_retention_per_tier
-from app.utils.dates import auto_fill_dates
+from app.services.assessment_aggregate import aggregate_assessment, recompute_item, rollup_status, summarise_assessment
+from app.utils.assessment_engine import calculate_retention_per_tier
 from app.utils.excel_generator import generate_payment_recommendation_excel
 from app.utils.pdf_generator import generate_payment_recommendation_pdf
 
 InterimItem = AssessmentLineItem | AssessmentVariation | AssessmentProvisionalSum
 
+ROW_COLLECTION: Final = {
+    AssessmentItemKind.line_item: "line_items",
+    AssessmentItemKind.variation: "variation_items",
+    AssessmentItemKind.provisional_sum: "provisional_sum_items",
+}
+PARENT_KEY: Final = {
+    AssessmentItemKind.line_item: "wbs_code_id",
+    AssessmentItemKind.variation: "variation_id",
+    AssessmentItemKind.provisional_sum: "provisional_sum_id",
+}
+ROW_CREATE: Final = {
+    AssessmentItemKind.line_item: assessment_line_item_repo.create,
+    AssessmentItemKind.variation: assessment_variation_repo.create,
+    AssessmentItemKind.provisional_sum: assessment_provisional_sum_repo.create,
+}
 
-def _fmt_date(d) -> str:
-    """Format a date for the PDF, handling both date and datetime objects."""
-    if not d:
-        return ""
-    if hasattr(d, "date"):
-        d = d.date()
-    return d.strftime("%-d %B %Y")
+
+def rows_of_kind(assessment: Assessment, kind: AssessmentItemKind) -> list[InterimItem]:
+    return getattr(assessment, ROW_COLLECTION[kind])
 
 
-def _resolve_claim_dates(claim) -> dict[str, str]:
-    """Resolve claim dates for PDF, falling back to created_at and auto-calculating."""
-    if not claim:
-        return {
-            "claim_received": "",
-            "provisional_payment_schedule_due": "",
-            "payment_schedule_due": "",
-            "payment_due": "",
-        }
+def group_rows(assessment: Assessment, kind: AssessmentItemKind, parent_id: uuid.UUID) -> list[InterimItem]:
+    return [row for row in rows_of_kind(assessment, kind) if getattr(row, PARENT_KEY[kind]) == parent_id]
 
-    claim_received = claim.claim_received
-    if not claim_received and claim.created_at:
-        # No explicit claim_received — use created_at and recalculate all dates
-        claim_received = claim.created_at.date() if hasattr(claim.created_at, "date") else claim.created_at
-        auto = auto_fill_dates(claim_received)
-        return {
-            "claim_received": _fmt_date(claim_received),
-            "provisional_payment_schedule_due": _fmt_date(auto["provisional_payment_schedule_due"]),
-            "payment_schedule_due": _fmt_date(auto["payment_schedule_due"]),
-            "payment_due": _fmt_date(auto["payment_due"]),
-        }
 
-    provisional = claim.provisional_payment_schedule_due
-    schedule = claim.payment_schedule_due
-    payment = claim.payment_due
-
-    if claim_received and (not provisional or not schedule or not payment):
-        auto = auto_fill_dates(claim_received)
-        provisional = provisional or auto.get("provisional_payment_schedule_due")
-        schedule = schedule or auto.get("payment_schedule_due")
-        payment = payment or auto.get("payment_due")
-
-    return {
-        "claim_received": _fmt_date(claim_received),
-        "provisional_payment_schedule_due": _fmt_date(provisional),
-        "payment_schedule_due": _fmt_date(schedule),
-        "payment_due": _fmt_date(payment),
-    }
+async def draft_assessment(
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, action: str
+) -> Assessment:
+    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    if not assessment:
+        raise NotFoundError("Assessment not found")
+    if assessment.status != AssessmentStatus.draft:
+        raise BadRequestError(f"Assessment must be in draft to {action}")
+    return assessment
 
 
 async def create_assessment(db: AsyncSession, project_id: uuid.UUID, data: AssessmentCreate, user: User) -> Assessment:
@@ -225,13 +209,13 @@ async def get_prior_interims(
         ps_groups.setdefault(item.provisional_sum_id, []).append(item)
 
     return PriorInterimsResponse(
-        wbs_interims=_interim_groups(wbs_groups),
-        variation_interims=_interim_groups(var_groups),
-        ps_interims=_interim_groups(ps_groups),
+        wbs_interims=interim_groups(wbs_groups),
+        variation_interims=interim_groups(var_groups),
+        ps_interims=interim_groups(ps_groups),
     )
 
 
-def _interim_groups(groups: Mapping[uuid.UUID, Sequence[InterimItem]]) -> list[PriorInterimResponse]:
+def interim_groups(groups: Mapping[uuid.UUID, Sequence[InterimItem]]) -> list[PriorInterimResponse]:
     """One entry per parent whose group holds at least one interim-status item."""
     return [
         PriorInterimResponse.from_group(parent_id, items)
@@ -244,316 +228,127 @@ async def create_interim_adjustment(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: InterimAdjustRequest, user: User
 ) -> AssessmentAggregate:
     """Create an interim adjustment child row under the specified parent."""
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
-    if assessment.status != AssessmentStatus.draft:
-        raise BadRequestError("Assessment must be in draft to add adjustments")
-
+    assessment = await draft_assessment(db, project_id, assessment_id, "add adjustments")
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
     source_id = prev_assessment.id if prev_assessment and prev_assessment.id != assessment_id else None
 
-    comment_prefix = COMMENT_PREFIX_INTERIM
-    comment_text = f"{comment_prefix}{COMMENT_SEPARATOR}{data.comments}" if data.comments else comment_prefix
+    history = next(
+        (
+            row
+            for row in group_rows(assessment, data.item_type, data.parent_id)
+            if row.claim_line_item_id is None and not row.adjustment_type
+        ),
+        None,
+    )
+    difference = data.agreed_total - (history.previously_paid if history else Decimal("0"))
+    await ROW_CREATE[data.item_type](
+        db,
+        **interim_row_fields(assessment, data, history),
+        assessment_id=assessment_id,
+        claim_line_item_id=None,
+        contractor_claim_to_date=Decimal("0"),
+        total_recommended=difference,
+        percentage=Decimal("0"),
+        variance_to_claim=difference,
+        previously_paid=Decimal("0"),
+        recommended_this_period=difference,
+        status=LineItemStatus.interim,
+        comments=f"{COMMENT_PREFIX_INTERIM}{COMMENT_SEPARATOR}{data.comments}"
+        if data.comments
+        else COMMENT_PREFIX_INTERIM,
+        adjustment_type=AdjustmentType.interim_adjustment,
+        source_assessment_id=source_id,
+        created_by=user.id,
+    )
+    await db.commit()
+    return await get_aggregated_assessment(db, project_id, assessment_id)
 
+
+def interim_row_fields(
+    assessment: Assessment, data: InterimAdjustRequest, history: InterimItem | None
+) -> dict[str, Any]:
     match data.item_type:
         case AssessmentItemKind.line_item:
-            history = next(
-                (
-                    li
-                    for li in assessment.line_items
-                    if li.wbs_code_id == data.parent_id and li.claim_line_item_id is None and not li.adjustment_type
-                ),
-                None,
-            )
-            group_prev_paid = history.previously_paid if history else Decimal("0")
-            difference = data.agreed_total - group_prev_paid
-
-            max_sort = max((li.sort_order for li in assessment.line_items), default=-1)
-            new_item = AssessmentLineItem(
-                assessment_id=assessment_id,
-                claim_line_item_id=None,
-                wbs_code_id=data.parent_id,
-                description=history.description if history else "Interim adjustment",
-                contractor_claim_to_date=Decimal("0"),
-                total_recommended=difference,
-                percentage=Decimal("0"),
-                variance_to_claim=difference,
-                previously_paid=Decimal("0"),
-                recommended_this_period=difference,
-                status=LineItemStatus.interim,
-                comments=comment_text,
-                sort_order=max_sort + 1,
-                adjustment_type=AdjustmentType.interim_adjustment,
-                source_assessment_id=source_id,
-                created_by=user.id,
-            )
-            db.add(new_item)
-
+            return {
+                "wbs_code_id": data.parent_id,
+                "description": history.description if isinstance(history, AssessmentLineItem) else "Interim adjustment",
+                "sort_order": max((li.sort_order for li in assessment.line_items), default=-1) + 1,
+            }
         case AssessmentItemKind.variation:
-            history = next(
-                (
-                    av
-                    for av in assessment.variation_items
-                    if av.variation_id == data.parent_id and av.claim_line_item_id is None and not av.adjustment_type
-                ),
-                None,
-            )
-            group_prev_paid = history.previously_paid if history else Decimal("0")
-            difference = data.agreed_total - group_prev_paid
-
-            new_item = AssessmentVariation(
-                assessment_id=assessment_id,
-                variation_id=data.parent_id,
-                claim_line_item_id=None,
-                contractor_claim_to_date=Decimal("0"),
-                total_recommended=difference,
-                percentage=Decimal("0"),
-                variance_to_claim=difference,
-                previously_paid=Decimal("0"),
-                recommended_this_period=difference,
-                status=LineItemStatus.interim,
-                comments=comment_text,
-                adjustment_type=AdjustmentType.interim_adjustment,
-                source_assessment_id=source_id,
-                created_by=user.id,
-            )
-            db.add(new_item)
-
+            return {"variation_id": data.parent_id}
         case AssessmentItemKind.provisional_sum:
-            history = next(
-                (
-                    ps
-                    for ps in assessment.provisional_sum_items
-                    if ps.provisional_sum_id == data.parent_id
-                    and ps.claim_line_item_id is None
-                    and not ps.adjustment_type
-                ),
-                None,
-            )
-            group_prev_paid = history.previously_paid if history else Decimal("0")
-            difference = data.agreed_total - group_prev_paid
-
-            new_item = AssessmentProvisionalSum(
-                assessment_id=assessment_id,
-                provisional_sum_id=data.parent_id,
-                claim_line_item_id=None,
-                contractor_claim_to_date=Decimal("0"),
-                total_recommended=difference,
-                percentage=Decimal("0"),
-                variance_to_claim=difference,
-                previously_paid=Decimal("0"),
-                recommended_this_period=difference,
-                status=LineItemStatus.interim,
-                comments=comment_text,
-                adjustment_type=AdjustmentType.interim_adjustment,
-                source_assessment_id=source_id,
-                created_by=user.id,
-            )
-            db.add(new_item)
+            return {"provisional_sum_id": data.parent_id}
         case _:
             assert_never(data.item_type)
 
-    await db.commit()
-    return await get_aggregated_assessment(db, project_id, assessment_id)
+
+def closed_out_comment(row: InterimItem) -> str | None:
+    """History and adjustment rows get a Closed Out prefix (idempotent); claim-linked rows keep their comment."""
+    comments = row.comments
+    if row.claim_line_item_id is not None:
+        return comments
+    if not comments:
+        return COMMENT_PREFIX_CLOSED_OUT
+    if comments.startswith(COMMENT_PREFIX_CLOSED_OUT):
+        return comments
+    if comments.startswith(COMMENT_PREFIX_INTERIM):
+        return COMMENT_PREFIX_CLOSED_OUT + comments[len(COMMENT_PREFIX_INTERIM) :]
+    return f"{COMMENT_PREFIX_CLOSED_OUT}{COMMENT_SEPARATOR}{comments}"
 
 
 async def close_out_item(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: CloseOutRequest, user: User
 ) -> AssessmentAggregate:
     """Close out an interim item — sets all rows for this parent to 'approved' status."""
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
-    if assessment.status != AssessmentStatus.draft:
-        raise BadRequestError("Assessment must be in draft to close out items")
-
-    def _update_comment(item):
-        """Update comment prefix from Interim to Closed Out (idempotent)."""
-        if item.claim_line_item_id is None:
-            if item.comments:
-                if item.comments.startswith(COMMENT_PREFIX_CLOSED_OUT):
-                    return  # already closed out, don't double-prefix
-                if item.comments.startswith(COMMENT_PREFIX_INTERIM):
-                    item.comments = COMMENT_PREFIX_CLOSED_OUT + item.comments[len(COMMENT_PREFIX_INTERIM) :]
-                else:
-                    item.comments = f"{COMMENT_PREFIX_CLOSED_OUT}{COMMENT_SEPARATOR}{item.comments}"
-            else:
-                item.comments = COMMENT_PREFIX_CLOSED_OUT
-
-    match data.item_type:
-        case AssessmentItemKind.line_item:
-            matching = [li for li in assessment.line_items if li.wbs_code_id == data.parent_id]
-            for item in matching:
-                item.status = LineItemStatus.approved
-                item.is_closed_out = True
-                _update_comment(item)
-                item.updated_by = user.id
-
-        case AssessmentItemKind.variation:
-            matching = [av for av in assessment.variation_items if av.variation_id == data.parent_id]
-            for item in matching:
-                item.status = LineItemStatus.approved
-                item.is_closed_out = True
-                _update_comment(item)
-                item.updated_by = user.id
-
-        case AssessmentItemKind.provisional_sum:
-            matching = [ps for ps in assessment.provisional_sum_items if ps.provisional_sum_id == data.parent_id]
-            for item in matching:
-                item.status = LineItemStatus.approved
-                item.is_closed_out = True
-                _update_comment(item)
-                item.updated_by = user.id
-        case _:
-            assert_never(data.item_type)
-
+    assessment = await draft_assessment(db, project_id, assessment_id, "close out items")
+    for row in group_rows(assessment, data.item_type, data.parent_id):
+        row.status = LineItemStatus.approved
+        row.is_closed_out = True
+        row.comments = closed_out_comment(row)
+        row.updated_by = user.id
     await db.commit()
     return await get_aggregated_assessment(db, project_id, assessment_id)
 
 
 async def generate_assessment_export(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, format: ExportFormat = ExportFormat.pdf
-) -> tuple[bytes, str]:
+) -> ExportFile:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
         raise NotFoundError("Assessment not found")
-
     project = await project_repo.get_by_id_with_retention(db, project_id)
     if project is None:
         raise NotFoundError("Project not found")
     claim = await claim_repo.get_by_id(db, assessment.claim_id)
 
     aggregate = (await aggregate_assessment(db, project_id, assessment)).aggregate
-    wbs_groups, var_groups, ps_groups = aggregate.wbs_groups, aggregate.variation_groups, aggregate.ps_groups
+    summary = summarise_assessment(aggregate, project)
+    tiers = [RetentionTier.model_validate(t, from_attributes=True) for t in project.retention_tiers]
+    recommendation = PaymentRecommendation.from_aggregate(
+        aggregate,
+        project=project,
+        claim=claim,
+        summary=summary,
+        retention_details=[
+            RetentionDetail(**detail) for detail in calculate_retention_per_tier(summary.total_recommended, tiers)
+        ],
+    )
+    return render_export(recommendation, format)
 
-    # Build contract_works list for PDF
-    contract_works = []
-    for g in wbs_groups:
-        all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
-        comments = "; ".join(r.comments for r in all_rows if r.comments)
-        contract_works.append(
-            {
-                "description": g.description,
-                "contract_sum": g.contract_sum,
-                "contractor_claim": g.contractor_claim_to_date,
-                "recommended": g.total_recommended,
-                "percentage": f"{g.percentage:.1f}%",
-                "variance": g.variance_to_claim,
-                "previously_paid": g.previously_paid,
-                "recommended_this_period": g.recommended_this_period,
-                "comments": comments,
-            }
-        )
 
-    # Build variation_works list for PDF
-    variation_works = []
-    for g in var_groups:
-        display_comments, display_status = export_display(g.history_row, g.child_rows)
-        variation_works.append(
-            {
-                "ci_number": g.contractor_ref,
-                "description": g.description,
-                "submission": g.contractor_submission,
-                "type": "",
-                "claimed_to_date": g.contractor_claim_to_date,
-                "recommended": g.total_recommended,
-                "previously_paid": g.previously_paid,
-                "this_period": g.recommended_this_period,
-                "status": display_status,
-                "comments": display_comments,
-            }
-        )
-
-    # Build provisional_sums list for PDF
-    provisional_sums = []
-    for g in ps_groups:
-        display_comments, display_status = export_display(g.history_row, g.child_rows)
-        provisional_sums.append(
-            {
-                "ps_number": g.ps_number,
-                "description": g.description,
-                "contract_sum": g.contract_sum,
-                "claimed_to_date": g.contractor_claim_to_date,
-                "recommended": g.total_recommended,
-                "previously_paid": g.previously_paid,
-                "this_period": g.recommended_this_period,
-                "percentage": f"{g.percentage:.1f}%",
-                "status": display_status,
-                "comments": display_comments,
-            }
-        )
-
-    # Calculate totals using aggregator
-    totals = compute_assessment_totals(wbs_groups, var_groups, ps_groups)
-
-    total_recommended = totals.total_recommended
-    value_claimed = totals.value_claimed_to_date
-    adjustments = totals.adjustments
-
-    retention_tiers = [
-        RetentionTier(percentage=t.percentage, up_to_amount=t.up_to_amount) for t in project.retention_tiers
-    ]
-    total_retention = calculate_retention(total_recommended, retention_tiers)
-    retention_details = calculate_retention_per_tier(total_recommended, retention_tiers)
-
-    previously_certified = assessment.previously_certified or Decimal("0")
-    payment_to_date = total_recommended - total_retention
-    recommended_this_period = payment_to_date - previously_certified
-    gst = (recommended_this_period * project.gst_rate).quantize(CENTS)
-
-    pdf_data = {
-        "project_name": project.name,
-        "project_number": project.project_number or "",
-        "pr_number": claim.claim_number if claim else assessment.version,
-        "revision": 0,
-        "issue_date": assessment.created_at.strftime("%d %B %Y") if assessment.created_at else "",
-        "principal": project.client_name,
-        "end_client_name": project.end_client_name or project.client_name,
-        "end_client_address_lines": (project.end_client_address or "").split("\n")
-        if project.end_client_address
-        else [],
-        "end_client_representative_first_name": (project.end_client_representative or "").split()[0]
-        if project.end_client_representative
-        else "",
-        "landlord_split_pct": project.landlord_split_pct,
-        "operator_split_pct": project.operator_split_pct,
-        "landlord_amount": (recommended_this_period * project.landlord_split_pct).quantize(CENTS)
-        if project.landlord_split_pct
-        else Decimal("0"),
-        "operator_amount": (recommended_this_period * project.operator_split_pct).quantize(CENTS)
-        if project.operator_split_pct
-        else Decimal("0"),
-        "engineer": project.end_client_representative or "",
-        "contractor": project.contractor_name,
-        "claim_number": claim.claim_number if claim else assessment.version,
-        **_resolve_claim_dates(claim),
-        "contract_sum": project.contract_sum,
-        "adjustment_to_provisional_sums": totals.adjustment_to_provisional_sums,
-        "approved_variation_orders": totals.approved_variation_orders,
-        "adjusted_contract_sum": project.contract_sum
-        + totals.approved_variation_orders
-        + totals.adjustment_to_provisional_sums,
-        "value_claimed": value_claimed,
-        "adjustments": adjustments,
-        "total_recommended": total_recommended,
-        "retention_details": retention_details,
-        "total_retention": total_retention,
-        "total_payment_to_date": payment_to_date,
-        "previously_certified": previously_certified,
-        "recommended_this_period": recommended_this_period,
-        "gst_rate": project.gst_rate,
-        "gst_amount": gst,
-        "total_including_gst": recommended_this_period + gst,
-        "contract_works": contract_works,
-        "variation_works": variation_works,
-        "provisional_sums": provisional_sums,
-        "is_draft": assessment.status != AssessmentStatus.finalised,
-    }
-
+def render_export(recommendation: PaymentRecommendation, format: ExportFormat) -> ExportFile:
+    filename = f"payment-recommendation-{recommendation.pr_number}"
     if format == ExportFormat.excel:
-        return generate_payment_recommendation_excel(pdf_data), XLSX_MEDIA_TYPE
-    return generate_payment_recommendation_pdf(pdf_data), PDF_MEDIA_TYPE
+        return ExportFile(
+            content=generate_payment_recommendation_excel(recommendation),
+            media_type=XLSX_MEDIA_TYPE,
+            filename=f"{filename}.xlsx",
+        )
+    return ExportFile(
+        content=generate_payment_recommendation_pdf(recommendation),
+        media_type=PDF_MEDIA_TYPE,
+        filename=f"{filename}.pdf",
+    )
 
 
 async def update_variation_item(
@@ -606,176 +401,174 @@ async def update_provisional_sum_item(
     return refreshed
 
 
-async def reclassify_item(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: ReclassifyRequest, user: User
-) -> Assessment:
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
-
-    # Find source row in the appropriate list
-    source_row = None
-    match data.source_type:
-        case AssessmentItemKind.line_item:
-            source_row = next((li for li in assessment.line_items if li.id == data.source_item_id), None)
-        case AssessmentItemKind.variation:
-            source_row = next((av for av in assessment.variation_items if av.id == data.source_item_id), None)
-        case AssessmentItemKind.provisional_sum:
-            source_row = next((ps for ps in assessment.provisional_sum_items if ps.id == data.source_item_id), None)
-        case _:
-            assert_never(data.source_type)
-
-    if not source_row:
+def find_source_row(assessment: Assessment, data: ReclassifyRequest) -> tuple[InterimItem, uuid.UUID]:
+    source = next((r for r in rows_of_kind(assessment, data.source_type) if r.id == data.source_item_id), None)
+    if not source:
         raise NotFoundError("Source item not found")
-    if source_row.claim_line_item_id is None:
+    if source.claim_line_item_id is None:
         raise BadRequestError("Cannot reclassify a history row without a linked claim line item")
+    return source, source.claim_line_item_id
 
-    # Capture carried values
-    recommended_this_period = source_row.recommended_this_period
-    contractor_claim_to_date = source_row.contractor_claim_to_date
-    claim_line_item_id = source_row.claim_line_item_id
 
-    # Get linked ClaimLineItem for description and contract_value
-    cli = await claim_line_item_repo.get_by_id(db, claim_line_item_id)
-    description = cli.description if cli else ""
-    contract_value = cli.contract_value if cli else Decimal("0")
+def require_target_wbs(data: ReclassifyRequest) -> uuid.UUID:
+    if not data.target_wbs_code_id:
+        raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
+    return data.target_wbs_code_id
 
-    # WBS-to-WBS: same type, just update the wbs_code_id
-    if data.source_type == AssessmentItemKind.line_item and data.target_type == AssessmentItemKind.line_item:
-        if not data.target_wbs_code_id:
-            raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
-        assert isinstance(source_row, AssessmentLineItem)
-        await assessment_line_item_repo.update(db, source_row, wbs_code_id=data.target_wbs_code_id)
-        await db.commit()
-        refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-        if refreshed is None:
-            raise NotFoundError("Assessment not found after reclassify")
-        return refreshed
 
-    # Cross-type: delete source, create new target row
-    match data.source_type:
-        case AssessmentItemKind.line_item:
-            assert isinstance(source_row, AssessmentLineItem)
-            await assessment_line_item_repo.delete(db, source_row)
-        case AssessmentItemKind.variation:
-            assert isinstance(source_row, AssessmentVariation)
-            await assessment_variation_repo.delete(db, source_row)
-        case AssessmentItemKind.provisional_sum:
-            assert isinstance(source_row, AssessmentProvisionalSum)
-            await assessment_provisional_sum_repo.delete(db, source_row)
+async def delete_source_row(db: AsyncSession, row: InterimItem) -> None:
+    match row:
+        case AssessmentLineItem():
+            await assessment_line_item_repo.delete(db, row)
+        case AssessmentVariation():
+            await assessment_variation_repo.delete(db, row)
+        case AssessmentProvisionalSum():
+            await assessment_provisional_sum_repo.delete(db, row)
         case _:
-            assert_never(data.source_type)
-    # Expire the assessment so collections are reloaded fresh
-    db.expire(assessment)
+            assert_never(row)
 
+
+async def ensure_target_master(
+    db: AsyncSession, data: ReclassifyRequest, carry: ReclassifyCarry, project_id: uuid.UUID, user: User
+) -> uuid.UUID:
+    description = data.new_record.description if data.new_record else carry.description
     match data.target_type:
         case AssessmentItemKind.variation:
-            # Find or create variation master record
             if data.target_id:
-                # Use existing variation — query project variations directly
-                existing_variations = await variation_repo.get_by_project(db, project_id)
-                variation = next((v for v in existing_variations if v.id == data.target_id), None)
-                if not variation:
+                existing = await variation_repo.get_by_project(db, project_id)
+                if not any(v.id == data.target_id for v in existing):
                     raise NotFoundError("Target variation not found")
-            else:
-                max_ci = await variation_repo.get_max_ci_number(db, project_id)
-                new_desc = data.new_record.description if data.new_record else description
-                variation = await variation_repo.create(
-                    db,
-                    project_id=project_id,
-                    ci_number=max_ci + 1,
-                    contractor_ref=f"CI-{max_ci + 1:03d}",
-                    description=new_desc,
-                    contractor_submission=contract_value,
-                    status=VariationStatus.unapproved,
-                    wbs_code_id=data.target_wbs_code_id,
-                    created_by=user.id,
-                )
-
-            await assessment_variation_repo.create(
+                return data.target_id
+            ci_number = await variation_repo.get_max_ci_number(db, project_id) + 1
+            variation = await variation_repo.create(
                 db,
-                assessment_id=assessment_id,
-                variation_id=variation.id,
-                claim_line_item_id=claim_line_item_id,
-                contractor_claim_to_date=contractor_claim_to_date,
-                total_recommended=recommended_this_period,
-                percentage=Decimal("0"),
-                variance_to_claim=recommended_this_period - contractor_claim_to_date,
-                previously_paid=Decimal("0"),
-                recommended_this_period=recommended_this_period,
-                status=LineItemStatus.unapproved,
+                project_id=project_id,
+                ci_number=ci_number,
+                contractor_ref=f"CI-{ci_number:03d}",
+                description=description,
+                contractor_submission=carry.contract_value,
+                status=VariationStatus.unapproved,
+                wbs_code_id=data.target_wbs_code_id,
                 created_by=user.id,
             )
-
+            return variation.id
         case AssessmentItemKind.provisional_sum:
             if data.target_id:
                 existing_ps = await provisional_sum_repo.get_by_project(db, project_id)
-                ps = next((p for p in existing_ps if p.id == data.target_id), None)
-                if not ps:
+                if not any(p.id == data.target_id for p in existing_ps):
                     raise NotFoundError("Target provisional sum not found")
-            else:
-                max_ps = await provisional_sum_repo.get_max_ps_number(db, project_id)
-                new_desc = data.new_record.description if data.new_record else description
-                ps = await provisional_sum_repo.create(
-                    db,
-                    project_id=project_id,
-                    ps_number=max_ps + 1,
-                    description=new_desc,
-                    contract_sum=contract_value,
-                    status=VariationStatus.unapproved,
-                    wbs_code_id=data.target_wbs_code_id,
-                    created_by=user.id,
-                )
-
-            await assessment_provisional_sum_repo.create(
+                return data.target_id
+            ps_number = await provisional_sum_repo.get_max_ps_number(db, project_id) + 1
+            ps = await provisional_sum_repo.create(
                 db,
-                assessment_id=assessment_id,
-                provisional_sum_id=ps.id,
-                claim_line_item_id=claim_line_item_id,
-                contractor_claim_to_date=contractor_claim_to_date,
-                total_recommended=recommended_this_period,
-                percentage=Decimal("0"),
-                variance_to_claim=recommended_this_period - contractor_claim_to_date,
-                previously_paid=Decimal("0"),
-                recommended_this_period=recommended_this_period,
-                status=LineItemStatus.unapproved,
-                created_by=user.id,
-            )
-
-        case AssessmentItemKind.line_item:
-            if not data.target_wbs_code_id:
-                raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
-            # From variation/PS back to line-item
-            # Use explicit query instead of assessment.line_items to avoid MissingGreenlet
-            # (db.expire above invalidates cached collections; lazy reload fails in async)
-            await db.refresh(assessment, ["line_items"])
-            max_sort = max((li.sort_order for li in assessment.line_items), default=-1)
-            await assessment_line_item_repo.create(
-                db,
-                assessment_id=assessment_id,
-                claim_line_item_id=claim_line_item_id,
-                wbs_code_id=data.target_wbs_code_id,
+                project_id=project_id,
+                ps_number=ps_number,
                 description=description,
-                contractor_claim_to_date=contractor_claim_to_date,
-                total_recommended=recommended_this_period,
-                percentage=Decimal("0"),
-                variance_to_claim=recommended_this_period - contractor_claim_to_date,
-                previously_paid=Decimal("0"),
-                recommended_this_period=recommended_this_period,
-                status=LineItemStatus.unapproved,
-                sort_order=max_sort + 1,
+                contract_sum=carry.contract_value,
+                status=VariationStatus.unapproved,
+                wbs_code_id=data.target_wbs_code_id,
                 created_by=user.id,
             )
+            return ps.id
+        case AssessmentItemKind.line_item:
+            raise BadRequestError("A line item has no variation or provisional sum master")
         case _:
             assert_never(data.target_type)
 
-    await db.commit()
-    # Expire the assessment so the identity map doesn't return stale collections
+
+async def target_row_fields(
+    db: AsyncSession,
+    assessment: Assessment,
+    data: ReclassifyRequest,
+    carry: ReclassifyCarry,
+    project_id: uuid.UUID,
+    user: User,
+) -> dict[str, Any]:
+    match data.target_type:
+        case AssessmentItemKind.line_item:
+            wbs_code_id = require_target_wbs(data)
+            # db.expire invalidated the cached collection and a lazy reload fails under async, so refresh explicitly.
+            await db.refresh(assessment, ["line_items"])
+            max_sort = max((li.sort_order for li in assessment.line_items), default=-1)
+            return {"wbs_code_id": wbs_code_id, "description": carry.description, "sort_order": max_sort + 1}
+        case AssessmentItemKind.variation:
+            return {"variation_id": await ensure_target_master(db, data, carry, project_id, user)}
+        case AssessmentItemKind.provisional_sum:
+            return {"provisional_sum_id": await ensure_target_master(db, data, carry, project_id, user)}
+        case _:
+            assert_never(data.target_type)
+
+
+async def create_target_row(
+    db: AsyncSession,
+    assessment: Assessment,
+    data: ReclassifyRequest,
+    carry: ReclassifyCarry,
+    project_id: uuid.UUID,
+    user: User,
+) -> None:
+    rtp = carry.recommended_this_period
+    await ROW_CREATE[data.target_type](
+        db,
+        **await target_row_fields(db, assessment, data, carry, project_id, user),
+        assessment_id=carry.assessment_id,
+        claim_line_item_id=carry.claim_line_item_id,
+        contractor_claim_to_date=carry.contractor_claim_to_date,
+        total_recommended=rtp,
+        percentage=Decimal("0"),
+        variance_to_claim=rtp - carry.contractor_claim_to_date,
+        previously_paid=Decimal("0"),
+        recommended_this_period=rtp,
+        status=LineItemStatus.unapproved,
+        created_by=user.id,
+    )
+
+
+async def reclassify_item(
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: ReclassifyRequest, user: User
+) -> AssessmentAggregate:
+    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
+    if not assessment:
+        raise NotFoundError("Assessment not found")
+    source, claim_line_item_id = find_source_row(assessment, data)
+    cli = await claim_line_item_repo.get_by_id(db, claim_line_item_id)
+
+    if isinstance(source, AssessmentLineItem) and data.target_type == AssessmentItemKind.line_item:
+        await assessment_line_item_repo.update(db, source, wbs_code_id=require_target_wbs(data))
+        await db.commit()
+        return await get_aggregated_assessment(db, project_id, assessment_id)
+
+    carry = ReclassifyCarry(
+        assessment_id=assessment_id,
+        claim_line_item_id=claim_line_item_id,
+        contractor_claim_to_date=source.contractor_claim_to_date,
+        recommended_this_period=source.recommended_this_period,
+        description=cli.description if cli else "",
+        contract_value=cli.contract_value if cli else Decimal("0"),
+    )
+    await delete_source_row(db, source)
+    # Expire so the collections reload fresh instead of returning the deleted row.
     db.expire(assessment)
-    refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if refreshed is None:
-        raise NotFoundError("Assessment not found after reclassify")
-    return refreshed
+    await create_target_row(db, assessment, data, carry, project_id, user)
+    await db.commit()
+    db.expire(assessment)
+    return await get_aggregated_assessment(db, project_id, assessment_id)
+
+
+def sync_masters(aggregated: AggregatedAssessment, user: User) -> None:
+    var_map = {v.id: v for v in aggregated.variations}
+    for g in aggregated.aggregate.variation_groups:
+        if master := var_map.get(g.variation_id):
+            master.approved_amount = g.total_recommended
+            master.contractor_submission = g.contractor_claim_to_date
+            master.status = rollup_status(([g.history_row] if g.history_row else []) + g.child_rows)
+            master.updated_by = user.id
+    ps_map = {p.id: p for p in aggregated.provisional_sums}
+    for g in aggregated.aggregate.ps_groups:
+        if master := ps_map.get(g.provisional_sum_id):
+            master.approved_amount = g.total_recommended
+            master.status = rollup_status(([g.history_row] if g.history_row else []) + g.child_rows)
+            master.updated_by = user.id
 
 
 async def finalise_assessment(
@@ -784,58 +577,20 @@ async def finalise_assessment(
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
         raise NotFoundError("Assessment not found")
-
     aggregated = await aggregate_assessment(db, project_id, assessment)
-    var_groups, ps_groups = aggregated.aggregate.variation_groups, aggregated.aggregate.ps_groups
-    totals = compute_assessment_totals(aggregated.aggregate.wbs_groups, var_groups, ps_groups)
-
-    # Sync variation master records from aggregated groups (not individual items)
-    var_map = {v.id: v for v in aggregated.variations}
-    for g in var_groups:
-        master = var_map.get(g.variation_id)
-        if master:
-            master.approved_amount = g.total_recommended
-            master.contractor_submission = g.contractor_claim_to_date
-            master.status = rollup_status(([g.history_row] if g.history_row else []) + g.child_rows)
-            master.updated_by = user.id
-
-    # Sync provisional sum master records from aggregated groups
-    ps_map = {p.id: p for p in aggregated.provisional_sums}
-    for g in ps_groups:
-        master = ps_map.get(g.provisional_sum_id)
-        if master:
-            master.approved_amount = g.total_recommended
-            master.status = rollup_status(([g.history_row] if g.history_row else []) + g.child_rows)
-            master.updated_by = user.id
+    sync_masters(aggregated, user)
 
     project = await project_repo.get_by_id_with_retention(db, project_id)
     if project is None:
         raise NotFoundError("Project not found")
-    assessment.contract_sum = project.contract_sum
-    assessment.approved_variation_orders = totals.approved_variation_orders
-    assessment.adjustment_to_provisional_sums = totals.adjustment_to_provisional_sums
-    assessment.adjusted_contract_sum = (
-        project.contract_sum + totals.approved_variation_orders + totals.adjustment_to_provisional_sums
+    await assessment_repo.update(
+        db,
+        assessment,
+        **summarise_assessment(aggregated.aggregate, project).model_dump(),
+        status=AssessmentStatus.finalised,
+        finalised_at=datetime.now(UTC),
+        updated_by=user.id,
     )
-    total_recommended = totals.total_recommended
-    assessment.total_recommended = total_recommended
-
-    # Calculate retention and payment-to-date for use by future assessments
-    retention_tiers = [
-        RetentionTier(percentage=t.percentage, up_to_amount=t.up_to_amount) for t in project.retention_tiers
-    ]
-    total_retention = calculate_retention(total_recommended, retention_tiers)
-    assessment.total_retention = total_retention
-    total_payment_to_date = total_recommended - total_retention
-    assessment.total_payment_to_date = total_payment_to_date
-
-    # Calculate recommended this period
-    previously_certified = assessment.previously_certified or Decimal("0")
-    assessment.recommended_this_period = total_payment_to_date - previously_certified
-
-    assessment.status = AssessmentStatus.finalised
-    assessment.finalised_at = datetime.now(UTC)
-    assessment.updated_by = user.id
 
     await db.commit()
     refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)

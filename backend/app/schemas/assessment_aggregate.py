@@ -103,6 +103,15 @@ class AssessmentRows(StrictModel):
     provisional_sum_items: list[AssessmentRowValues]
 
 
+class ReclassifyCarry(StrictModel):
+    assessment_id: uuid.UUID
+    claim_line_item_id: uuid.UUID
+    contractor_claim_to_date: Decimal
+    recommended_this_period: Decimal
+    description: str
+    contract_value: Decimal
+
+
 class AssessmentAggregate(BaseModel):
     """An assessment plus its pre-aggregated groups — what the service hands to the DTO."""
 

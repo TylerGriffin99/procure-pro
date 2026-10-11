@@ -84,35 +84,29 @@ async def _scenario_with_masters(db):
 
 async def test_export_pdf_today(db_session):
     s, _, _ = await _scenario_with_masters(db_session)
-    content, media_type = await assessment_service.generate_assessment_export(
-        db_session, s.project.id, s.assessment.id, "pdf"
-    )
-    assert content.startswith(b"%PDF")
-    assert media_type == "application/pdf"
+    export = await assessment_service.generate_assessment_export(db_session, s.project.id, s.assessment.id, "pdf")
+    assert export.content.startswith(b"%PDF")
+    assert export.media_type == "application/pdf"
 
 
 async def test_export_excel_today(db_session):
     s, _, _ = await _scenario_with_masters(db_session)
-    content, media_type = await assessment_service.generate_assessment_export(
-        db_session, s.project.id, s.assessment.id, "excel"
-    )
-    assert content.startswith(b"PK")
-    assert media_type == XLSX_MEDIA_TYPE
+    export = await assessment_service.generate_assessment_export(db_session, s.project.id, s.assessment.id, "excel")
+    assert export.content.startswith(b"PK")
+    assert export.media_type == XLSX_MEDIA_TYPE
 
 
 async def test_export_unknown_format_today_falls_back_to_pdf(db_session):
     s = await seed_scenario(db_session)
-    content, media_type = await assessment_service.generate_assessment_export(
-        db_session, s.project.id, s.assessment.id, "csv"
-    )
-    assert content.startswith(b"%PDF")
-    assert media_type == "application/pdf"
+    export = await assessment_service.generate_assessment_export(db_session, s.project.id, s.assessment.id, "csv")
+    assert export.content.startswith(b"%PDF")
+    assert export.media_type == "application/pdf"
 
 
 # --- finalise / revert ---
 
 
-async def test_finalise_today_sets_totals_and_rolls_up_masters(db_session):
+async def test_finalise_recomputes_every_persisted_total_and_rolls_up_masters(db_session):
     s, variation, ps = await _scenario_with_masters(db_session)
 
     result = await assessment_service.finalise_assessment(db_session, s.project.id, s.assessment.id, s.user)
@@ -124,6 +118,11 @@ async def test_finalise_today_sets_totals_and_rolls_up_masters(db_session):
     assert result.total_retention == Decimal("2400.00")
     assert result.total_payment_to_date == Decimal("21600.00")
     assert result.recommended_this_period == Decimal("21600.00")
+    assert result.adjusted_contract_sum == Decimal("1016000.00")
+    assert result.value_claimed_to_date == Decimal("30000.00")
+    assert result.adjustments == Decimal("-6000.00")
+    assert result.gst_amount == Decimal("3240.00")
+    assert result.total_including_gst == Decimal("24840.00")
     await db_session.refresh(variation)
     await db_session.refresh(ps)
     assert variation.status == VariationStatus.unapproved

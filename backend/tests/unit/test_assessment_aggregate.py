@@ -5,7 +5,8 @@ import pytest
 from app.constants.enums import LineItemStatus, VariationStatus
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_variation import AssessmentVariation
-from app.services.assessment_aggregate import export_display, recompute_item, rollup_status
+from app.schemas.payment_recommendation import export_display
+from app.services.assessment_aggregate import recompute_item, rollup_status
 
 
 def _row(status: LineItemStatus, comments: str | None = None, closed: bool = False) -> AssessmentVariation:

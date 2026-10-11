@@ -1,8 +1,9 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.assessment_variation import AssessmentVariation
 from app.models.variation import Variation
 
 
@@ -36,4 +37,15 @@ async def delete_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:
     result = await db.execute(select(Variation).where(Variation.project_id == project_id))
     for variation in result.scalars().all():
         await db.delete(variation)
+    await db.flush()
+
+
+async def delete_orphans(db: AsyncSession, project_id: uuid.UUID) -> None:
+    result = await db.execute(
+        select(Variation).where(
+            Variation.project_id == project_id, ~exists().where(AssessmentVariation.variation_id == Variation.id)
+        )
+    )
+    for row in result.scalars().all():
+        await db.delete(row)
     await db.flush()

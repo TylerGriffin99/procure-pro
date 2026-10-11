@@ -1,8 +1,9 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.provisional_sum import ProvisionalSum
 
 
@@ -36,4 +37,16 @@ async def delete_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:
     result = await db.execute(select(ProvisionalSum).where(ProvisionalSum.project_id == project_id))
     for ps in result.scalars().all():
         await db.delete(ps)
+    await db.flush()
+
+
+async def delete_orphans(db: AsyncSession, project_id: uuid.UUID) -> None:
+    result = await db.execute(
+        select(ProvisionalSum).where(
+            ProvisionalSum.project_id == project_id,
+            ~exists().where(AssessmentProvisionalSum.provisional_sum_id == ProvisionalSum.id),
+        )
+    )
+    for row in result.scalars().all():
+        await db.delete(row)
     await db.flush()

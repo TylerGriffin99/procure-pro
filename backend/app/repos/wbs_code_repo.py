@@ -4,6 +4,7 @@ from sqlalchemy import exists, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants.enums import WBSLevel
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.claim_line_item import ClaimLineItem
 from app.models.provisional_sum import ProvisionalSum
@@ -80,3 +81,13 @@ async def get_in_use_ids(db: AsyncSession, wbs_code_ids: list[uuid.UUID]) -> set
     ).subquery()
     result = await db.execute(select(subq.c.wbs_code_id).distinct())
     return set(result.scalars().all())
+
+
+async def delete_unused_subcategories(db: AsyncSession, wbs_code_ids: set[uuid.UUID]) -> None:
+    unused = wbs_code_ids - await get_in_use_ids(db, list(wbs_code_ids))
+    if not unused:
+        return
+    result = await db.execute(select(WBSCode).where(WBSCode.id.in_(unused), WBSCode.level == WBSLevel.subcategory))
+    for wbs in result.scalars().all():
+        await db.delete(wbs)
+    await db.flush()
