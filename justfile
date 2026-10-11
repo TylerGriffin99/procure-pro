@@ -116,6 +116,10 @@ ty:
 # Everything a commit must pass: ruff, ty, unit tests.
 check: ruff ty test-unit
 
+# Ethos gate: packaged checks from the python-code-standards skill (writes nothing into the repo).
+standards:
+    bash ~/.claude/skills/python-code-standards/scripts/check.sh backend
+
 # Back-compat aliases.
 lint *args: (ruff args)
 typecheck: ty
