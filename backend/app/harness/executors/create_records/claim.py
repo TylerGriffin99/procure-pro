@@ -3,11 +3,12 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Final
+from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import FlagSeverity, FlagType
+from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings
 from app.harness.schemas import ClaimLinks, FlagSpec, ParsedClaim, ParsedClaimItem, ParsedClaimSummary
 from app.models.claim import Claim
 from app.repos import claim_repo, harness_repo
@@ -17,7 +18,6 @@ from app.utils.money import parse_money
 
 logger = logging.getLogger(__name__)
 
-ITEM_MONEY_FIELDS: Final = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
 SUMMARY_MONEY_FIELDS: Final = (
     "original_contract_total",
     "variations_total",
@@ -30,15 +30,11 @@ SUMMARY_MONEY_FIELDS: Final = (
 def money_format_warnings(
     line_items: Sequence[ParsedClaimItem], summary: ParsedClaimSummary
 ) -> list[MoneyFormatWarning]:
-    cells: list[tuple[str | None, str, Any]] = [
+    cells: list[MoneyCell] = [
         (item.ref_code, field, getattr(item, field)) for item in line_items for field in ITEM_MONEY_FIELDS
     ]
     cells += [(None, field, getattr(summary, field)) for field in SUMMARY_MONEY_FIELDS]
-    return [
-        MoneyFormatWarning(ref=ref, field=field, description=f"{field}: {warning}; recorded as 0")
-        for ref, field, raw in cells
-        if (warning := parse_money(raw).warning) is not None
-    ]
+    return money_warnings(cells)
 
 
 def money(raw: str | float | int | None) -> Decimal:
@@ -88,7 +84,8 @@ async def build_claim(
 
 
 async def record_format_warnings(db: AsyncSession, session_id: uuid.UUID, parsed: ParsedClaim) -> None:
-    for warning in money_format_warnings(parsed.line_items, parsed.summary):
+    # Extractor warnings cover cells already normalised to "0.00"; the re-parse covers a hand-written parsed_claim.
+    for warning in [*parsed.format_warnings, *money_format_warnings(parsed.line_items, parsed.summary)]:
         logger.warning("create_records: %s (ref=%s)", warning.description, warning.ref)
         await harness_repo.create_flag(
             db,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from string import Template
 from typing import Any
 
+from app.exceptions import BadRequestError
 from app.repos import harness_repo
 
 
@@ -13,8 +14,10 @@ async def build_phase_context(*, db: Any, session_id: Any, project_id: Any, phas
     context: dict[str, str] = {}
     for path in phase_def.workspace_inputs:
         content = await harness_repo.read_workspace_file(db, session_id, path)
+        if not content:
+            raise BadRequestError(f"Workspace file {path} missing for phase {phase_def.name}")
         var_name = path.replace(".json", "").replace("-", "_").replace("/", "_")
-        context[f"workspace_{var_name}"] = content or "FILE NOT FOUND"
+        context[f"workspace_{var_name}"] = content
 
     for loader in phase_def.context_loaders:
         extra = await loader(db, project_id, session_id)

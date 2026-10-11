@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from app.clients.jev_client import JevClient
 from app.constants import MatcherName
@@ -157,6 +157,9 @@ async def test_vps_total_outage_fails_the_phase(caplog):
         {"answers": {"item_0": {"choice": "DM-01", "confidence": "abc"}}},
         {"answers": {"item_0": {"choice": ["x"], "confidence": 0.9}}},
         {"answers": {}},
+        {"answers": {"item_0": {"selected": "DM-01", "confidence": 0.9}}},
+        {"answers": {"item_0": {"choice": "DM-01"}}},
+        {"answers": {"item_0": {"choice": "DM-01", "confidence": 1.5}}},
     ],
 )
 async def test_wbs_malformed_answer_falls_back(caplog, bad):
@@ -240,3 +243,36 @@ async def test_bad_url_scheme_raises_without_fallback():
     client = JevClient(url="openrouter.ai/no-scheme", api_key="k", model="m")
     with pytest.raises(httpx.UnsupportedProtocol):
         await wbs(client)
+
+
+@pytest.mark.asyncio
+async def test_vps_wrong_answer_shape_fails_every_item_with_a_failure_census():
+    async def decide(*, state, questions, **k):
+        return {"answers": {next(iter(questions)): {"selected": "r1", "confidence": 0.9}}}
+
+    with pytest.raises(ExternalServiceError, match=r"ValidationError x2") as exc_info:
+        await vps(fake_client(decide), n=2)
+    assert isinstance(exc_info.value.__cause__, ValidationError)
+
+
+@pytest.mark.asyncio
+async def test_vps_total_failure_census_counts_each_failure_type():
+    async def decide(*, state, questions, **k):
+        qid = next(iter(questions))
+        if qid == "item_0":
+            raise err(529)
+        return {"answers": {}}
+
+    with pytest.raises(ExternalServiceError) as exc_info:
+        await vps(fake_client(decide), n=2)
+    assert "HTTPStatusError x1" in exc_info.value.detail
+    assert "KeyError x1" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_propagates_instead_of_degrading():
+    async def decide(**k):
+        raise RuntimeError("bug in our code")
+
+    with pytest.raises(RuntimeError, match="bug in our code"):
+        await wbs(fake_client(decide), fallback=fake_llm(1))

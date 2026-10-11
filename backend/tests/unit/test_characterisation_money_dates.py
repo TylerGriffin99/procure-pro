@@ -8,7 +8,10 @@ from datetime import date
 from decimal import Decimal
 
 from app.harness.executors.create_records.claim import money_format_warnings
-from app.harness.schemas import ParsedClaimItem, ParsedClaimSummary
+from app.harness.executors.extract_generic import validate_and_normalise
+from app.harness.executors.extract_wbpro import parse_wbpro
+from app.harness.schemas import GenericExtraction, ParsedClaimItem, ParsedClaimSummary, RawExtraction, RawPage
+from app.schemas.claim_extraction import MoneyFormatWarning
 from app.utils.dates import parse_ddmmyy
 from app.utils.money import parse_money
 
@@ -58,3 +61,43 @@ def test_create_records_reports_one_warning_per_malformed_persisted_field():
 def test_create_records_reports_nothing_for_clean_input():
     clean = [ParsedClaimItem(item_index=0, ref_code="1", contract_value="1.00")]
     assert money_format_warnings(clean, ParsedClaimSummary()) == []
+
+
+MALFORMED_WBPRO_ROW = ["1.1", "Excavation", "12,3O0.00", "50.00", "100.00", "0.00", "100.00", "0.00"]
+
+
+def test_wbpro_extraction_reports_malformed_cell_before_normalising_it():
+    raw = RawExtraction(pages=[RawPage(page_num=1, text="CONTRACT WORKS", tables=[[MALFORMED_WBPRO_ROW]])])
+
+    parsed = parse_wbpro(raw)
+
+    assert parsed.line_items[0].contract_value == "0.00"
+    assert parsed.format_warnings == [
+        MoneyFormatWarning(
+            ref="1.1",
+            field="contract_value",
+            description="contract_value: unparseable money value '12,3O0.00'; recorded as 0",
+        )
+    ]
+
+
+def test_generic_extraction_reports_malformed_item_and_summary_cells():
+    extraction = GenericExtraction.model_validate(
+        {
+            "line_items": [{"ref_code": "A1", "contract_value": "12,3O0.00", "ptd": "5.00"}],
+            "summary": {"original_contract_total": "1.00", "revised_contract_total": "1.00", "claimed_amount": "9x"},
+        }
+    )
+
+    parsed = validate_and_normalise(extraction)
+
+    assert parsed.line_items[0].contract_value == "0.00"
+    assert [(w.ref, w.field) for w in parsed.format_warnings] == [("A1", "contract_value"), (None, "claimed_amount")]
+
+
+def test_generic_extraction_ignores_unused_summary_cells():
+    extraction = GenericExtraction.model_validate(
+        {"line_items": [{"ref_code": "A1", "contract_value": "1.00"}], "summary": {"claimed_amount": "9x"}}
+    )
+
+    assert validate_and_normalise(extraction).format_warnings == []

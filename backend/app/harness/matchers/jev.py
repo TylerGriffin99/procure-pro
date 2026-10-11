@@ -8,11 +8,14 @@ LLM matcher. Transport, retry and error classification live in :class:`JevClient
 from __future__ import annotations
 
 import functools
+import json
 import logging
+from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Final, cast
 
-from pydantic import TypeAdapter
+import httpx
+from pydantic import TypeAdapter, ValidationError
 
 from app.clients.jev_client import JevClient
 from app.clients.llm_client import LlmClient
@@ -123,18 +126,18 @@ async def decide_item(
     item: ParsedClaimItem, *, client: JevClient, criteria: dict[str, str], instructions: str
 ) -> ItemDecision:
     """One Jev choice for one item. Non-fatal failures (network, 5xx after retries,
-    malformed answers) become ``failed=True``; fatal HTTP errors propagate."""
+    malformed answers) become a failed decision; fatal HTTP errors and anything unexpected propagate."""
     qid = f"item_{item.item_index}"
     try:
         data = await client.choose(qid=qid, state=client.item_state(item), criteria=criteria, instructions=instructions)
         answer = data.answers[qid]
-    except Exception as exc:
+    except (httpx.HTTPError, ValidationError, KeyError, json.JSONDecodeError) as exc:
         if client.is_fatal(exc):
             raise
         logger.warning(
             "JevMatcher: Jev call for item %s failed (%s)", item.item_index, type(exc).__name__, exc_info=True
         )
-        return ItemDecision(item_index=item.item_index, failed=True)
+        return ItemDecision(item_index=item.item_index, error=exc)
     return ItemDecision(
         item_index=item.item_index,
         choice=answer.choice,
@@ -224,7 +227,9 @@ async def match_vps(
     results, failed, ooc = vps_results(decisions, items, valid_ids, floor=tuning.confidence_floor)
     if results and failed == len(results):
         logger.warning("JevMatcher: all %d VPS items failed Jev; failing the phase", len(results))
-        raise ExternalServiceError("Jev matcher failed for every item")
+        errors = [d.error for d in decisions if d.error is not None]
+        census = ", ".join(f"{name} x{n}" for name, n in Counter(type(e).__name__ for e in errors).most_common())
+        raise ExternalServiceError(f"Jev matcher failed for every item ({census})") from errors[-1]
     output = [results[k] for k in sorted(results)]
     return MatchOutcome(
         matcher=MatcherName.jev,

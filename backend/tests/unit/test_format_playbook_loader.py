@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.exceptions import BadRequestError
 from app.harness.context_loaders import load_format_playbook
 
 
@@ -45,32 +46,48 @@ async def test_loads_generic_playbook():
 
 
 @pytest.mark.asyncio
-async def test_missing_format_detection_returns_fallback():
-    """Should return fallback text when format_detection.json not found."""
-    session_id = uuid.uuid4()
-    project_id = uuid.uuid4()
+@pytest.mark.parametrize("raw", [None, ""])
+async def test_missing_format_detection_is_fatal(raw):
     db = AsyncMock()
 
     with patch("app.harness.context_loaders.harness_repo") as mock_repo:
-        mock_repo.read_workspace_file = AsyncMock(return_value=None)
-        result = await load_format_playbook(db, project_id, session_id)
-
-    assert "playbook_content" in result
-    assert "No format-specific playbook" in result["playbook_content"]
+        mock_repo.read_workspace_file = AsyncMock(return_value=raw)
+        with pytest.raises(BadRequestError, match="format_detection.json missing"):
+            await load_format_playbook(db, uuid.uuid4(), uuid.uuid4())
 
 
 @pytest.mark.asyncio
-async def test_unknown_format_returns_fallback():
-    """Should return fallback text when format is not recognised."""
-    session_id = uuid.uuid4()
-    project_id = uuid.uuid4()
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "{not json",
+        json.dumps({"format": "procore", "confidence": 0.8, "markers_found": []}),
+        json.dumps({"format": "wbpro"}),
+    ],
+)
+async def test_invalid_format_detection_is_fatal(raw):
     db = AsyncMock()
 
-    format_json = json.dumps({"format": "procore", "confidence": 0.8, "markers_found": []})
+    with patch("app.harness.context_loaders.harness_repo") as mock_repo:
+        mock_repo.read_workspace_file = AsyncMock(return_value=raw)
+        with pytest.raises(BadRequestError, match="format_detection.json is invalid"):
+            await load_format_playbook(db, uuid.uuid4(), uuid.uuid4())
+
+
+def _no_playbook(fmt: str) -> str:
+    raise FileNotFoundError(fmt)
+
+
+@pytest.mark.asyncio
+async def test_valid_format_without_playbook_returns_fallback(monkeypatch, caplog):
+    db = AsyncMock()
+    monkeypatch.setattr("app.harness.context_loaders.load_playbook", _no_playbook)
+    format_json = json.dumps({"format": "generic", "confidence": 0.5, "markers_found": []})
 
     with patch("app.harness.context_loaders.harness_repo") as mock_repo:
         mock_repo.read_workspace_file = AsyncMock(return_value=format_json)
-        result = await load_format_playbook(db, project_id, session_id)
+        with caplog.at_level("WARNING", logger="app.harness.context_loaders"):
+            result = await load_format_playbook(db, uuid.uuid4(), uuid.uuid4())
 
-    assert "playbook_content" in result
     assert "No format-specific playbook" in result["playbook_content"]
+    assert any("No playbook found for format 'generic'" in r.getMessage() for r in caplog.records)

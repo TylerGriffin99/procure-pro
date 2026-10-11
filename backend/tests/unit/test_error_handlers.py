@@ -105,9 +105,9 @@ async def client():
         ("/integrity-no-sqlstate", 400, "integrity failed"),
         ("/data", 400, "invalid input syntax for type uuid"),
         ("/no-result", 404, "Resource not found"),
-        ("/db-down", 503, "connection refused"),
-        ("/db-down-empty", 503, "ConnectionResetError"),
-        ("/db-interface", 503, "connection lost"),
+        ("/db-down", 503, "Database unavailable"),
+        ("/db-down-empty", 503, "Database unavailable"),
+        ("/db-interface", 503, "Database unavailable"),
         ("/integrity-empty", 400, "Exception"),
         ("/upstream", 502, "Upstream service error (402)"),
         ("/boom", 500, "Internal server error"),
@@ -132,3 +132,9 @@ async def test_db_error_never_echoes_statement_or_params(client):
 async def test_500_never_echoes_exception_message(client):
     body = (await client.get("/boom")).text
     assert "hunter2" not in body and "KeyError" not in body
+
+
+async def test_db_unavailable_logs_driver_message_not_body(client, caplog):
+    resp = await client.get("/db-down")
+    assert "connection refused" not in resp.text
+    assert any("connection refused" in r.getMessage() for r in caplog.records)

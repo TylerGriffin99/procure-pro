@@ -21,7 +21,7 @@ from app.constants.values import (
     PDF_MEDIA_TYPE,
     XLSX_MEDIA_TYPE,
 )
-from app.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.exceptions import BadRequestError, ConflictError, NotFoundError, require
 from app.models.assessment import Assessment
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
@@ -87,9 +87,7 @@ def group_rows(assessment: Assessment, kind: AssessmentItemKind, parent_id: uuid
 async def draft_assessment(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, action: str
 ) -> Assessment:
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
+    assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
     if assessment.status != AssessmentStatus.draft:
         raise BadRequestError(f"Assessment must be in draft to {action}")
     return assessment
@@ -97,9 +95,7 @@ async def draft_assessment(
 
 async def create_assessment(db: AsyncSession, project_id: uuid.UUID, data: AssessmentCreate, user: User) -> Assessment:
     # Load claim with line items
-    claim = await claim_repo.get_by_id(db, data.claim_id)
-    if not claim:
-        raise NotFoundError("Claim not found")
+    claim = require(await claim_repo.get_by_id(db, data.claim_id), "Claim")
 
     # Get previously certified amount from latest finalised assessment
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
@@ -139,10 +135,7 @@ async def create_assessment(db: AsyncSession, project_id: uuid.UUID, data: Asses
 
 
 async def get_latest_by_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> Assessment:
-    assessment = await assessment_repo.get_latest_by_claim(db, claim_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
-    return assessment
+    return require(await assessment_repo.get_latest_by_claim(db, claim_id, project_id=project_id), "Assessment")
 
 
 async def get_aggregated_by_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> AssessmentAggregate:
@@ -154,9 +147,7 @@ async def get_aggregated_by_claim(db: AsyncSession, project_id: uuid.UUID, claim
 async def update_line_item(
     db: AsyncSession, assessment_id: uuid.UUID, line_item_id: uuid.UUID, data: AssessmentLineItemUpdate, user: User
 ) -> AssessmentLineItem:
-    item = await assessment_line_item_repo.get_by_id(db, line_item_id, assessment_id)
-    if not item:
-        raise NotFoundError("Line item not found")
+    item = require(await assessment_line_item_repo.get_by_id(db, line_item_id, assessment_id), "Line item")
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
@@ -180,9 +171,7 @@ async def get_aggregated_assessment(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID
 ) -> AssessmentAggregate:
     """Fetch assessment and return it with pre-aggregated groups."""
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
+    assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
     return (await aggregate_assessment(db, project_id, assessment)).aggregate
 
 
@@ -313,12 +302,8 @@ async def close_out_item(
 async def generate_assessment_export(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, format: ExportFormat = ExportFormat.pdf
 ) -> ExportFile:
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
-    project = await project_repo.get_by_id_with_retention(db, project_id)
-    if project is None:
-        raise NotFoundError("Project not found")
+    assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
+    project = require(await project_repo.get_by_id_with_retention(db, project_id), "Project")
     claim = await claim_repo.get_by_id(db, assessment.claim_id)
 
     aggregate = (await aggregate_assessment(db, project_id, assessment)).aggregate
@@ -354,9 +339,7 @@ def render_export(recommendation: PaymentRecommendation, format: ExportFormat) -
 async def update_variation_item(
     db: AsyncSession, assessment_id: uuid.UUID, item_id: uuid.UUID, data: AssessmentVariationUpdate, user: User
 ) -> AssessmentVariation:
-    item = await assessment_variation_repo.get_by_id(db, item_id, assessment_id)
-    if not item:
-        raise NotFoundError("Variation item not found")
+    item = require(await assessment_variation_repo.get_by_id(db, item_id, assessment_id), "Variation item")
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
@@ -370,18 +353,13 @@ async def update_variation_item(
     item.updated_by = user.id
 
     await db.commit()
-    refreshed = await assessment_variation_repo.get_by_id(db, item.id, assessment_id)
-    if refreshed is None:
-        raise NotFoundError("Variation item not found after update")
-    return refreshed
+    return require(await assessment_variation_repo.get_by_id(db, item.id, assessment_id), "Variation item")
 
 
 async def update_provisional_sum_item(
     db: AsyncSession, assessment_id: uuid.UUID, item_id: uuid.UUID, data: AssessmentProvisionalSumUpdate, user: User
 ) -> AssessmentProvisionalSum:
-    item = await assessment_provisional_sum_repo.get_by_id(db, item_id, assessment_id)
-    if not item:
-        raise NotFoundError("Provisional sum item not found")
+    item = require(await assessment_provisional_sum_repo.get_by_id(db, item_id, assessment_id), "Provisional sum item")
 
     if data.total_recommended is not None:
         item.total_recommended = data.total_recommended
@@ -395,16 +373,14 @@ async def update_provisional_sum_item(
     item.updated_by = user.id
 
     await db.commit()
-    refreshed = await assessment_provisional_sum_repo.get_by_id(db, item.id, assessment_id)
-    if refreshed is None:
-        raise NotFoundError("Provisional sum item not found after update")
-    return refreshed
+    return require(await assessment_provisional_sum_repo.get_by_id(db, item.id, assessment_id), "Provisional sum item")
 
 
 def find_source_row(assessment: Assessment, data: ReclassifyRequest) -> tuple[InterimItem, uuid.UUID]:
-    source = next((r for r in rows_of_kind(assessment, data.source_type) if r.id == data.source_item_id), None)
-    if not source:
-        raise NotFoundError("Source item not found")
+    source = require(
+        next((r for r in rows_of_kind(assessment, data.source_type) if r.id == data.source_item_id), None),
+        "Source item",
+    )
     if source.claim_line_item_id is None:
         raise BadRequestError("Cannot reclassify a history row without a linked claim line item")
     return source, source.claim_line_item_id
@@ -527,9 +503,7 @@ async def create_target_row(
 async def reclassify_item(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: ReclassifyRequest, user: User
 ) -> AssessmentAggregate:
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
+    assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
     source, claim_line_item_id = find_source_row(assessment, data)
     cli = await claim_line_item_repo.get_by_id(db, claim_line_item_id)
 
@@ -574,15 +548,11 @@ def sync_masters(aggregated: AggregatedAssessment, user: User) -> None:
 async def finalise_assessment(
     db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, user: User
 ) -> Assessment:
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
+    assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
     aggregated = await aggregate_assessment(db, project_id, assessment)
     sync_masters(aggregated, user)
 
-    project = await project_repo.get_by_id_with_retention(db, project_id)
-    if project is None:
-        raise NotFoundError("Project not found")
+    project = require(await project_repo.get_by_id_with_retention(db, project_id), "Project")
     await assessment_repo.update(
         db,
         assessment,
@@ -593,24 +563,17 @@ async def finalise_assessment(
     )
 
     await db.commit()
-    refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if refreshed is None:
-        raise NotFoundError("Assessment not found after finalise")
-    return refreshed
+    return require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
 
 
 async def revert_to_draft(db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, user: User) -> Assessment:
-    assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if not assessment:
-        raise NotFoundError("Assessment not found")
+    assessment = require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
     if assessment.status != AssessmentStatus.finalised:
         raise BadRequestError("Assessment is not finalised")
 
     # Block revert if a subsequent claim exists
     claims = await claim_repo.get_by_project(db, project_id)
-    current_claim = next((c for c in claims if c.id == assessment.claim_id), None)
-    if not current_claim:
-        raise NotFoundError("Associated claim not found")
+    current_claim = require(next((c for c in claims if c.id == assessment.claim_id), None), "Associated claim")
     if any(c.claim_number > current_claim.claim_number for c in claims):
         raise ConflictError("Cannot revert: a subsequent claim exists for this project")
 
@@ -619,7 +582,4 @@ async def revert_to_draft(db: AsyncSession, project_id: uuid.UUID, assessment_id
     assessment.updated_by = user.id
 
     await db.commit()
-    refreshed = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
-    if refreshed is None:
-        raise NotFoundError("Assessment not found after revert")
-    return refreshed
+    return require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")

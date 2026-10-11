@@ -6,7 +6,7 @@ from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.values import PDF_MEDIA_TYPE
-from app.exceptions import BadRequestError, NotFoundError
+from app.exceptions import BadRequestError, require
 from app.harness.models import HarnessType
 from app.models.claim import Claim
 from app.models.claim_line_item import ClaimLineItem
@@ -110,18 +110,14 @@ async def list_claims(db: AsyncSession, project_id: uuid.UUID) -> list[ClaimResp
 
 
 async def get_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> ClaimResponse:
-    claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
-    if not claim:
-        raise NotFoundError("Claim not found")
+    claim = require(await claim_repo.get_by_id(db, claim_id, project_id=project_id), "Claim")
     return ClaimResponse.from_claim(claim)
 
 
 async def update_claim(
     db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID, data: ClaimUpdate
 ) -> ClaimResponse:
-    claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
-    if not claim:
-        raise NotFoundError("Claim not found")
+    claim = require(await claim_repo.get_by_id(db, claim_id, project_id=project_id), "Claim")
 
     updates = data.model_dump(exclude_unset=True)
 
@@ -141,9 +137,7 @@ async def update_claim(
 
 
 async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.UUID) -> None:
-    claim = await claim_repo.get_by_id(db, claim_id, project_id=project_id)
-    if not claim:
-        raise NotFoundError("Claim not found")
+    claim = require(await claim_repo.get_by_id(db, claim_id, project_id=project_id), "Claim")
 
     # Capture the source Document behind this claim before its sessions are removed.
     claim_session = await harness_repo.get_session_by_claim(db, claim_id)

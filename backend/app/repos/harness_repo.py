@@ -72,6 +72,18 @@ async def complete_if_running(db: AsyncSession, session_id: uuid.UUID) -> bool:
     return row is not None
 
 
+async def fail_if_running(db: AsyncSession, session_id: uuid.UUID, error_message: str) -> bool:
+    result = await db.execute(
+        update(HarnessSession)
+        .where(HarnessSession.id == session_id, HarnessSession.status == HarnessSessionStatus.running)
+        .values(status=HarnessSessionStatus.failed, error_message=error_message)
+        .returning(HarnessSession.id)
+    )
+    row = result.first()
+    await db.flush()
+    return row is not None
+
+
 async def set_status(
     db: AsyncSession, session_id: uuid.UUID, status: HarnessSessionStatus, error_message: str | None = None
 ) -> None:

@@ -1,12 +1,16 @@
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from decimal import Decimal
 from typing import Final
 
 from app.constants.enums import ClaimItemType
 from app.harness.schemas import ParsedClaimItem, ParsedClaimSummary
-from app.schemas.claim_extraction import ClaimMetadata
-from app.utils.money import format_money
+from app.schemas.claim_extraction import ClaimMetadata, MoneyFormatWarning
+from app.utils.money import format_money, parse_money
+
+ITEM_MONEY_FIELDS: Final = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
+
+type MoneyCell = tuple[str | None, str, str | float | int | None]
 
 # "Claim No." and "Claim Number" are both in the wild; the other fields have one spelling each.
 _METADATA_PATTERNS: Final = {
@@ -38,3 +42,11 @@ def summary_totals(items: Sequence[ParsedClaimItem]) -> ParsedClaimSummary:
         revised_contract_total=format_money(revised_total),
         claimed_amount=format_money(claimed_total),
     )
+
+
+def money_warnings(cells: Iterable[MoneyCell]) -> list[MoneyFormatWarning]:
+    return [
+        MoneyFormatWarning(ref=ref, field=field, description=f"{field}: {warning}; recorded as 0")
+        for ref, field, raw in cells
+        if (warning := parse_money(raw).warning) is not None
+    ]

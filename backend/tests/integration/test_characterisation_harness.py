@@ -1,9 +1,13 @@
 """Characterisation: pins today's SSE error frames from harness_service.stream_events."""
 
+import asyncio
 import json
 
+import pytest
+
+from app.exceptions import BadRequestError
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
-from app.harness.phase_context import build_phase_context, render_system_prompt
+from app.harness.phase_context import build_phase_context
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import document_repo, harness_repo
 from app.services import harness_service
@@ -42,7 +46,7 @@ async def _pending_session(db):
     return user.id, project.id, session.id
 
 
-async def test_stream_events_today_emits_error_frames_then_done(db_session):
+async def test_stream_events_emits_classified_error_frames_then_done(db_session, caplog):
     user_id, project_id, session_id = await _pending_session(db_session)
 
     frames = [
@@ -53,7 +57,7 @@ async def test_stream_events_today_emits_error_frames_then_done(db_session):
     ]
 
     text = "".join(frames)
-    assert "RuntimeError: boom" in text
+    assert "boom" not in text
     assert text.endswith("data: [DONE]\n\n")
     events = [json.loads(f.removeprefix("data: ")) for f in frames[:-1]]
     assert [e["type"] for e in events] == [
@@ -62,21 +66,22 @@ async def test_stream_events_today_emits_error_frames_then_done(db_session):
         "harness_phase_error",
         "harness_error",
     ]
-    assert events[2]["error"] == "RuntimeError: boom"
-    assert events[3]["error"] == "RuntimeError: boom"
+    assert events[2]["error"] == "RuntimeError"
+    assert events[3]["error"] == "RuntimeError"
+    assert any(r.exc_info and "boom" in str(r.exc_info[1]) for r in caplog.records)
 
     db_session.expire_all()
     stored = await harness_repo.get_session(db_session, session_id)
     assert stored is not None
     assert stored.status == HarnessSessionStatus.failed
-    assert stored.error_message == "Phase 'broken' failed: RuntimeError: boom"
+    assert stored.error_message == "Phase 'broken' failed: RuntimeError"
 
 
 async def _claim_raises(db, session_id):
     raise RuntimeError("boom")
 
 
-async def test_stream_events_today_wraps_engine_level_error(db_session, monkeypatch):
+async def test_stream_events_wraps_engine_level_error(db_session, monkeypatch):
     user_id, project_id, session_id = await _pending_session(db_session)
     monkeypatch.setattr("app.harness.engine.harness_repo.try_claim_running", _claim_raises)
 
@@ -89,16 +94,63 @@ async def test_stream_events_today_wraps_engine_level_error(db_session, monkeypa
 
     assert frames[-1] == "data: [DONE]\n\n"
     [event] = [json.loads(f.removeprefix("data: ")) for f in frames[:-1]]
-    assert event == {"type": "harness_error", "session_id": str(session_id), "error": "RuntimeError: boom"}
+    assert event == {"type": "harness_error", "session_id": str(session_id), "error": "RuntimeError"}
 
     db_session.expire_all()
     stored = await harness_repo.get_session(db_session, session_id)
     assert stored is not None
     assert stored.status == HarnessSessionStatus.failed
-    assert stored.error_message == "RuntimeError: boom"
+    assert stored.error_message == "RuntimeError"
 
 
-# --- phase context fallback against the real repo (D7 flips to pytest.raises) ---
+# --- a cancelled stream does not leave the session running (hunter M6) ---
+
+
+def _hanging_definition(started: asyncio.Event) -> HarnessDefinition:
+    async def hang(**_):
+        started.set()
+        await asyncio.Event().wait()
+
+    return HarnessDefinition(
+        harness_type=HarnessType.CLAIM_PARSE,
+        display_name="Hanging",
+        description="First phase never returns",
+        phases=[
+            PhaseDefinition(
+                name="hang",
+                description="Waits forever",
+                phase_type=PhaseType.PROGRAMMATIC,
+                workspace_output="never.json",
+                executor=hang,
+            )
+        ],
+    )
+
+
+async def test_cancelled_stream_marks_session_failed(db_session):
+    user_id, project_id, session_id = await _pending_session(db_session)
+    started = asyncio.Event()
+
+    async def consume():
+        async for _ in harness_service.stream_events(
+            definition=_hanging_definition(started), session_id=session_id, user_id=user_id, project_id=project_id
+        ):
+            pass
+
+    task = asyncio.create_task(consume())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    db_session.expire_all()
+    stored = await harness_repo.get_session(db_session, session_id)
+    assert stored is not None
+    assert stored.status == HarnessSessionStatus.failed
+    assert stored.error_message == "Stream cancelled"
+
+
+# --- phase context: a missing or empty workspace input is fatal (D7 applied) ---
 
 
 def _phase_reading(path: str) -> PhaseDefinition:
@@ -112,24 +164,21 @@ def _phase_reading(path: str) -> PhaseDefinition:
     )
 
 
-async def test_phase_context_today_substitutes_file_not_found_for_missing_file(db_session):
+async def test_phase_context_missing_file_is_fatal(db_session):
     _, project_id, session_id = await _pending_session(db_session)
     phase = _phase_reading("parsed_claim.json")
 
     assert await harness_repo.read_workspace_file(db_session, session_id, "parsed_claim.json") is None
-    ctx = await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)
-
-    assert ctx["workspace_parsed_claim"] == "FILE NOT FOUND"
-    assert render_system_prompt(phase, ctx) == "Items: FILE NOT FOUND"
+    with pytest.raises(BadRequestError, match="Workspace file parsed_claim.json missing for phase match"):
+        await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)
 
 
-async def test_phase_context_today_substitutes_file_not_found_for_empty_file(db_session):
+async def test_phase_context_empty_file_is_fatal(db_session):
     _, project_id, session_id = await _pending_session(db_session)
     await harness_repo.write_workspace_file(db_session, session_id, "parsed_claim.json", "")
     await db_session.commit()
     phase = _phase_reading("parsed_claim.json")
 
     assert await harness_repo.read_workspace_file(db_session, session_id, "parsed_claim.json") == ""
-    ctx = await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)
-
-    assert render_system_prompt(phase, ctx) == "Items: FILE NOT FOUND"
+    with pytest.raises(BadRequestError, match="Workspace file parsed_claim.json missing for phase match"):
+        await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)

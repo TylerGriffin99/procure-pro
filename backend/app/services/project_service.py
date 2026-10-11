@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import WBSLevel
-from app.exceptions import NotFoundError, UnprocessableError
+from app.exceptions import UnprocessableError, require
 from app.models.project import Project
 from app.models.user import User
 from app.models.wbs_code import WBSCode
@@ -91,9 +91,7 @@ async def list_projects(db: AsyncSession):
 
 
 async def get_project(db: AsyncSession, project_id: uuid.UUID):
-    project = await project_repo.get_by_id(db, project_id)
-    if not project:
-        raise NotFoundError("Project not found")
+    project = require(await project_repo.get_by_id(db, project_id), "Project")
 
     # Populate in_use flag for each WBS code (single batch query)
     all_wbs = await wbs_code_repo.get_by_project(db, project_id)
@@ -105,9 +103,7 @@ async def get_project(db: AsyncSession, project_id: uuid.UUID):
 
 
 async def update_project(db: AsyncSession, project_id: uuid.UUID, data: ProjectUpdate, user: User) -> Project:
-    project = await project_repo.get_by_id(db, project_id)
-    if not project:
-        raise NotFoundError("Project not found")
+    project = require(await project_repo.get_by_id(db, project_id), "Project")
 
     update_data = data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -120,9 +116,7 @@ async def update_project(db: AsyncSession, project_id: uuid.UUID, data: ProjectU
 
 
 async def delete_project(db: AsyncSession, project_id: uuid.UUID) -> None:
-    project = await project_repo.get_by_id(db, project_id)
-    if not project:
-        raise NotFoundError("Project not found")
+    project = require(await project_repo.get_by_id(db, project_id), "Project")
 
     await harness_repo.delete_sessions_by_project(db, project_id)
     await assessment_repo.delete_by_project(db, project_id)
@@ -135,9 +129,7 @@ async def delete_project(db: AsyncSession, project_id: uuid.UUID) -> None:
 
 
 async def create_wbs_code(db: AsyncSession, project_id: uuid.UUID, data: WBSCodeCreate, user: User) -> WBSCode:
-    project = await project_repo.get_by_id(db, project_id)
-    if not project:
-        raise NotFoundError("Project not found")
+    require(await project_repo.get_by_id(db, project_id), "Project")
 
     existing = await wbs_code_repo.get_by_project(db, project_id)
     if any(w.code == data.code for w in existing):
@@ -166,18 +158,18 @@ async def create_wbs_code(db: AsyncSession, project_id: uuid.UUID, data: WBSCode
     )
     await db.commit()
 
-    refreshed = await wbs_code_repo.get_by_id_with_children(db, wbs.id)
-    if refreshed is None:
-        raise NotFoundError("WBS code not found after create")
-    return refreshed
+    return require(await wbs_code_repo.get_by_id_with_children(db, wbs.id), "WBS code")
+
+
+def require_in_project(wbs: WBSCode | None, project_id: uuid.UUID) -> WBSCode:
+    # A WBS code of another project is reported as missing, the same as an unknown id.
+    return require(wbs if wbs is not None and wbs.project_id == project_id else None, "WBS code")
 
 
 async def update_wbs_code(
     db: AsyncSession, project_id: uuid.UUID, wbs_code_id: uuid.UUID, data: WBSCodeUpdate, user: User
 ) -> WBSCode:
-    wbs = await wbs_code_repo.get_by_id(db, wbs_code_id)
-    if not wbs or wbs.project_id != project_id:
-        raise NotFoundError("WBS code not found")
+    wbs = require_in_project(await wbs_code_repo.get_by_id(db, wbs_code_id), project_id)
 
     update_data = data.model_dump(exclude_unset=True)
     if not update_data:
@@ -201,7 +193,4 @@ async def update_wbs_code(
     wbs = await wbs_code_repo.update(db, wbs, **update_data)
     await db.commit()
 
-    refreshed = await wbs_code_repo.get_by_id_with_children(db, wbs.id)
-    if refreshed is None:
-        raise NotFoundError("WBS code not found after update")
-    return refreshed
+    return require(await wbs_code_repo.get_by_id_with_children(db, wbs.id), "WBS code")

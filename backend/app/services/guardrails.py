@@ -11,6 +11,8 @@ import unicodedata
 from io import BytesIO
 
 import pdfplumber
+from pdfminer.psexceptions import PSException
+from pdfplumber.utils.exceptions import MalformedPDFException, PdfminerException
 
 from app.constants.enums import ViolationCategory
 from app.exceptions import BadRequestError
@@ -104,7 +106,7 @@ def screen_pdf(content: bytes) -> None:
     """
     try:
         text = extract_screenable_text(content)
-    except Exception as e:
+    except (PdfminerException, MalformedPDFException, PSException, ValueError) as e:
         logger.warning("Rejected upload: PDF could not be read for screening", exc_info=True)
         raise BadRequestError("Could not read the PDF to screen it") from e
 

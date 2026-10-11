@@ -9,6 +9,7 @@ from io import BytesIO
 import pytest
 from fastapi import Depends, FastAPI, UploadFile
 from httpx import ASGITransport, AsyncClient
+from pdfplumber.utils.exceptions import PdfminerException
 from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
 from starlette.datastructures import Headers
@@ -16,7 +17,7 @@ from starlette.datastructures import Headers
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.error_handlers import register
-from app.exceptions import BadRequestError
+from app.exceptions import BadRequestError, NotFoundError, UnauthorizedError
 from app.harness.engine import describe_error
 from app.models.user import User
 from app.schemas.claim import ClaimCreate, ClaimLineItemCreate
@@ -61,6 +62,18 @@ async def _any_project(db, project_id):
 
 def _raise_os_error(content: bytes) -> str:
     raise OSError("disk read failed")
+
+
+def _raise_memory_error(content: bytes) -> str:
+    raise MemoryError
+
+
+def _raise_parser_error(content: bytes) -> str:
+    raise PdfminerException("No /Root object! - Is this really a PDF?")
+
+
+def _raise_zero_pages(content: bytes) -> str:
+    raise ValueError("PDF has zero pages")
 
 
 def build_app() -> FastAPI:
@@ -115,36 +128,50 @@ def empty_wbs_repo(monkeypatch):
     monkeypatch.setattr(project_service.wbs_code_repo, "get_by_project", _no_existing_wbs)
 
 
-# --- non-PDF fault during upload screening (D: 400 -> 500 for non-parser faults) ---
+# --- non-PDF fault during upload screening (D13 applied: 400 -> 500 for non-parser faults) ---
 
 
-async def test_upload_non_parser_fault_today_is_bad_request(unreadable_pdf):
-    with pytest.raises(BadRequestError) as exc_info:
+async def test_upload_non_parser_fault_propagates(unreadable_pdf):
+    with pytest.raises(OSError, match="disk read failed"):
         await claim_service.create_document_from_upload(None, PROJECT_ID, _pdf_upload())  # type: ignore[arg-type]
-    assert exc_info.value.detail == "Could not read the PDF to screen it"
 
 
-async def test_upload_non_parser_fault_today_returns_400(client, unreadable_pdf):
+async def test_upload_non_parser_fault_returns_500(client, unreadable_pdf, caplog):
+    resp = await client.get("/upload")
+    assert resp.status_code == 500
+    assert resp.json() == {"detail": "Internal server error"}
+    assert _unhandled_cause(caplog) is OSError
+
+
+async def test_upload_memory_error_returns_500(client, monkeypatch, caplog):
+    monkeypatch.setattr(guardrails, "extract_screenable_text", _raise_memory_error)
+    resp = await client.get("/upload")
+    assert resp.status_code == 500
+    assert _unhandled_cause(caplog) is MemoryError
+
+
+@pytest.mark.parametrize("parser_fault", [_raise_parser_error, _raise_zero_pages])
+async def test_upload_parser_fault_returns_400(client, monkeypatch, parser_fault):
+    monkeypatch.setattr(guardrails, "extract_screenable_text", parser_fault)
     resp = await client.get("/upload")
     assert resp.status_code == 400
     assert resp.json() == {"detail": "Could not read the PDF to screen it"}
 
 
-# --- malformed token sub (D: 500 -> 401) ---
+# --- malformed token sub (D12 applied: 500 -> 401) ---
 
 
-async def test_malformed_sub_today_raises_value_error():
+async def test_malformed_sub_raises_unauthorized():
     token = create_access_token({"sub": "not-a-uuid"})
-    with pytest.raises(ValueError, match="badly formed hexadecimal UUID string"):
+    with pytest.raises(UnauthorizedError, match="Invalid token"):
         await get_current_user(token, None)  # type: ignore[arg-type]
 
 
-async def test_malformed_sub_today_returns_500(client, caplog):
+async def test_malformed_sub_returns_401(client):
     token = create_access_token({"sub": "not-a-uuid"})
     resp = await client.get("/me", headers={"Authorization": f"Bearer {token}"})
-    assert resp.status_code == 500
-    assert resp.json() == {"detail": "Internal server error"}
-    assert _unhandled_cause(caplog) is ValueError
+    assert resp.status_code == 401
+    assert resp.json() == {"detail": "Invalid token"}
 
 
 # --- invalid WBS level (D12 applied: 500 -> 422) ---
@@ -173,10 +200,12 @@ async def test_claim_invalid_item_type_returns_422(client):
     assert resp.status_code == 422
 
 
-# --- describe_error echoes the SQL statement (D2 flips to absent) ---
+# --- describe_error (D2 applied: type name only; AppError adds its safe detail) ---
 
 
-def test_describe_error_today_echoes_sql_statement():
-    text = describe_error(OperationalError("SELECT 1", {}, Exception("conn refused")))
-    assert text.startswith("OperationalError: (builtins.Exception) conn refused")
-    assert "SELECT 1" in text
+def test_describe_error_omits_sql_statement_and_driver_text():
+    assert describe_error(OperationalError("SELECT 1", {}, Exception("conn refused"))) == "OperationalError"
+
+
+def test_describe_error_keeps_app_error_detail():
+    assert describe_error(NotFoundError("Claim not found")) == "NotFoundError: Claim not found"

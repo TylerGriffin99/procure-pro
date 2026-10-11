@@ -21,7 +21,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     user_id = payload.get("sub")
     if user_id is None:
         raise UnauthorizedError("Invalid token")
-    user = await user_repo.get_by_id(db, uuid.UUID(user_id))
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError as e:
+        raise UnauthorizedError("Invalid token") from e
+    user = await user_repo.get_by_id(db, user_uuid)
     if user is None:
         raise UnauthorizedError("User not found")
     return user

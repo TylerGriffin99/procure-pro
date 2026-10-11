@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import WBSLevel, WorkspaceFile
+from app.exceptions import BadRequestError
 from app.harness.prompts import load_playbook
 from app.harness.schemas import FormatDetection
 from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
@@ -76,14 +77,11 @@ async def load_format_playbook(db: AsyncSession, project_id: uuid.UUID, session_
     """Load format-specific playbook based on format_detection.json."""
     raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.format_detection)
     if not raw:
-        logger.warning("format_detection.json not found — using fallback playbook")
-        return {"playbook_content": FALLBACK_PLAYBOOK}
-
+        raise BadRequestError(f"{WorkspaceFile.format_detection} missing")
     try:
         fmt = FormatDetection.model_validate_json(raw).format
-    except ValidationError:
-        logger.warning("format_detection.json is invalid — using fallback playbook", exc_info=True)
-        return {"playbook_content": FALLBACK_PLAYBOOK}
+    except ValidationError as e:
+        raise BadRequestError(f"{WorkspaceFile.format_detection} is invalid") from e
 
     try:
         playbook_text = load_playbook(fmt)

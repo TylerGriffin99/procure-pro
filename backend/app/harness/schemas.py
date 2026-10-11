@@ -12,17 +12,15 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, MatcherName, VpsKind
 from app.schemas.assessment_aggregate import AssessmentAggregate
 from app.schemas.base import StrictModel
-from app.schemas.claim_extraction import ClaimMetadata
-
-_Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
-_ItemIndex = Annotated[int, Field(ge=0)]
+from app.schemas.claim_extraction import ClaimMetadata, MoneyFormatWarning
+from app.schemas.common import Confidence, ItemIndex
 
 # Decimal-ish fields arrive as strings ("$1,234.56", "(500.00)") or numbers;
 # downstream normalisation (`validate_and_normalise`) handles the conversion.
@@ -35,7 +33,7 @@ class ParsedClaimItem(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    item_index: _ItemIndex
+    item_index: ItemIndex
     ref_code: str = ""
     description: str = ""
     item_type: ClaimItemType = ClaimItemType.contract_work
@@ -72,6 +70,8 @@ class ParsedClaim(BaseModel):
     metadata: ParsedClaimMetadata = Field(default_factory=ParsedClaimMetadata)
     line_items: list[ParsedClaimItem]
     summary: ParsedClaimSummary = Field(default_factory=ParsedClaimSummary)
+    # Malformed cells seen before the extractor normalised them to "0.00"; create_records flags each one.
+    format_warnings: list[MoneyFormatWarning] = Field(default_factory=list)
 
 
 class RawPage(StrictModel):
@@ -169,8 +169,8 @@ class JevAnswer(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    choice: str | None = None
-    confidence: float = 0.0
+    choice: str
+    confidence: Confidence
 
 
 class JevUsage(BaseModel):
@@ -194,23 +194,23 @@ class WbsMatch(BaseModel):
     Serialized list -> ``wbs_matches.json``.
     """
 
-    item_index: _ItemIndex
+    item_index: ItemIndex
     wbs_code_id: str | None = None
     wbs_code: str
     wbs_description: str = ""
     parent_code: str = ""
     is_new: bool = False
     # Required and range-checked: an omitted confidence must not silently read as 0.0.
-    confidence: _Confidence
+    confidence: Confidence
 
 
 class VpsMatch(BaseModel):
     """One variation / provisional-sum match. Serialized list -> ``vps_matches.json``."""
 
-    item_index: _ItemIndex
+    item_index: ItemIndex
     item_type: VpsKind
     matched_id: str | None = None
-    confidence: _Confidence
+    confidence: Confidence
 
 
 class Subcat(StrictModel):
@@ -238,14 +238,20 @@ class JevTuning(StrictModel):
 
 
 class ItemDecision(StrictModel):
-    """One Jev answer for one line item. ``failed`` means the call failed non-fatally
-    and the caller should treat the item as unmatched."""
+    """One Jev answer for one line item. ``error`` is the non-fatal failure that left the item
+    unmatched; it is kept so an all-failed phase can report and chain it."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     item_index: int
     choice: str | None = None
     confidence: float = 0.0
     input_tokens: int = 0
-    failed: bool = False
+    error: Exception | None = Field(default=None, exclude=True)
+
+    @property
+    def failed(self) -> bool:
+        return self.error is not None
 
 
 class MatchOutcome(StrictModel):

@@ -11,8 +11,9 @@ from typing import Final
 
 from app.constants.enums import ClaimItemType
 from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
-from app.harness.extract_shared import extract_metadata, summary_totals
+from app.harness.extract_shared import ITEM_MONEY_FIELDS, extract_metadata, money_warnings, summary_totals
 from app.harness.schemas import ParsedClaim, ParsedClaimItem, ParsedClaimMetadata, RawExtraction, RawPage
+from app.schemas.claim_extraction import MoneyFormatWarning
 from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,16 @@ def detect_sections(pages: Sequence[RawPage]) -> dict[int, str]:
 
 
 def money_cells(cells: Sequence[str | None]) -> dict[str, str]:
-    fields = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
-    return {field: format_money(parse_money(cell).value) for field, cell in zip(fields, cells, strict=True)}
+    return {field: format_money(parse_money(cell).value) for field, cell in zip(ITEM_MONEY_FIELDS, cells, strict=True)}
+
+
+def money_slice(row: list[str | None], section: str) -> list[str | None]:
+    return row[3:9] if section == SECTION_VARIATION else row[2:8]
+
+
+def row_warnings(item: ParsedClaimItem, row: list[str | None], section: str) -> list[MoneyFormatWarning]:
+    cells = zip(ITEM_MONEY_FIELDS, money_slice(row, section), strict=True)
+    return money_warnings((item.ref_code, field, cell) for field, cell in cells)
 
 
 def map_row_to_item(row: list[str | None], section: str, item_index: int) -> ParsedClaimItem | None:
@@ -60,19 +69,18 @@ def map_row_to_item(row: list[str | None], section: str, item_index: int) -> Par
         if ncols != VARIATION_COLUMNS:
             logger.warning("Variation row has %d cols (expected %d), skipping", ncols, VARIATION_COLUMNS)
             return None
-        item_type, money = ClaimItemType.variation, row[3:9]
+        item_type = ClaimItemType.variation
     else:
         if ncols != STANDARD_COLUMNS:
             logger.warning("%s row has %d cols (expected %d), skipping", section, ncols, STANDARD_COLUMNS)
             return None
         item_type = ClaimItemType.provisional_sum if section == SECTION_PS else ClaimItemType.contract_work
-        money = row[2:8]
     return ParsedClaimItem(
         item_index=item_index,
         ref_code=str(row[0] or "").strip(),
         description=str(row[1] or "").strip(),
         item_type=item_type,
-        **money_cells(money),
+        **money_cells(money_slice(row, section)),
     )
 
 
@@ -113,10 +121,12 @@ def page_rows(raw_extraction: RawExtraction) -> list[tuple[list[str | None], str
 def parse_wbpro(raw_extraction: RawExtraction) -> ParsedClaim:
     metadata = extract_metadata(raw_extraction.all_text())
     line_items: list[ParsedClaimItem] = []
+    format_warnings: list[MoneyFormatWarning] = []
     for row, section in page_rows(raw_extraction):
         item = map_row_to_item(row, section, len(line_items))
         if item is not None:
             line_items.append(item)
+            format_warnings += row_warnings(item, row, section)
 
     logger.info(
         "WBPRO parse: %d line items (%d contract, %d variation, %d PS)",
@@ -129,4 +139,5 @@ def parse_wbpro(raw_extraction: RawExtraction) -> ParsedClaim:
         metadata=ParsedClaimMetadata(**{key: value or "" for key, value in metadata.model_dump().items()}),
         line_items=line_items,
         summary=summary_totals(line_items),
+        format_warnings=format_warnings,
     )

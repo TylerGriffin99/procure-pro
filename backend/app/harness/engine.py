@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.llm_client import LlmClient
 from app.constants.enums import HarnessSessionStatus, MatcherName, PhaseStatus
+from app.exceptions import AppError
 from app.harness.models import (
     HarnessCompleteEvent,
     HarnessDefinition,
@@ -36,9 +37,10 @@ logger = logging.getLogger(__name__)
 
 
 def describe_error(exc: BaseException) -> str:
-    """``"<ExceptionType>: <message>"``, or just the type name when the message is empty."""
-    text = str(exc)
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+    """Type name, plus ``detail`` for an AppError only: ``str(exc)`` can carry SQL or URLs, so it is logged."""
+    if isinstance(exc, AppError):
+        return f"{type(exc).__name__}: {exc.detail}"
+    return type(exc).__name__
 
 
 async def mark_session_failed(db: AsyncSession, session_id: uuid.UUID, error: str) -> None:

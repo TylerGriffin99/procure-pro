@@ -6,7 +6,16 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from app.constants import MatcherName
-from app.harness.schemas import GenericExtraction, ItemDecision, MatchOutcome, Subcat, VpsMatch, VpsRecord, WbsMatch
+from app.harness.schemas import (
+    GenericExtraction,
+    ItemDecision,
+    JevAnswer,
+    MatchOutcome,
+    Subcat,
+    VpsMatch,
+    VpsRecord,
+    WbsMatch,
+)
 
 
 class TestWbsMatch:
@@ -100,5 +109,18 @@ def test_subcat_and_vps_record_reject_unknown_fields():
 
 
 def test_item_decision_failed_default():
-    d = ItemDecision(item_index=3, failed=True)
+    d = ItemDecision(item_index=3, error=KeyError("item_3"))
+    assert d.failed
     assert d.choice is None and d.confidence == 0.0 and d.input_tokens == 0
+
+
+def test_item_decision_without_error_is_not_failed():
+    assert not ItemDecision(item_index=3, choice="x", confidence=0.5).failed
+
+
+@pytest.mark.parametrize(
+    "answer", [{"selected": "x", "confidence": 0.5}, {"choice": "x"}, {"choice": "x", "confidence": -0.1}]
+)
+def test_jev_answer_requires_choice_and_unit_confidence(answer):
+    with pytest.raises(ValidationError):
+        JevAnswer.model_validate(answer)

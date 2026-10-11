@@ -11,7 +11,7 @@ import string
 
 from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimFormat, ClaimItemType
-from app.harness.extract_shared import summary_totals
+from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings, summary_totals
 from app.harness.prompts import load_playbook, load_prompt
 from app.harness.schemas import (
     GenericExtraction,
@@ -23,11 +23,12 @@ from app.harness.schemas import (
     ParsedClaimSummary,
     RawExtraction,
 )
+from app.schemas.claim_extraction import MoneyFormatWarning
 from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
 
-_DECIMAL_FIELDS = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
+SUMMARY_FIELDS = ("original_contract_total", "revised_contract_total", "claimed_amount")
 
 
 def money_text(value: str | float | int | None) -> str:
@@ -48,12 +49,27 @@ def normalise_item(index: int, raw_item: GenericLineItem) -> ParsedClaimItem:
         ref_code=raw_item.ref_code or "",
         description=raw_item.description or "",
         item_type=ClaimItemType(item_type),
-        **{field: money_text(getattr(raw_item, field)) for field in _DECIMAL_FIELDS},
+        **{field: money_text(getattr(raw_item, field)) for field in ITEM_MONEY_FIELDS},
     )
 
 
+def uses_raw_summary(raw_summary: GenericSummary) -> bool:
+    return all(getattr(raw_summary, k) for k in SUMMARY_FIELDS)
+
+
+def extraction_warnings(extraction: GenericExtraction) -> list[MoneyFormatWarning]:
+    cells: list[MoneyCell] = [
+        (item.ref_code or "", field, getattr(item, field))
+        for item in extraction.line_items
+        for field in ITEM_MONEY_FIELDS
+    ]
+    if uses_raw_summary(extraction.summary):
+        cells += [(None, field, getattr(extraction.summary, field)) for field in SUMMARY_FIELDS]
+    return money_warnings(cells)
+
+
 def normalise_summary(raw_summary: GenericSummary, line_items: list[ParsedClaimItem]) -> ParsedClaimSummary:
-    if not all(getattr(raw_summary, k) for k in GenericSummary.model_fields):
+    if not uses_raw_summary(raw_summary):
         return summary_totals(line_items)
     return ParsedClaimSummary(
         original_contract_total=money_text(raw_summary.original_contract_total),
@@ -75,7 +91,10 @@ def validate_and_normalise(extraction: GenericExtraction) -> ParsedClaim:
         payment_due=meta.payment_due or "",
     )
     return ParsedClaim(
-        metadata=metadata, line_items=line_items, summary=normalise_summary(extraction.summary, line_items)
+        metadata=metadata,
+        line_items=line_items,
+        summary=normalise_summary(extraction.summary, line_items),
+        format_warnings=extraction_warnings(extraction),
     )
 
 

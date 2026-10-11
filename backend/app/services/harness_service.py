@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 
+import anyio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.constants.enums import HarnessSessionStatus
 from app.database import async_session
-from app.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.exceptions import BadRequestError, ConflictError, require
 from app.harness.definitions import HARNESS_DEFINITIONS
 from app.harness.engine import describe_error, mark_session_failed
 from app.harness.factory import build_engine
@@ -42,11 +43,13 @@ def coerce_harness_type(value: str) -> HarnessType | None:
         return None
 
 
+def require_owned(session: HarnessSession | None, user_id: uuid.UUID) -> HarnessSession:
+    # A foreign session is reported as missing (404), not forbidden, so session ids cannot be probed.
+    return require(session if session is not None and session.user_id == user_id else None, "Session")
+
+
 async def get_owned_session(db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID) -> HarnessSession:
-    session = await harness_repo.get_session(db, session_id)
-    if not session or session.user_id != user_id:
-        raise NotFoundError("Session not found")
-    return session
+    return require_owned(await harness_repo.get_session(db, session_id), user_id)
 
 
 async def get_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> HarnessSessionResponse:
@@ -69,6 +72,21 @@ async def prepare_stream(
     return session, definition
 
 
+async def mark_stream_cancelled(db: AsyncSession, session_id: uuid.UUID) -> None:
+    """Only a still-running session is failed, so a disconnect after completion leaves it completed."""
+    await db.rollback()
+    await harness_repo.fail_if_running(db, session_id, "Stream cancelled")
+    await db.commit()
+
+
+async def record_stream_failure(step: Awaitable[None], session_id: uuid.UUID) -> None:
+    try:
+        await step
+    except Exception:
+        # Best effort (D5): if the status write itself fails the session stays `running`; there is no reaper.
+        logger.exception("harness_stream.set_failed_error session=%s", session_id)
+
+
 async def stream_events(
     *, definition: HarnessDefinition, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID
 ) -> AsyncGenerator[str, None]:
@@ -88,13 +106,15 @@ async def stream_events(
             yield "data: [DONE]\n\n"
         except Exception as e:
             logger.exception("harness_stream.error")
-            try:
-                await mark_session_failed(engine_db, session_id, describe_error(e))
-            except Exception:
-                # Best-effort status update; the stream error below is the primary signal.
-                logger.exception("harness_stream.set_failed_error")
+            await record_stream_failure(mark_session_failed(engine_db, session_id, describe_error(e)), session_id)
             yield sse(HarnessErrorEvent(session_id=session_id, error=describe_error(e)))
             yield "data: [DONE]\n\n"
+        except BaseException:
+            # Client disconnect (CancelledError) or generator close (GeneratorExit): no frame can be sent.
+            logger.warning("harness_stream.cancelled session=%s", session_id)
+            with anyio.CancelScope(shield=True):
+                await record_stream_failure(mark_stream_cancelled(engine_db, session_id), session_id)
+            raise
 
 
 async def cancel_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> HarnessCancelResponse:
@@ -136,7 +156,5 @@ async def read_workspace_file(
     db: AsyncSession, session_id: uuid.UUID, user: User, file_path: str
 ) -> WorkspaceFileContentResponse:
     await get_owned_session(db, session_id, user.id)
-    content = await harness_repo.read_workspace_file(db, session_id, file_path)
-    if content is None:
-        raise NotFoundError(f"File not found: {file_path}")
+    content = require(await harness_repo.read_workspace_file(db, session_id, file_path), f"File {file_path}")
     return WorkspaceFileContentResponse(file_path=file_path, content=content)

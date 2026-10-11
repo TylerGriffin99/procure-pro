@@ -80,7 +80,7 @@ async def handle_db_unavailable(request: Request, exc: Exception) -> JSONRespons
         message,
         exc_info=exc,
     )
-    return detail_response(503, message)
+    return detail_response(503, "Database unavailable")
 
 
 async def handle_upstream_error(request: Request, exc: Exception) -> JSONResponse:
