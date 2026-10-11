@@ -26,7 +26,7 @@ def test_parse_percentage_blank_is_zero_without_warning(raw):
     assert parsed.warning is None
 
 
-@pytest.mark.parametrize("raw", ["abc %", "2.5O %", "%%"])
+@pytest.mark.parametrize("raw", ["abc %", "2.5O %", "%%", "%", " % "])
 def test_parse_percentage_malformed_is_zero_with_warning(raw):
     parsed = parse_percentage(raw)
     assert parsed.value == Decimal("0")

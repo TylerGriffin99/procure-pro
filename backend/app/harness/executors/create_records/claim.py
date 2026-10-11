@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import FlagSeverity, FlagType
 from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
-from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings
+from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings, parse_cell
 from app.harness.schemas import (
     ClaimLinks,
     FlagSpec,
@@ -73,7 +73,7 @@ def claim_line_values(index: int, item: ParsedClaimItem, links: ClaimLinks, user
         ref_code=item.ref_code,
         description=item.description,
         contract_value=money(item.contract_value),
-        percentage=money(item.percentage),
+        percentage=parse_cell("percentage", item.percentage).value,
         ptd=money(item.ptd),
         previous=money(item.previous),
         current=money(item.current),
