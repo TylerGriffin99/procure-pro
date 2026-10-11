@@ -12,7 +12,7 @@ import string
 from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimFormat, ClaimItemType
 from app.exceptions import ExternalServiceError
-from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings, summary_totals
+from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings, parse_cell, summary_totals
 from app.harness.prompts import load_playbook, load_prompt
 from app.harness.schemas import (
     GenericExtraction,
@@ -25,15 +25,15 @@ from app.harness.schemas import (
     RawExtraction,
 )
 from app.schemas.claim_extraction import ParseWarning
-from app.utils.money import format_money, parse_money
+from app.utils.money import format_money
 
 logger = logging.getLogger(__name__)
 
 SUMMARY_FIELDS = ("original_contract_total", "revised_contract_total", "claimed_amount")
 
 
-def money_text(value: str | float | int | None) -> str:
-    parsed = parse_money(value)
+def money_text(value: str | float | int | None, *, field: str = "amount") -> str:
+    parsed = parse_cell(field, value)
     if parsed.warning is not None:
         # A non-empty value we couldn't parse is bad data, not a true zero — surface it.
         logger.warning("Could not parse decimal value %r; defaulting to 0.00", value)
@@ -47,7 +47,7 @@ def normalise_item(index: int, raw_item: GenericLineItem) -> ParsedClaimItem:
         ref_code=raw_item.ref_code or "",
         description=raw_item.description or "",
         item_type=ClaimItemType(raw_item.item_type) if known else ClaimItemType.contract_work,
-        **{field: money_text(getattr(raw_item, field)) for field in ITEM_MONEY_FIELDS},
+        **{field: money_text(getattr(raw_item, field), field=field) for field in ITEM_MONEY_FIELDS},
     )
 
 

@@ -11,10 +11,10 @@ from typing import Final
 
 from app.constants.enums import ClaimItemType
 from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
-from app.harness.extract_shared import ITEM_MONEY_FIELDS, extract_metadata, money_warnings, summary_totals
+from app.harness.extract_shared import ITEM_MONEY_FIELDS, extract_metadata, money_warnings, parse_cell, summary_totals
 from app.harness.schemas import ParsedClaim, ParsedClaimItem, ParsedClaimMetadata, RawExtraction, RawPage
 from app.schemas.claim_extraction import DroppedRow, ParseWarning
-from app.utils.money import format_money, parse_money
+from app.utils.money import format_money
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,9 @@ def detect_sections(pages: Sequence[RawPage]) -> dict[int, str]:
 
 
 def money_cells(cells: Sequence[str | None]) -> dict[str, str]:
-    return {field: format_money(parse_money(cell).value) for field, cell in zip(ITEM_MONEY_FIELDS, cells, strict=True)}
+    return {
+        field: format_money(parse_cell(field, cell).value) for field, cell in zip(ITEM_MONEY_FIELDS, cells, strict=True)
+    }
 
 
 def money_slice(row: list[str | None], section: str) -> list[str | None]:

@@ -20,6 +20,15 @@ def parse_money(raw: str | int | float | Decimal | None, *, blank: str = BLANK_C
     return MoneyParse(value=value)
 
 
+def parse_percentage(raw: str | int | float | Decimal | None, *, blank: str = BLANK_CELL) -> MoneyParse:
+    # A percentage cell reads "2.50 %"; the stored value is the percent number (2.50), matching the aggregator.
+    text = raw.strip().removesuffix("%").strip() if isinstance(raw, str) else raw
+    parsed = parse_money(text, blank=blank)
+    if parsed.warning is not None:
+        return MoneyParse(value=ZERO, warning=f"unparseable percentage value {raw!r}")
+    return parsed
+
+
 def _decimal_or_none(raw: str | int | float) -> Decimal | None:
     text = str(raw) if isinstance(raw, int | float) else raw.strip().replace("$", "").replace(" ", "")
     negative = text.startswith("(") and text.endswith(")")
