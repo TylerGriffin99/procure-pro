@@ -41,6 +41,14 @@ def describe_error(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
+async def mark_session_failed(db: AsyncSession, session_id: uuid.UUID, error: str) -> None:
+    """Roll back any failed transaction first, so the status write cannot hit
+    PendingRollbackError."""
+    await db.rollback()
+    await harness_repo.set_status(db, session_id, HarnessSessionStatus.failed, error_message=error)
+    await db.commit()
+
+
 @dataclass
 class HarnessEngine:
     """Walks through phases, dispatching by type, yielding SSE events."""
@@ -75,13 +83,20 @@ class HarnessEngine:
         )
 
         for phase_index in range(session.current_phase, len(self.definition.phases)):
+            if await self.is_cancelled():
+                yield self.cancelled(phase_index)
+                return
             phase_def = self.definition.phases[phase_index]
             yield HarnessPhaseStartEvent(
                 phase_index=phase_index, phase_name=phase_def.name, phase_type=phase_def.phase_type
             )
             try:
                 output = await self.run_phase(phase_def, session.config)
-                await self.record_phase_result(phase_index, phase_def, output)
+                cancelled = await self.is_cancelled()
+                if cancelled:
+                    await self.db.rollback()
+                else:
+                    await self.record_phase_result(phase_index, phase_def, output)
             except Exception as e:
                 logger.exception("harness_engine.phase_error")
                 await self.set_failed(f"Phase '{phase_def.name}' failed: {describe_error(e)}")
@@ -90,21 +105,27 @@ class HarnessEngine:
                 )
                 yield HarnessErrorEvent(session_id=self.session_id, error=describe_error(e))
                 return
+            if cancelled:
+                yield self.cancelled(phase_index)
+                return
             if output.usage is not None:
                 yield output.usage
             yield HarnessPhaseResultEvent(
                 phase_index=phase_index, phase_name=phase_def.name, status=PhaseStatus.COMPLETED, detail=output.detail
             )
-            if await self.is_cancelled():
-                logger.info("harness_engine.cancelled session=%s after phase %d", self.session_id, phase_index)
-                yield HarnessErrorEvent(session_id=self.session_id, error="Cancelled")
-                return
 
-        await harness_repo.set_status(self.db, self.session_id, HarnessSessionStatus.completed)
+        completed = await harness_repo.complete_if_running(self.db, self.session_id)
         await self.db.commit()
+        if not completed:
+            yield self.cancelled(len(self.definition.phases))
+            return
 
         session = await harness_repo.get_session(self.db, self.session_id)
         yield HarnessCompleteEvent(session_id=self.session_id, claim_id=session.claim_id if session else None)
+
+    def cancelled(self, phase_index: int) -> HarnessErrorEvent:
+        logger.info("harness_engine.cancelled session=%s at phase %d", self.session_id, phase_index)
+        return HarnessErrorEvent(session_id=self.session_id, error="Cancelled")
 
     async def run_phase(self, phase_def: PhaseDefinition, session_config: dict[str, Any]) -> PhaseOutput:
         match phase_def.phase_type:
@@ -188,8 +209,4 @@ class HarnessEngine:
         )
 
     async def set_failed(self, error: str) -> None:
-        """Roll back any failed transaction first, so the status write cannot hit
-        PendingRollbackError."""
-        await self.db.rollback()
-        await harness_repo.set_status(self.db, self.session_id, HarnessSessionStatus.failed, error_message=error)
-        await self.db.commit()
+        await mark_session_failed(self.db, self.session_id, error)

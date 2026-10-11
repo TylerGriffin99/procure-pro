@@ -149,8 +149,8 @@ class KindHistory(StrictModel):
     accepted: dict[uuid.UUID, Decimal]
 
 
-class HistorySource(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+class HistorySource(StrictModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
     claim_lines: list[Any]
     previous: AssessmentAggregate | None

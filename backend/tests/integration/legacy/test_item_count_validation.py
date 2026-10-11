@@ -9,7 +9,7 @@ from app.harness.executors.create_records import execute_create_records
 from app.repos import harness_repo
 
 
-def _parsed_claim(items: list[dict]) -> str:
+def parsed_claim_json(items: list[dict]) -> str:
     return json.dumps(
         {
             "metadata": {"claim_number": "1"},
@@ -19,7 +19,7 @@ def _parsed_claim(items: list[dict]) -> str:
     )
 
 
-def _contract_item(idx: int, ref: str = "", desc: str = "Item", value: str = "10000.00") -> dict:
+def contract_item(idx: int, ref: str = "", desc: str = "Item", value: str = "10000.00") -> dict:
     return {
         "item_index": idx,
         "ref_code": ref,
@@ -34,7 +34,7 @@ def _contract_item(idx: int, ref: str = "", desc: str = "Item", value: str = "10
     }
 
 
-def _variation_item(idx: int, desc: str = "Var", value: str = "5000.00") -> dict:
+def variation_item(idx: int, desc: str = "Var", value: str = "5000.00") -> dict:
     return {
         "item_index": idx,
         "ref_code": "",
@@ -60,8 +60,8 @@ async def test_wbs_count_mismatch_raises(db_session: AsyncSession, test_user, te
         harness_type="claim_parse",
     )
 
-    items = [_contract_item(0, desc="Excavation"), _contract_item(1, desc="Concrete")]
-    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
+    items = [contract_item(0, desc="Excavation"), contract_item(1, desc="Concrete")]
+    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", parsed_claim_json(items))
     # WBS matches only has 1 item instead of 2
     await harness_repo.write_workspace_file(
         db_session,
@@ -107,8 +107,8 @@ async def test_vps_count_mismatch_raises(db_session: AsyncSession, test_user, te
         harness_type="claim_parse",
     )
 
-    items = [_contract_item(0), _variation_item(1, desc="Extra work")]
-    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
+    items = [contract_item(0), variation_item(1, desc="Extra work")]
+    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", parsed_claim_json(items))
     await harness_repo.write_workspace_file(
         db_session,
         session.id,
@@ -151,8 +151,8 @@ async def test_out_of_range_item_index_raises(db_session: AsyncSession, test_use
         harness_type="claim_parse",
     )
 
-    items = [_contract_item(0)]
-    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
+    items = [contract_item(0)]
+    await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", parsed_claim_json(items))
     # item_index 99 is out of range
     await harness_repo.write_workspace_file(
         db_session,

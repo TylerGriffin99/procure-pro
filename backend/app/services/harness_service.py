@@ -13,7 +13,7 @@ from app.constants.enums import HarnessSessionStatus
 from app.database import async_session
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.harness.definitions import HARNESS_DEFINITIONS
-from app.harness.engine import describe_error
+from app.harness.engine import describe_error, mark_session_failed
 from app.harness.factory import build_engine
 from app.harness.models import HarnessDefinition, HarnessErrorEvent, HarnessEvent, HarnessType
 from app.models.harness_session import HarnessSession
@@ -74,22 +74,22 @@ async def stream_events(
 ) -> AsyncGenerator[str, None]:
     """Run the engine on a DB session that outlives the HTTP request and yield SSE frames."""
     async with async_session() as engine_db:
-        engine = build_engine(
-            settings=settings,
-            definition=definition,
-            session_id=session_id,
-            user_id=user_id,
-            project_id=project_id,
-            db=engine_db,
-        )
         try:
+            engine = build_engine(
+                settings=settings,
+                definition=definition,
+                session_id=session_id,
+                user_id=user_id,
+                project_id=project_id,
+                db=engine_db,
+            )
             async for event in engine.run():
                 yield sse(event)
             yield "data: [DONE]\n\n"
         except Exception as e:
             logger.exception("harness_stream.error")
             try:
-                await engine.set_failed(describe_error(e))
+                await mark_session_failed(engine_db, session_id, describe_error(e))
             except Exception:
                 # Best-effort status update; the stream error below is the primary signal.
                 logger.exception("harness_stream.set_failed_error")

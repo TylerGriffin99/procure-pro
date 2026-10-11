@@ -60,6 +60,18 @@ async def get_status(db: AsyncSession, session_id: uuid.UUID) -> HarnessSessionS
     return result.scalar_one_or_none()
 
 
+async def complete_if_running(db: AsyncSession, session_id: uuid.UUID) -> bool:
+    result = await db.execute(
+        update(HarnessSession)
+        .where(HarnessSession.id == session_id, HarnessSession.status == HarnessSessionStatus.running)
+        .values(status=HarnessSessionStatus.completed)
+        .returning(HarnessSession.id)
+    )
+    row = result.first()
+    await db.flush()
+    return row is not None
+
+
 async def set_status(
     db: AsyncSession, session_id: uuid.UUID, status: HarnessSessionStatus, error_message: str | None = None
 ) -> None:
