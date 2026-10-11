@@ -11,11 +11,13 @@ from app.harness.schemas import (
     ItemDecision,
     JevAnswer,
     MatchOutcome,
+    ParsedClaim,
     Subcat,
     VpsMatch,
     VpsRecord,
     WbsMatch,
 )
+from app.schemas.claim_extraction import ParseWarning
 
 
 class TestWbsMatch:
@@ -130,3 +132,15 @@ def test_jev_answer_requires_choice_and_unit_confidence(answer):
 def test_item_decision_range_checks_confidence_and_index(bad):
     with pytest.raises(ValidationError):
         ItemDecision(**({"item_index": 0} | bad))
+
+
+def test_parsed_claim_with_a_refless_warning_round_trips_through_exclude_none():
+    claim = ParsedClaim(
+        line_items=[],
+        format_warnings=[ParseWarning(ref=None, field="claimed_this_period", description="malformed money cell")],
+    )
+
+    restored = ParsedClaim.model_validate_json(claim.model_dump_json(exclude_none=True))
+
+    assert restored.format_warnings == claim.format_warnings
+    assert restored.format_warnings[0].ref is None

@@ -46,7 +46,14 @@ class Settings(BaseSettings):
     jev_max_concurrency: int = 8
     jev_confidence_floor: float = 0.6
 
-    @field_validator("open_router_api_key", "jev_decisions_url", mode="before")
+    @field_validator(
+        "anthropic_api_key",
+        "openai_api_key",
+        "open_router_api_key",
+        "deepseek_api_key",
+        "jev_decisions_url",
+        mode="before",
+    )
     @classmethod
     def strip_whitespace(cls, v: object) -> object:
         return v.strip() if isinstance(v, str) else v

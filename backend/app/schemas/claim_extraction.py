@@ -13,7 +13,7 @@ class ClaimMetadata(StrictModel):
 
 
 class ParseWarning(StrictModel):
-    ref: str | None
+    ref: str | None = None
     field: str
     description: str
 
