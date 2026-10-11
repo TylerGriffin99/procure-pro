@@ -9,6 +9,7 @@ Requires:
   - LLM_PROVIDER and matching API key set in environment
   - claim/Gilmours/claims/Gilmours Central_Progress Claim No. 1.pdf present
 """
+
 import json
 from pathlib import Path
 
@@ -72,24 +73,19 @@ async def test_deep_mode_e2e(client: AsyncClient):
     # ── 3. Stream harness execution (real LLM calls) ────────────────────────
     collected_events = []
     async with client.stream(
-        "GET",
-        f"/api/v1/harness/sessions/{harness_session_id}/stream",
-        headers=headers,
-        timeout=600.0,
+        "GET", f"/api/v1/harness/sessions/{harness_session_id}/stream", headers=headers, timeout=600.0
     ) as stream:
         async for line in stream.aiter_lines():
             if not line.startswith("data: "):
                 continue
-            payload = line[len("data: "):]
+            payload = line[len("data: ") :]
             if payload == "[DONE]":
                 break
             collected_events.append(json.loads(payload))
 
     event_types = [e["type"] for e in collected_events]
     assert "harness_start" in event_types, f"Missing harness_start. Events: {event_types}"
-    assert "harness_error" not in event_types, (
-        f"Harness errored: {[e for e in collected_events if 'error' in e]}"
-    )
+    assert "harness_error" not in event_types, f"Harness errored: {[e for e in collected_events if 'error' in e]}"
     assert "harness_complete" in event_types, f"Harness did not complete. Events: {event_types}"
 
     phase_starts = [e for e in collected_events if e["type"] == "harness_phase_start"]
@@ -102,33 +98,29 @@ async def test_deep_mode_e2e(client: AsyncClient):
     assert claim_id is not None
 
     # ── 4. Verify harness session record ────────────────────────────────────
-    session_resp = await client.get(
-        f"/api/v1/harness/sessions/{harness_session_id}", headers=headers,
-    )
+    session_resp = await client.get(f"/api/v1/harness/sessions/{harness_session_id}", headers=headers)
     assert session_resp.status_code == 200
     session = session_resp.json()
     assert session["status"] == "completed"
     assert session["claim_id"] == claim_id
 
     # ── 5. Verify workspace files ───────────────────────────────────────────
-    workspace_resp = await client.get(
-        f"/api/v1/harness/sessions/{harness_session_id}/workspace", headers=headers,
-    )
+    workspace_resp = await client.get(f"/api/v1/harness/sessions/{harness_session_id}/workspace", headers=headers)
     assert workspace_resp.status_code == 200
     workspace_paths = {f["file_path"] for f in workspace_resp.json()}
     expected_files = {
-        "raw_extraction.json", "format_detection.json", "parsed_claim.json",
-        "validation_summary.json", "wbs_matches.json", "vps_matches.json",
+        "raw_extraction.json",
+        "format_detection.json",
+        "parsed_claim.json",
+        "validation_summary.json",
+        "wbs_matches.json",
+        "vps_matches.json",
         "creation_summary.json",
     }
-    assert expected_files.issubset(workspace_paths), (
-        f"Missing workspace files: {expected_files - workspace_paths}"
-    )
+    assert expected_files.issubset(workspace_paths), f"Missing workspace files: {expected_files - workspace_paths}"
 
     # ── 6. Verify claim line items (strict) ─────────────────────────────────
-    claim_resp = await client.get(
-        f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers,
-    )
+    claim_resp = await client.get(f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers)
     assert claim_resp.status_code == 200
     claim = claim_resp.json()
     assert claim["claim_number"] == 1
@@ -147,15 +139,15 @@ async def test_deep_mode_e2e(client: AsyncClient):
     # Log actual claim line items for debugging
     print(f"\n  Actual claim line items ({len(claim_line_items)}):")
     for li in sorted(claim_line_items, key=lambda x: (x["item_type"], x.get("ref_code", ""))):
-        print(f"    ({li['item_type']}, {li.get('ref_code')}) {li['description']}  "
-              f"value={li['contract_value']} ptd={li['ptd']} %={li['percentage']}")
+        print(
+            f"    ({li['item_type']}, {li.get('ref_code')}) {li['description']}  "
+            f"value={li['contract_value']} ptd={li['ptd']} %={li['percentage']}"
+        )
 
     for expected in EXPECTED_CLAIM_LINE_ITEMS:
         key = (expected["item_type"], expected["ref_code"])
         actual = actual_by_key.get(key)
-        assert actual is not None, (
-            f"Missing claim item: {key} ({expected['description']})"
-        )
+        assert actual is not None, f"Missing claim item: {key} ({expected['description']})"
         label = f"Claim[{key}]"
         _assert_decimal_eq(actual["contract_value"], expected["contract_value"], f"{label}.contract_value")
         _assert_decimal_eq(actual["percentage"], expected["percentage"], f"{label}.percentage")
@@ -166,7 +158,7 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     # ── 7. Verify assessment line items (strict) ────────────────────────────
     assessment_resp = await client.get(
-        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers
     )
     assert assessment_resp.status_code == 200
     assessment = assessment_resp.json()
@@ -174,16 +166,17 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     assessment_line_items = assessment["line_items"]
     assert len(assessment_line_items) >= EXPECTED_ASSESSMENT_LINE_ITEM_COUNT, (
-        f"Expected at least {EXPECTED_ASSESSMENT_LINE_ITEM_COUNT} assessment items, "
-        f"got {len(assessment_line_items)}"
+        f"Expected at least {EXPECTED_ASSESSMENT_LINE_ITEM_COUNT} assessment items, got {len(assessment_line_items)}"
     )
 
     # Log actual assessment line items for debugging
     print(f"\n  Actual assessment line items ({len(assessment_line_items)}):")
     for ali in sorted(assessment_line_items, key=lambda x: x.get("sort_order", 0)):
-        print(f"    [{ali.get('sort_order')}] {ali['description']}  "
-              f"contract_sum={ali['contract_sum']} claimed={ali['contractor_claim_to_date']} "
-              f"recommended={ali['total_recommended']} status={ali['status']}")
+        print(
+            f"    [{ali.get('sort_order')}] {ali['description']}  "
+            f"contract_sum={ali['contract_sum']} claimed={ali['contractor_claim_to_date']} "
+            f"recommended={ali['total_recommended']} status={ali['status']}"
+        )
 
     # Build lookup by (description, sort_order) to handle duplicate descriptions
     actual_ali_by_key = {}
@@ -198,13 +191,23 @@ async def test_deep_mode_e2e(client: AsyncClient):
         assert actual is not None, f"Missing assessment item: '{desc}' (sort_order={expected['sort_order']})"
         label = f"Assessment[{desc}@{expected['sort_order']}]"
         _assert_decimal_eq(actual["contract_sum"], expected["contract_sum"], f"{label}.contract_sum")
-        _assert_decimal_eq(actual["contractor_claim_to_date"], expected["contractor_claim_to_date"], f"{label}.contractor_claim_to_date")
+        _assert_decimal_eq(
+            actual["contractor_claim_to_date"],
+            expected["contractor_claim_to_date"],
+            f"{label}.contractor_claim_to_date",
+        )
         _assert_decimal_eq(actual["total_recommended"], expected["total_recommended"], f"{label}.total_recommended")
         _assert_decimal_eq(actual["percentage"], expected["percentage"], f"{label}.percentage")
         _assert_decimal_eq(actual["previously_paid"], expected["previously_paid"], f"{label}.previously_paid")
-        _assert_decimal_eq(actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period")
-        assert actual["status"] == expected["status"], f"{label}.status: expected {expected['status']}, got {actual['status']}"
-        assert actual["sort_order"] == expected["sort_order"], f"{label}.sort_order: expected {expected['sort_order']}, got {actual['sort_order']}"
+        _assert_decimal_eq(
+            actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period"
+        )
+        assert actual["status"] == expected["status"], (
+            f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        )
+        assert actual["sort_order"] == expected["sort_order"], (
+            f"{label}.sort_order: expected {expected['sort_order']}, got {actual['sort_order']}"
+        )
 
     # ── 8. Verify assessment provisional sums (strict) ──────────────────────
     assessment_ps = assessment.get("provisional_sum_items", [])
@@ -218,11 +221,19 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     for i, (actual, expected) in enumerate(zip(actual_ps_sorted, expected_ps_sorted)):
         label = f"PS[{i}]"
-        _assert_decimal_eq(actual["contractor_claim_to_date"], expected["contractor_claim_to_date"], f"{label}.contractor_claim_to_date")
+        _assert_decimal_eq(
+            actual["contractor_claim_to_date"],
+            expected["contractor_claim_to_date"],
+            f"{label}.contractor_claim_to_date",
+        )
         _assert_decimal_eq(actual["total_recommended"], expected["total_recommended"], f"{label}.total_recommended")
         _assert_decimal_eq(actual["previously_paid"], expected["previously_paid"], f"{label}.previously_paid")
-        _assert_decimal_eq(actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period")
-        assert actual["status"] == expected["status"], f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        _assert_decimal_eq(
+            actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period"
+        )
+        assert actual["status"] == expected["status"], (
+            f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        )
 
     # ── 9. Verify assessment variations (strict) ────────────────────────────
     assessment_vars = assessment.get("variation_items", [])
@@ -235,18 +246,26 @@ async def test_deep_mode_e2e(client: AsyncClient):
 
     for i, (actual, expected) in enumerate(zip(actual_vars_sorted, expected_vars_sorted)):
         label = f"Var[{i}]"
-        _assert_decimal_eq(actual["contractor_claim_to_date"], expected["contractor_claim_to_date"], f"{label}.contractor_claim_to_date")
+        _assert_decimal_eq(
+            actual["contractor_claim_to_date"],
+            expected["contractor_claim_to_date"],
+            f"{label}.contractor_claim_to_date",
+        )
         _assert_decimal_eq(actual["total_recommended"], expected["total_recommended"], f"{label}.total_recommended")
         _assert_decimal_eq(actual["previously_paid"], expected["previously_paid"], f"{label}.previously_paid")
-        _assert_decimal_eq(actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period")
-        assert actual["status"] == expected["status"], f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        _assert_decimal_eq(
+            actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period"
+        )
+        assert actual["status"] == expected["status"], (
+            f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        )
 
     # ── 10. Verify assessment financial totals ──────────────────────────────
     assert assessment["contract_sum"] is not None
     assert assessment["total_recommended"] is not None
 
     # ── Summary ─────────────────────────────────────────────────────────────
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  E2E Deep Mode Test PASSED (strict fixtures)")
     print(f"  Project:      {project_id}")
     print(f"  Claim:        {claim_id} ({len(claim_line_items)} items)")
@@ -254,4 +273,4 @@ async def test_deep_mode_e2e(client: AsyncClient):
     print(f"  PS items:     {len(assessment_ps)}")
     print(f"  Var items:    {len(assessment_vars)}")
     print(f"  Session:      {harness_session_id}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")

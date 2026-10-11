@@ -1,9 +1,10 @@
-import pytest
 from decimal import Decimal
+
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.claim_parse_flag import FlagSeverity, FlagType
 from app.models.harness_session import HarnessSessionStatus
-from app.models.claim_parse_flag import FlagType, FlagSeverity
 from app.repos import harness_repo
 
 
@@ -82,10 +83,7 @@ async def test_write_and_read_workspace_file(db_session: AsyncSession, test_user
         harness_type="claim_parse",
     )
     await harness_repo.write_workspace_file(
-        db=db_session,
-        session_id=session.id,
-        file_path="raw_extraction.json",
-        content='{"pages": []}',
+        db=db_session, session_id=session.id, file_path="raw_extraction.json", content='{"pages": []}'
     )
     content = await harness_repo.read_workspace_file(db_session, session.id, "raw_extraction.json")
     assert content == '{"pages": []}'

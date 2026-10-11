@@ -1,8 +1,7 @@
 """Unit tests for the AssessmentAggregator utility."""
+
 import uuid
 from decimal import Decimal
-
-import pytest
 
 from app.models.assessment import LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
@@ -27,9 +26,7 @@ def _wbs(wbs_id: uuid.UUID = WBS_A_ID, desc: str = "Earthworks", cs: str = "1000
 
 
 def _history_row(
-    wbs_id: uuid.UUID = WBS_A_ID,
-    prev_paid: str = "20000.00",
-    prev_claim: str = "25000.00",
+    wbs_id: uuid.UUID = WBS_A_ID, prev_paid: str = "20000.00", prev_claim: str = "25000.00"
 ) -> AssessmentLineItem:
     return AssessmentLineItem(
         id=uuid.uuid4(),
@@ -48,11 +45,7 @@ def _history_row(
     )
 
 
-def _child_row(
-    wbs_id: uuid.UUID = WBS_A_ID,
-    current: str = "5000.00",
-    sort_order: int = 10,
-) -> AssessmentLineItem:
+def _child_row(wbs_id: uuid.UUID = WBS_A_ID, current: str = "5000.00", sort_order: int = 10) -> AssessmentLineItem:
     return AssessmentLineItem(
         id=uuid.uuid4(),
         wbs_code_id=wbs_id,
@@ -71,6 +64,7 @@ def _child_row(
 
 
 # ── Tests ────────────────────────────────────────────────────────────────
+
 
 class TestAggregateLineItems:
     """Tests for aggregate_line_items()."""
@@ -245,19 +239,34 @@ class TestAggregateVariations:
         from app.utils.assessment_aggregator import aggregate_variations
 
         history = AssessmentVariation(
-            id=uuid.uuid4(), variation_id=VAR_A_ID, claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("10000.00"), total_recommended=Decimal("8000.00"),
-            previously_paid=Decimal("8000.00"), recommended_this_period=ZERO,
-            variance_to_claim=Decimal("-2000.00"), percentage=ZERO, status=LineItemStatus.approved,
+            id=uuid.uuid4(),
+            variation_id=VAR_A_ID,
+            claim_line_item_id=None,
+            contractor_claim_to_date=Decimal("10000.00"),
+            total_recommended=Decimal("8000.00"),
+            previously_paid=Decimal("8000.00"),
+            recommended_this_period=ZERO,
+            variance_to_claim=Decimal("-2000.00"),
+            percentage=ZERO,
+            status=LineItemStatus.approved,
         )
         child = AssessmentVariation(
-            id=uuid.uuid4(), variation_id=VAR_A_ID, claim_line_item_id=uuid.uuid4(),
-            contractor_claim_to_date=Decimal("5000.00"), total_recommended=Decimal("5000.00"),
-            previously_paid=ZERO, recommended_this_period=Decimal("5000.00"),
-            variance_to_claim=ZERO, percentage=ZERO, status=LineItemStatus.unapproved,
+            id=uuid.uuid4(),
+            variation_id=VAR_A_ID,
+            claim_line_item_id=uuid.uuid4(),
+            contractor_claim_to_date=Decimal("5000.00"),
+            total_recommended=Decimal("5000.00"),
+            previously_paid=ZERO,
+            recommended_this_period=Decimal("5000.00"),
+            variance_to_claim=ZERO,
+            percentage=ZERO,
+            status=LineItemStatus.unapproved,
         )
         master = Variation(
-            id=VAR_A_ID, contractor_ref="CI-001", description="Extra steel", ci_number=1,
+            id=VAR_A_ID,
+            contractor_ref="CI-001",
+            description="Extra steel",
+            ci_number=1,
             contractor_submission=Decimal("20000.00"),
         )
 
@@ -279,13 +288,22 @@ class TestAggregateVariations:
         from app.utils.assessment_aggregator import aggregate_variations
 
         child = AssessmentVariation(
-            id=uuid.uuid4(), variation_id=VAR_A_ID, claim_line_item_id=uuid.uuid4(),
-            contractor_claim_to_date=Decimal("5000.00"), total_recommended=Decimal("5000.00"),
-            previously_paid=ZERO, recommended_this_period=Decimal("5000.00"),
-            variance_to_claim=ZERO, percentage=ZERO, status=LineItemStatus.unapproved,
+            id=uuid.uuid4(),
+            variation_id=VAR_A_ID,
+            claim_line_item_id=uuid.uuid4(),
+            contractor_claim_to_date=Decimal("5000.00"),
+            total_recommended=Decimal("5000.00"),
+            previously_paid=ZERO,
+            recommended_this_period=Decimal("5000.00"),
+            variance_to_claim=ZERO,
+            percentage=ZERO,
+            status=LineItemStatus.unapproved,
         )
         master = Variation(
-            id=VAR_A_ID, contractor_ref="CI-001", description="Extra steel", ci_number=1,
+            id=VAR_A_ID,
+            contractor_ref="CI-001",
+            description="Extra steel",
+            ci_number=1,
             contractor_submission=Decimal("20000.00"),
         )
 
@@ -305,21 +323,30 @@ class TestAggregateProvisionalSums:
         from app.utils.assessment_aggregator import aggregate_provisional_sums
 
         history = AssessmentProvisionalSum(
-            id=uuid.uuid4(), provisional_sum_id=PS_A_ID, claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("15000.00"), total_recommended=Decimal("12000.00"),
-            previously_paid=Decimal("12000.00"), recommended_this_period=ZERO,
-            variance_to_claim=Decimal("-3000.00"), percentage=ZERO, status=LineItemStatus.approved,
+            id=uuid.uuid4(),
+            provisional_sum_id=PS_A_ID,
+            claim_line_item_id=None,
+            contractor_claim_to_date=Decimal("15000.00"),
+            total_recommended=Decimal("12000.00"),
+            previously_paid=Decimal("12000.00"),
+            recommended_this_period=ZERO,
+            variance_to_claim=Decimal("-3000.00"),
+            percentage=ZERO,
+            status=LineItemStatus.approved,
         )
         child = AssessmentProvisionalSum(
-            id=uuid.uuid4(), provisional_sum_id=PS_A_ID, claim_line_item_id=uuid.uuid4(),
-            contractor_claim_to_date=Decimal("3000.00"), total_recommended=Decimal("3000.00"),
-            previously_paid=ZERO, recommended_this_period=Decimal("3000.00"),
-            variance_to_claim=ZERO, percentage=ZERO, status=LineItemStatus.unapproved,
+            id=uuid.uuid4(),
+            provisional_sum_id=PS_A_ID,
+            claim_line_item_id=uuid.uuid4(),
+            contractor_claim_to_date=Decimal("3000.00"),
+            total_recommended=Decimal("3000.00"),
+            previously_paid=ZERO,
+            recommended_this_period=Decimal("3000.00"),
+            variance_to_claim=ZERO,
+            percentage=ZERO,
+            status=LineItemStatus.unapproved,
         )
-        master = ProvisionalSum(
-            id=PS_A_ID, ps_number=1, description="Fence removal",
-            contract_sum=Decimal("25000.00"),
-        )
+        master = ProvisionalSum(id=PS_A_ID, ps_number=1, description="Fence removal", contract_sum=Decimal("25000.00"))
 
         groups = aggregate_provisional_sums([history, child], [master])
 
@@ -334,19 +361,27 @@ class TestAggregateProvisionalSums:
         assert g.contractor_claim_to_date == Decimal("18000.00")
         assert g.percentage == Decimal("60.00")  # 15000/25000*100
 
-
     def test_variation_history_with_nonzero_rtp_no_children(self):
         """Variation history row with its own recommended_this_period (Claim 1 finalised)."""
         from app.utils.assessment_aggregator import aggregate_variations
 
         history = AssessmentVariation(
-            id=uuid.uuid4(), variation_id=VAR_A_ID, claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("10069.49"), total_recommended=Decimal("10069.49"),
-            previously_paid=ZERO, recommended_this_period=Decimal("10069.49"),
-            variance_to_claim=ZERO, percentage=ZERO, status=LineItemStatus.approved,
+            id=uuid.uuid4(),
+            variation_id=VAR_A_ID,
+            claim_line_item_id=None,
+            contractor_claim_to_date=Decimal("10069.49"),
+            total_recommended=Decimal("10069.49"),
+            previously_paid=ZERO,
+            recommended_this_period=Decimal("10069.49"),
+            variance_to_claim=ZERO,
+            percentage=ZERO,
+            status=LineItemStatus.approved,
         )
         master = Variation(
-            id=VAR_A_ID, contractor_ref="CI-002", description="Extra steel", ci_number=1,
+            id=VAR_A_ID,
+            contractor_ref="CI-002",
+            description="Extra steel",
+            ci_number=1,
             contractor_submission=Decimal("20000.00"),
         )
 
@@ -358,21 +393,23 @@ class TestAggregateProvisionalSums:
         assert g.recommended_this_period == Decimal("10069.49")
         assert g.total_recommended == Decimal("10069.49")
 
-
     def test_ps_history_with_nonzero_rtp_no_children(self):
         """PS history row with its own recommended_this_period (Claim 1 finalised)."""
         from app.utils.assessment_aggregator import aggregate_provisional_sums
 
         history = AssessmentProvisionalSum(
-            id=uuid.uuid4(), provisional_sum_id=PS_A_ID, claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("7114.38"), total_recommended=Decimal("5384.38"),
-            previously_paid=ZERO, recommended_this_period=Decimal("5384.38"),
-            variance_to_claim=Decimal("-1730.00"), percentage=ZERO, status=LineItemStatus.approved,
+            id=uuid.uuid4(),
+            provisional_sum_id=PS_A_ID,
+            claim_line_item_id=None,
+            contractor_claim_to_date=Decimal("7114.38"),
+            total_recommended=Decimal("5384.38"),
+            previously_paid=ZERO,
+            recommended_this_period=Decimal("5384.38"),
+            variance_to_claim=Decimal("-1730.00"),
+            percentage=ZERO,
+            status=LineItemStatus.approved,
         )
-        master = ProvisionalSum(
-            id=PS_A_ID, ps_number=1, description="Fence removal",
-            contract_sum=Decimal("25000.00"),
-        )
+        master = ProvisionalSum(id=PS_A_ID, ps_number=1, description="Fence removal", contract_sum=Decimal("25000.00"))
 
         groups = aggregate_provisional_sums([history], [master])
 
@@ -389,8 +426,8 @@ class TestComputeAssessmentTotals:
     def test_totals_across_all_types(self):
         from app.utils.assessment_aggregator import (
             aggregate_line_items,
-            aggregate_variations,
             aggregate_provisional_sums,
+            aggregate_variations,
             compute_assessment_totals,
         )
 
@@ -401,40 +438,64 @@ class TestComputeAssessmentTotals:
 
         # Variation: 13000 total_recommended, 15000 claimed
         var_h = AssessmentVariation(
-            id=uuid.uuid4(), variation_id=VAR_A_ID, claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("10000.00"), total_recommended=Decimal("8000.00"),
-            previously_paid=Decimal("8000.00"), recommended_this_period=ZERO,
-            variance_to_claim=Decimal("-2000.00"), percentage=ZERO, status=LineItemStatus.approved,
+            id=uuid.uuid4(),
+            variation_id=VAR_A_ID,
+            claim_line_item_id=None,
+            contractor_claim_to_date=Decimal("10000.00"),
+            total_recommended=Decimal("8000.00"),
+            previously_paid=Decimal("8000.00"),
+            recommended_this_period=ZERO,
+            variance_to_claim=Decimal("-2000.00"),
+            percentage=ZERO,
+            status=LineItemStatus.approved,
         )
         var_c = AssessmentVariation(
-            id=uuid.uuid4(), variation_id=VAR_A_ID, claim_line_item_id=uuid.uuid4(),
-            contractor_claim_to_date=Decimal("5000.00"), total_recommended=Decimal("5000.00"),
-            previously_paid=ZERO, recommended_this_period=Decimal("5000.00"),
-            variance_to_claim=ZERO, percentage=ZERO, status=LineItemStatus.unapproved,
+            id=uuid.uuid4(),
+            variation_id=VAR_A_ID,
+            claim_line_item_id=uuid.uuid4(),
+            contractor_claim_to_date=Decimal("5000.00"),
+            total_recommended=Decimal("5000.00"),
+            previously_paid=ZERO,
+            recommended_this_period=Decimal("5000.00"),
+            variance_to_claim=ZERO,
+            percentage=ZERO,
+            status=LineItemStatus.unapproved,
         )
         var_master = Variation(
-            id=VAR_A_ID, contractor_ref="CI-001", description="Steel", ci_number=1,
+            id=VAR_A_ID,
+            contractor_ref="CI-001",
+            description="Steel",
+            ci_number=1,
             contractor_submission=Decimal("20000.00"),
         )
         var_groups = aggregate_variations([var_h, var_c], [var_master])
 
         # PS: 15000 total_recommended, 18000 claimed
         ps_h = AssessmentProvisionalSum(
-            id=uuid.uuid4(), provisional_sum_id=PS_A_ID, claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("15000.00"), total_recommended=Decimal("12000.00"),
-            previously_paid=Decimal("12000.00"), recommended_this_period=ZERO,
-            variance_to_claim=Decimal("-3000.00"), percentage=ZERO, status=LineItemStatus.approved,
+            id=uuid.uuid4(),
+            provisional_sum_id=PS_A_ID,
+            claim_line_item_id=None,
+            contractor_claim_to_date=Decimal("15000.00"),
+            total_recommended=Decimal("12000.00"),
+            previously_paid=Decimal("12000.00"),
+            recommended_this_period=ZERO,
+            variance_to_claim=Decimal("-3000.00"),
+            percentage=ZERO,
+            status=LineItemStatus.approved,
         )
         ps_c = AssessmentProvisionalSum(
-            id=uuid.uuid4(), provisional_sum_id=PS_A_ID, claim_line_item_id=uuid.uuid4(),
-            contractor_claim_to_date=Decimal("3000.00"), total_recommended=Decimal("3000.00"),
-            previously_paid=ZERO, recommended_this_period=Decimal("3000.00"),
-            variance_to_claim=ZERO, percentage=ZERO, status=LineItemStatus.unapproved,
+            id=uuid.uuid4(),
+            provisional_sum_id=PS_A_ID,
+            claim_line_item_id=uuid.uuid4(),
+            contractor_claim_to_date=Decimal("3000.00"),
+            total_recommended=Decimal("3000.00"),
+            previously_paid=ZERO,
+            recommended_this_period=Decimal("3000.00"),
+            variance_to_claim=ZERO,
+            percentage=ZERO,
+            status=LineItemStatus.unapproved,
         )
-        ps_master = ProvisionalSum(
-            id=PS_A_ID, ps_number=1, description="Fence",
-            contract_sum=Decimal("25000.00"),
-        )
+        ps_master = ProvisionalSum(id=PS_A_ID, ps_number=1, description="Fence", contract_sum=Decimal("25000.00"))
         ps_groups = aggregate_provisional_sums([ps_h, ps_c], [ps_master])
 
         totals = compute_assessment_totals(wbs_groups, var_groups, ps_groups)

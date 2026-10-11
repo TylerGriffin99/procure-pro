@@ -1,4 +1,5 @@
 """Unit tests for format playbook context loader."""
+
 import json
 import uuid
 from unittest.mock import AsyncMock, patch

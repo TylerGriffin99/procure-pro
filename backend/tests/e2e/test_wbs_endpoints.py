@@ -1,4 +1,5 @@
 """E2E tests for WBS code create and update operations."""
+
 import uuid
 from decimal import Decimal
 
@@ -11,7 +12,6 @@ from app.exceptions import UnprocessableError
 from app.main import app
 from app.models.user import User
 from app.models.wbs_code import WBSLevel
-from app.repos import wbs_code_repo
 from app.schemas.project import ProjectCreate, WBSCodeCreate, WBSCodeUpdate
 from app.services import project_service
 
@@ -19,7 +19,9 @@ from app.services import project_service
 @pytest_asyncio.fixture
 async def user(db_session: AsyncSession) -> User:
     user_id = uuid.uuid4()
-    user = User(id=user_id, email="test@test.com", hashed_password="x", first_name="Test", last_name="User", created_by=user_id)
+    user = User(
+        id=user_id, email="test@test.com", hashed_password="x", first_name="Test", last_name="User", created_by=user_id
+    )
     db_session.add(user)
     await db_session.flush()
     return user
@@ -42,7 +44,14 @@ async def project_with_wbs(db_session: AsyncSession, user: User):
         contract_sum=Decimal("1000000"),
         wbs_codes=[
             WBSCodeCreate(code="DM", description="Demolition", level="category", sort_order=0),
-            WBSCodeCreate(code="DM-01", description="Demo works", level="subcategory", parent_code="DM", sort_order=1, contract_sum=Decimal("50000")),
+            WBSCodeCreate(
+                code="DM-01",
+                description="Demo works",
+                level="subcategory",
+                parent_code="DM",
+                sort_order=1,
+                contract_sum=Decimal("50000"),
+            ),
             WBSCodeCreate(code="FR", description="Frame", level="category", sort_order=10),
         ],
     )
@@ -54,11 +63,7 @@ async def project_with_wbs(db_session: AsyncSession, user: User):
 async def test_create_wbs_code_category(db_session: AsyncSession, project_with_wbs, user):
     project = project_with_wbs
     data = WBSCodeCreate(
-        code="EW",
-        description="External Walls",
-        level="category",
-        sort_order=20,
-        contract_sum=Decimal("75000"),
+        code="EW", description="External Walls", level="category", sort_order=20, contract_sum=Decimal("75000")
     )
     wbs = await project_service.create_wbs_code(db_session, project.id, data, user)
     assert wbs.code == "EW"
@@ -110,21 +115,15 @@ async def test_update_wbs_code_in_use_restricts_code_change(db_session: AsyncSes
     project = project_with_wbs
     dm_sub = next(w for w in project.wbs_codes if w.code == "DM-01")
 
-    from app.models.claim import Claim
     from app.models.assessment import Assessment
     from app.models.assessment_line_item import AssessmentLineItem
+    from app.models.claim import Claim
 
-    claim = Claim(
-        id=uuid.uuid4(), project_id=project.id, claim_number=1,
-        created_by=user.id,
-    )
+    claim = Claim(id=uuid.uuid4(), project_id=project.id, claim_number=1, created_by=user.id)
     db_session.add(claim)
     await db_session.flush()
 
-    assessment = Assessment(
-        id=uuid.uuid4(), project_id=project.id, claim_id=claim.id,
-        created_by=user.id,
-    )
+    assessment = Assessment(id=uuid.uuid4(), project_id=project.id, claim_id=claim.id, created_by=user.id)
     db_session.add(assessment)
     await db_session.flush()
 
@@ -153,26 +152,22 @@ async def test_update_wbs_code_in_use_restricts_code_change(db_session: AsyncSes
 
 
 @pytest.mark.asyncio
-async def test_update_wbs_code_in_use_allows_contract_sum_and_description(db_session: AsyncSession, project_with_wbs, user):
+async def test_update_wbs_code_in_use_allows_contract_sum_and_description(
+    db_session: AsyncSession, project_with_wbs, user
+):
     """When in use, contract_sum and description should still be editable."""
     project = project_with_wbs
     dm_sub = next(w for w in project.wbs_codes if w.code == "DM-01")
 
-    from app.models.claim import Claim
     from app.models.assessment import Assessment
     from app.models.assessment_line_item import AssessmentLineItem
+    from app.models.claim import Claim
 
-    claim = Claim(
-        id=uuid.uuid4(), project_id=project.id, claim_number=2,
-        created_by=user.id,
-    )
+    claim = Claim(id=uuid.uuid4(), project_id=project.id, claim_number=2, created_by=user.id)
     db_session.add(claim)
     await db_session.flush()
 
-    assessment = Assessment(
-        id=uuid.uuid4(), project_id=project.id, claim_id=claim.id,
-        created_by=user.id,
-    )
+    assessment = Assessment(id=uuid.uuid4(), project_id=project.id, claim_id=claim.id, created_by=user.id)
     db_session.add(assessment)
     await db_session.flush()
 
@@ -207,16 +202,19 @@ async def test_update_wbs_code_in_use_allows_contract_sum_and_description(db_ses
 async def test_post_wbs_endpoint(authed_client, db_session, user):
     """Test POST /api/v1/projects/:id/wbs via HTTP."""
     data = ProjectCreate(
-        name="Route Test",
-        client_name="Client",
-        contractor_name="Contractor",
-        contract_sum=Decimal("500000"),
+        name="Route Test", client_name="Client", contractor_name="Contractor", contract_sum=Decimal("500000")
     )
     project = await project_service.create_project(db_session, data, user)
 
     resp = await authed_client.post(
         f"/api/v1/projects/{project.id}/wbs",
-        json={"code": "NW", "description": "New Work", "level": "category", "sort_order": 0, "contract_sum": "10000.00"},
+        json={
+            "code": "NW",
+            "description": "New Work",
+            "level": "category",
+            "sort_order": 0,
+            "contract_sum": "10000.00",
+        },
     )
     assert resp.status_code == 201
     body = resp.json()
@@ -233,7 +231,9 @@ async def test_patch_wbs_endpoint(authed_client, db_session, user):
         contractor_name="Contractor",
         contract_sum=Decimal("500000"),
         wbs_codes=[
-            WBSCodeCreate(code="AB", description="Alpha Bravo", level="category", sort_order=0, contract_sum=Decimal("20000")),
+            WBSCodeCreate(
+                code="AB", description="Alpha Bravo", level="category", sort_order=0, contract_sum=Decimal("20000")
+            )
         ],
     )
     project = await project_service.create_project(db_session, data, user)
@@ -257,9 +257,7 @@ async def test_get_project_includes_in_use(authed_client, db_session, user):
         client_name="Client",
         contractor_name="Contractor",
         contract_sum=Decimal("500000"),
-        wbs_codes=[
-            WBSCodeCreate(code="TT", description="Test", level="category", sort_order=0),
-        ],
+        wbs_codes=[WBSCodeCreate(code="TT", description="Test", level="category", sort_order=0)],
     )
     project = await project_service.create_project(db_session, data, user)
 

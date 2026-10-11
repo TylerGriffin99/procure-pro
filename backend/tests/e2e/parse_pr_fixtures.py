@@ -157,15 +157,17 @@ def extract_contract_works(pdf: pdfplumber.PDF) -> list[dict]:
         # Columns: 0=Description, 1=Contract Sum, 2=Claim To Date,
         #          3=Total Recommended, 4=%, 5=Variance, 6=Previously Paid,
         #          7=Recommended This Period, 8=Comments
-        items.append({
-            "description": desc,
-            "contract_sum": parse_value(row[1]),
-            "contractor_claim_to_date": parse_value(row[2]),
-            "total_recommended": parse_value(row[3]),
-            "percentage": parse_percentage(row[4]),
-            "previously_paid": parse_value(row[6]),
-            "recommended_this_period": parse_value(row[7]),
-        })
+        items.append(
+            {
+                "description": desc,
+                "contract_sum": parse_value(row[1]),
+                "contractor_claim_to_date": parse_value(row[2]),
+                "total_recommended": parse_value(row[3]),
+                "percentage": parse_percentage(row[4]),
+                "previously_paid": parse_value(row[6]),
+                "recommended_this_period": parse_value(row[7]),
+            }
+        )
 
     return items
 
@@ -205,16 +207,18 @@ def extract_provisional_sums(pdf: pdfplumber.PDF) -> list[dict]:
             continue
         ps_number = match.group(1)
 
-        items.append({
-            "ps_number": ps_number,
-            "description": desc,
-            "contract_sum": parse_value(row[2]),
-            "contractor_claim_to_date": parse_value(row[5]),
-            "total_recommended": parse_value(row[6]),
-            "percentage": parse_percentage(row[7]),
-            "previously_paid": parse_value(row[9]),
-            "recommended_this_period": parse_value(row[10]),
-        })
+        items.append(
+            {
+                "ps_number": ps_number,
+                "description": desc,
+                "contract_sum": parse_value(row[2]),
+                "contractor_claim_to_date": parse_value(row[5]),
+                "total_recommended": parse_value(row[6]),
+                "percentage": parse_percentage(row[7]),
+                "previously_paid": parse_value(row[9]),
+                "recommended_this_period": parse_value(row[10]),
+            }
+        )
 
     return items
 
@@ -262,17 +266,19 @@ def extract_variations(pdf: pdfplumber.PDF) -> list[dict]:
         if desc.upper() == "TBC" and contractor_submission == "0.00":
             continue
 
-        items.append({
-            "contractor_ref": ref_number,
-            "ref_type": "CI" if ref_raw.startswith("CI") else ("SI" if ref_raw.startswith("SI") else "PMI"),
-            "description": desc,
-            "contractor_submission": contractor_submission,
-            "contractor_claim_to_date": parse_value(row[5]),
-            "total_recommended": parse_value(row[6]),
-            "percentage": parse_percentage(row[7]),
-            "previously_paid": parse_value(row[9]),
-            "recommended_this_period": parse_value(row[10]),
-        })
+        items.append(
+            {
+                "contractor_ref": ref_number,
+                "ref_type": "CI" if ref_raw.startswith("CI") else ("SI" if ref_raw.startswith("SI") else "PMI"),
+                "description": desc,
+                "contractor_submission": contractor_submission,
+                "contractor_claim_to_date": parse_value(row[5]),
+                "total_recommended": parse_value(row[6]),
+                "percentage": parse_percentage(row[7]),
+                "previously_paid": parse_value(row[9]),
+                "recommended_this_period": parse_value(row[10]),
+            }
+        )
 
     return items
 
@@ -350,9 +356,9 @@ def extract_summary(pdf: pdfplumber.PDF) -> dict:
 
 def parse_pr(filepath: Path, claim_number: int) -> dict:
     """Parse a single Payment Recommendation PDF."""
-    print(f"\n{'='*60}", file=sys.stderr)
+    print(f"\n{'=' * 60}", file=sys.stderr)
     print(f"Parsing PR {claim_number}: {filepath.name}", file=sys.stderr)
-    print(f"{'='*60}", file=sys.stderr)
+    print(f"{'=' * 60}", file=sys.stderr)
 
     pdf = pdfplumber.open(filepath)
 

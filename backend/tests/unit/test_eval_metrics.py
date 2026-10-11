@@ -3,24 +3,28 @@
 Deterministic and I/O-free, so the eval's own arithmetic is trustworthy before it
 is ever pointed at the real API.
 """
+
 import math
 
-from tests.eval.metrics import (
-    ClaimEval,
-    RunResult,
-    calibration,
-    format_report,
-    gate,
-    spread,
-)
+from tests.eval.metrics import ClaimEval, RunResult, calibration, format_report, gate, spread
 
 
 def _run(wbs_alone=0.9, wbs_post=1.0, vps=1.0, **kw):
     base = dict(
-        wbs_jev_alone=wbs_alone, wbs_post_residue=wbs_post, vps_reident=vps,
-        wbs_scored=20, vps_scored=3, wbs_items=29, vps_items=3,
-        ooc_wbs=0, ooc_vps=0, residue=2, fell_back=0,
-        input_tokens=1000, output_tokens=50, cost_usd=0.01,
+        wbs_jev_alone=wbs_alone,
+        wbs_post_residue=wbs_post,
+        vps_reident=vps,
+        wbs_scored=20,
+        vps_scored=3,
+        wbs_items=29,
+        vps_items=3,
+        ooc_wbs=0,
+        ooc_vps=0,
+        residue=2,
+        fell_back=0,
+        input_tokens=1000,
+        output_tokens=50,
+        cost_usd=0.01,
     )
     base.update(kw)
     return RunResult(**base)

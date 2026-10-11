@@ -4,6 +4,7 @@ No I/O, no network, no DB — just arithmetic over the per-run results the eval
 collects. Kept separate from the eval orchestration so the eval's own maths is
 unit-testable (see tests/unit/test_eval_metrics.py) without API calls.
 """
+
 from __future__ import annotations
 
 import statistics
@@ -14,18 +15,18 @@ from dataclasses import dataclass
 class RunResult:
     """Metrics from ONE matcher run over ONE claim (harness phases 4 & 5)."""
 
-    wbs_jev_alone: float      # WBS accuracy (correct / scored) BEFORE LLM residue
-    wbs_post_residue: float   # WBS accuracy AFTER the LLM residue resolver
-    vps_reident: float        # VPS re-identification: fraction of items linked to the
-                              # existing record created upstream (not duplicated as new)
-    wbs_scored: int           # WBS items that have ground truth (unambiguous exact-sum)
-    vps_scored: int           # VPS items scored
-    wbs_items: int            # total WBS decisions this run (grounding denominator)
-    vps_items: int            # total VPS decisions this run
-    ooc_wbs: int              # WBS out-of-criteria (grounding) violations
-    ooc_vps: int              # VPS out-of-criteria (grounding) violations
-    residue: int              # WBS items routed to the LLM residue resolver
-    fell_back: int            # items that fell back after a Jev error
+    wbs_jev_alone: float  # WBS accuracy (correct / scored) BEFORE LLM residue
+    wbs_post_residue: float  # WBS accuracy AFTER the LLM residue resolver
+    vps_reident: float  # VPS re-identification: fraction of items linked to the
+    # existing record created upstream (not duplicated as new)
+    wbs_scored: int  # WBS items that have ground truth (unambiguous exact-sum)
+    vps_scored: int  # VPS items scored
+    wbs_items: int  # total WBS decisions this run (grounding denominator)
+    vps_items: int  # total VPS decisions this run
+    ooc_wbs: int  # WBS out-of-criteria (grounding) violations
+    ooc_vps: int  # VPS out-of-criteria (grounding) violations
+    residue: int  # WBS items routed to the LLM residue resolver
+    fell_back: int  # items that fell back after a Jev error
     input_tokens: int
     output_tokens: int
     cost_usd: float
@@ -55,7 +56,7 @@ def spread(values: list[float]) -> Spread:
 class Calibration:
     mean_conf_correct: float
     mean_conf_incorrect: float
-    overconfident_errors: int   # wrong AND confidence >= threshold
+    overconfident_errors: int  # wrong AND confidence >= threshold
     n_correct: int
     n_incorrect: int
 
@@ -112,14 +113,19 @@ def gate(
     fell_back_rate = (fell_back_total / decisions) if decisions else 1.0
     detail = {
         "n_runs": len(runs),
-        "wbs_mean": wbs_mean, "wbs_floor": wbs_floor, "wbs_pass": bool(runs) and wbs_mean >= wbs_floor,
-        "vps_mean": vps_mean, "vps_floor": vps_floor, "vps_pass": bool(runs) and vps_mean >= vps_floor,
-        "ooc_total": ooc_total, "grounding_pass": ooc_total == 0,
-        "fell_back_total": fell_back_total, "fell_back_rate": fell_back_rate,
+        "wbs_mean": wbs_mean,
+        "wbs_floor": wbs_floor,
+        "wbs_pass": bool(runs) and wbs_mean >= wbs_floor,
+        "vps_mean": vps_mean,
+        "vps_floor": vps_floor,
+        "vps_pass": bool(runs) and vps_mean >= vps_floor,
+        "ooc_total": ooc_total,
+        "grounding_pass": ooc_total == 0,
+        "fell_back_total": fell_back_total,
+        "fell_back_rate": fell_back_rate,
         "reliability_pass": bool(runs) and fell_back_rate <= max_fell_back_rate,
     }
-    passed = bool(runs) and all(
-        detail[k] for k in ("wbs_pass", "vps_pass", "grounding_pass", "reliability_pass"))
+    passed = bool(runs) and all(detail[k] for k in ("wbs_pass", "vps_pass", "grounding_pass", "reliability_pass"))
     return passed, detail
 
 
@@ -182,8 +188,7 @@ def format_report(
         "",
         "GROUNDING  (structural hallucinations = out-of-criteria selections)",
         f" WBS   {_pct(ooc_wbs, wbs_items)}",
-        f" VPS   {_pct(ooc_vps, vps_items)}"
-        + ("                 invariant held" if (ooc_wbs + ooc_vps) == 0 else ""),
+        f" VPS   {_pct(ooc_vps, vps_items)}" + ("                 invariant held" if (ooc_wbs + ooc_vps) == 0 else ""),
         "",
         "CALIBRATION  (Jev confidence vs correctness)",
         f" mean conf · correct     {cal.mean_conf_correct:.2f}   (n={cal.n_correct})",
@@ -202,8 +207,11 @@ def format_report(
         lines.append(f" {c.name:<22} {s.mean:5.2f}  [{s.min:4.2f}-{s.max:4.2f}]   n={scored}")
 
     grounding = "OK" if g["grounding_pass"] else f"FAIL ({g['ooc_total']} out-of-criteria)"
-    reliability = (f"OK ({g['fell_back_rate']:.1%} fell_back)" if g["reliability_pass"]
-                   else f"FAIL ({g['fell_back_rate']:.1%} fell_back)")
+    reliability = (
+        f"OK ({g['fell_back_rate']:.1%} fell_back)"
+        if g["reliability_pass"]
+        else f"FAIL ({g['fell_back_rate']:.1%} fell_back)"
+    )
     lines += [
         rule,
         f" GATE  accuracy : WBS {g['wbs_mean']:.2f} {'>=' if g['wbs_pass'] else '< '} {wbs_floor:.2f}"

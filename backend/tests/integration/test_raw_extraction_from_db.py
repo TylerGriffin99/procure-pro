@@ -22,9 +22,7 @@ async def test_raw_extraction_reads_bytes_from_document(client, db_session):
     project_id = uuid.UUID(proj_resp.json()["id"])
 
     content = PDF_PATH.read_bytes()
-    doc = await document_repo.create_document(
-        db_session, project_id, PDF_PATH.name, "application/pdf", content,
-    )
+    doc = await document_repo.create_document(db_session, project_id, PDF_PATH.name, "application/pdf", content)
     await db_session.commit()
 
     result = await execute_raw_extraction(

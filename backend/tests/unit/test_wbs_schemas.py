@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 
-from app.schemas.project import WBSCodeUpdate, WBSCodeResponse
+from app.schemas.project import WBSCodeResponse, WBSCodeUpdate
 
 
 def test_wbs_code_update_partial():
@@ -41,11 +41,6 @@ def test_wbs_code_response_has_in_use():
 
 def test_wbs_code_response_in_use_defaults_false():
     resp = WBSCodeResponse(
-        id=uuid.uuid4(),
-        code="DM",
-        description="Demolition",
-        level="category",
-        parent_id=None,
-        sort_order=0,
+        id=uuid.uuid4(), code="DM", description="Demolition", level="category", parent_id=None, sort_order=0
     )
     assert resp.in_use is False

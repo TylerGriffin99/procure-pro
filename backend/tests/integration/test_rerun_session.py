@@ -14,12 +14,13 @@ async def _make_session(client, db_session, status):
     user = await user_repo.get_by_email(db_session, "qs@dmp.co.nz")
     proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = uuid.UUID(proj_resp.json()["id"])
-    doc = await document_repo.create_document(
-        db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x",
-    )
+    doc = await document_repo.create_document(db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x")
     session = await harness_repo.create_session(
-        db=db_session, user_id=user.id, project_id=project_id,
-        harness_type=HarnessType.CLAIM_PARSE, document_id=doc.id,
+        db=db_session,
+        user_id=user.id,
+        project_id=project_id,
+        harness_type=HarnessType.CLAIM_PARSE,
+        document_id=doc.id,
         config={"document_id": str(doc.id)},
     )
     await harness_repo.set_status(db_session, session.id, status)

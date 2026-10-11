@@ -10,24 +10,19 @@ Requires:
   - claim/Gilmours/claims/Gilmours Central_Progress Claim No. 1.pdf present
   - claim/Gilmours/claims/Gilmours Central_Progress Claim No. 2.pdf present
 """
+
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
 
-from tests.e2e.fixtures.gilmours_claim1 import (
-    EXPECTED_ASSESSMENT_LINE_ITEMS as EXPECTED_ASSESSMENT_1_LINE_ITEMS,
-    EXPECTED_ASSESSMENT_PS_ITEMS as EXPECTED_ASSESSMENT_1_PS_ITEMS,
-    EXPECTED_ASSESSMENT_VAR_ITEMS as EXPECTED_ASSESSMENT_1_VAR_ITEMS,
-    EXPECTED_CLAIM_ITEM_COUNT,
-    PROJECT,
-)
+from tests.e2e.fixtures.gilmours_claim1 import EXPECTED_CLAIM_ITEM_COUNT, PROJECT
 from tests.e2e.fixtures.gilmours_claim2 import (
     ASSESSMENT_1_EXPECTED,
     ASSESSMENT_2_EXPECTED,
-    EXPECTED_ASSESSMENT_2_LINE_ITEM_COUNT,
     EXPECTED_ASSESSMENT_2_HISTORY_ROWS,
+    EXPECTED_ASSESSMENT_2_LINE_ITEM_COUNT,
     EXPECTED_ASSESSMENT_2_PS_COUNT,
     EXPECTED_ASSESSMENT_2_PS_HISTORY,
     EXPECTED_ASSESSMENT_2_VAR_COUNT,
@@ -39,12 +34,8 @@ from tests.e2e.fixtures.gilmours_claim2 import (
     PR1_PS_RECOMMENDED,
     PR2_VAR3_RECOMMENDED,
 )
-from tests.e2e.helpers import (
-    _assert_decimal_eq,
-    _d,
-    get_auth_headers,
-    upload_claim_deep_mode as _upload_claim_deep_mode,
-)
+from tests.e2e.helpers import _assert_decimal_eq, _d, get_auth_headers
+from tests.e2e.helpers import upload_claim_deep_mode as _upload_claim_deep_mode
 
 CLAIM_1_PATH = (
     Path(__file__).parent.parent.parent.parent
@@ -63,7 +54,7 @@ CLAIM_2_PATH = (
 
 
 async def _approve_assessment_1(
-    client: AsyncClient, project_id: str, assessment_id: str, assessment: dict, headers: dict,
+    client: AsyncClient, project_id: str, assessment_id: str, assessment: dict, headers: dict
 ):
     """Approve assessment 1 items to match PR1 values."""
     # Approve contract work items that are unapproved (General, Temp driveway, General Margin)
@@ -73,20 +64,14 @@ async def _approve_assessment_1(
             if desc in PR1_CONTRACT_WORK_APPROVALS:
                 await client.patch(
                     f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
-                    json={
-                        "total_recommended": PR1_CONTRACT_WORK_APPROVALS[desc],
-                        "status": "approved",
-                    },
+                    json={"total_recommended": PR1_CONTRACT_WORK_APPROVALS[desc], "status": "approved"},
                     headers=headers,
                 )
             else:
                 # Auto-approve at claimed amount
                 await client.patch(
                     f"/api/v1/projects/{project_id}/assessments/{assessment_id}/line-items/{li['id']}",
-                    json={
-                        "total_recommended": li["contractor_claim_to_date"],
-                        "status": "approved",
-                    },
+                    json={"total_recommended": li["contractor_claim_to_date"], "status": "approved"},
                     headers=headers,
                 )
 
@@ -97,10 +82,7 @@ async def _approve_assessment_1(
                 # This is PS1 (fence removal) - QS reduces it
                 await client.patch(
                     f"/api/v1/projects/{project_id}/assessments/{assessment_id}/provisional-sum-items/{ps['id']}",
-                    json={
-                        "total_recommended": PR1_PS_RECOMMENDED,
-                        "status": "approved",
-                    },
+                    json={"total_recommended": PR1_PS_RECOMMENDED, "status": "approved"},
                     headers=headers,
                 )
 
@@ -109,18 +91,12 @@ async def _approve_assessment_1(
         if var["status"] == "unapproved":
             await client.patch(
                 f"/api/v1/projects/{project_id}/assessments/{assessment_id}/variation-items/{var['id']}",
-                json={
-                    "total_recommended": var["contractor_claim_to_date"],
-                    "status": "approved",
-                },
+                json={"total_recommended": var["contractor_claim_to_date"], "status": "approved"},
                 headers=headers,
             )
 
 
-@pytest.mark.skipif(
-    not (CLAIM_1_PATH.exists() and CLAIM_2_PATH.exists()),
-    reason="Sample PDFs not available",
-)
+@pytest.mark.skipif(not (CLAIM_1_PATH.exists() and CLAIM_2_PATH.exists()), reason="Sample PDFs not available")
 @pytest.mark.asyncio
 async def test_second_claim_e2e(client: AsyncClient):
     """Full pipeline: claim 1 → approve → finalise → claim 2 → verify carry-forward → approve → finalise."""
@@ -136,15 +112,13 @@ async def test_second_claim_e2e(client: AsyncClient):
     assert claim_1_id is not None
 
     # Verify claim 1 item count
-    claim_1_resp = await client.get(
-        f"/api/v1/projects/{project_id}/claims/{claim_1_id}", headers=headers,
-    )
+    claim_1_resp = await client.get(f"/api/v1/projects/{project_id}/claims/{claim_1_id}", headers=headers)
     assert claim_1_resp.status_code == 200
     assert len(claim_1_resp.json()["line_items"]) == EXPECTED_CLAIM_ITEM_COUNT
 
     # ── 3. Get assessment 1 and approve items to match PR1 ─────────────────
     assessment_1_resp = await client.get(
-        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_1_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_1_id}", headers=headers
     )
     assert assessment_1_resp.status_code == 200
     assessment_1 = assessment_1_resp.json()
@@ -154,22 +128,17 @@ async def test_second_claim_e2e(client: AsyncClient):
 
     # ── 4. Finalise assessment 1 ───────────────────────────────────────────
     finalise_resp = await client.post(
-        f"/api/v1/projects/{project_id}/assessments/{assessment_1_id}/finalise",
-        headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/{assessment_1_id}/finalise", headers=headers
     )
     assert finalise_resp.status_code == 200, finalise_resp.text
     finalised_1 = finalise_resp.json()
 
     # Verify finalised assessment 1 totals
     _assert_decimal_eq(
-        finalised_1["total_recommended"],
-        ASSESSMENT_1_EXPECTED["total_recommended"],
-        "Assessment1.total_recommended",
+        finalised_1["total_recommended"], ASSESSMENT_1_EXPECTED["total_recommended"], "Assessment1.total_recommended"
     )
     _assert_decimal_eq(
-        finalised_1["total_retention"],
-        ASSESSMENT_1_EXPECTED["total_retention"],
-        "Assessment1.total_retention",
+        finalised_1["total_retention"], ASSESSMENT_1_EXPECTED["total_retention"], "Assessment1.total_retention"
     )
     _assert_decimal_eq(
         finalised_1["total_payment_to_date"],
@@ -183,17 +152,17 @@ async def test_second_claim_e2e(client: AsyncClient):
     )
     assert finalised_1["status"] == "finalised"
 
-    print(f"\n  Assessment 1 finalised: total_recommended={finalised_1['total_recommended']}, "
-          f"total_payment_to_date={finalised_1['total_payment_to_date']}")
+    print(
+        f"\n  Assessment 1 finalised: total_recommended={finalised_1['total_recommended']}, "
+        f"total_payment_to_date={finalised_1['total_payment_to_date']}"
+    )
 
     # ── 5. Upload claim 2 (deep mode) ──────────────────────────────────────
     claim_2_id = await _upload_claim_deep_mode(client, project_id, CLAIM_2_PATH, headers)
     assert claim_2_id is not None
 
     # Verify claim 2 item count
-    claim_2_resp = await client.get(
-        f"/api/v1/projects/{project_id}/claims/{claim_2_id}", headers=headers,
-    )
+    claim_2_resp = await client.get(f"/api/v1/projects/{project_id}/claims/{claim_2_id}", headers=headers)
     assert claim_2_resp.status_code == 200
     claim_2 = claim_2_resp.json()
     claim_2_items = claim_2["line_items"]
@@ -209,15 +178,15 @@ async def test_second_claim_e2e(client: AsyncClient):
 
     print(f"\n  Claim 2 line items ({len(claim_2_items)}):")
     for li in sorted(claim_2_items, key=lambda x: (x["item_type"], x.get("ref_code", ""))):
-        print(f"    ({li['item_type']}, {li.get('ref_code')}) {li['description']}  "
-              f"value={li['contract_value']} ptd={li['ptd']} prev={li['previous']} curr={li['current']}")
+        print(
+            f"    ({li['item_type']}, {li.get('ref_code')}) {li['description']}  "
+            f"value={li['contract_value']} ptd={li['ptd']} prev={li['previous']} curr={li['current']}"
+        )
 
     for expected in EXPECTED_CLAIM_2_LINE_ITEMS:
         key = (expected["item_type"], expected["ref_code"])
         actual = actual_by_key.get(key)
-        assert actual is not None, (
-            f"Missing claim 2 item: {key} ({expected['description']})"
-        )
+        assert actual is not None, f"Missing claim 2 item: {key} ({expected['description']})"
         label = f"Claim2[{key}]"
         _assert_decimal_eq(actual["contract_value"], expected["contract_value"], f"{label}.contract_value")
         _assert_decimal_eq(actual["ptd"], expected["ptd"], f"{label}.ptd")
@@ -227,7 +196,7 @@ async def test_second_claim_e2e(client: AsyncClient):
 
     # ── 7. Get assessment 2 and verify auto-created values ─────────────────
     assessment_2_resp = await client.get(
-        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_2_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_2_id}", headers=headers
     )
     assert assessment_2_resp.status_code == 200
     assessment_2 = assessment_2_resp.json()
@@ -243,8 +212,7 @@ async def test_second_claim_e2e(client: AsyncClient):
     # ── 7a. Verify assessment 2 line items (history + per-item) ────────────
     assessment_2_items = assessment_2["line_items"]
     assert len(assessment_2_items) == EXPECTED_ASSESSMENT_2_LINE_ITEM_COUNT, (
-        f"Expected {EXPECTED_ASSESSMENT_2_LINE_ITEM_COUNT} assessment 2 items, "
-        f"got {len(assessment_2_items)}"
+        f"Expected {EXPECTED_ASSESSMENT_2_LINE_ITEM_COUNT} assessment 2 items, got {len(assessment_2_items)}"
     )
 
     # Separate history carrier rows from per-claim-item rows
@@ -254,10 +222,12 @@ async def test_second_claim_e2e(client: AsyncClient):
     print(f"\n  Assessment 2 line items ({len(assessment_2_items)}):")
     for ali in sorted(assessment_2_items, key=lambda x: x.get("sort_order", 0)):
         cli_tag = "H" if ali.get("claim_line_item_id") is None else "I"
-        print(f"    [{ali.get('sort_order')}:{cli_tag}] {ali['description']}  "
-              f"claimed={ali['contractor_claim_to_date']} "
-              f"recommended={ali['total_recommended']} prev_paid={ali['previously_paid']} "
-              f"this_period={ali['recommended_this_period']} status={ali['status']}")
+        print(
+            f"    [{ali.get('sort_order')}:{cli_tag}] {ali['description']}  "
+            f"claimed={ali['contractor_claim_to_date']} "
+            f"recommended={ali['total_recommended']} prev_paid={ali['previously_paid']} "
+            f"this_period={ali['recommended_this_period']} status={ali['status']}"
+        )
 
     # -- Check history carrier rows (deterministic, exact values) --
     assert len(history_rows) == EXPECTED_HISTORY_ROW_COUNT, (
@@ -275,11 +245,19 @@ async def test_second_claim_e2e(client: AsyncClient):
         actual = actual_history_by_key.get(key)
         assert actual is not None, f"Missing history row: '{desc}' (sort_order={expected['sort_order']})"
         label = f"History[{desc}@{expected['sort_order']}]"
-        _assert_decimal_eq(actual["contractor_claim_to_date"], expected["contractor_claim_to_date"], f"{label}.contractor_claim_to_date")
+        _assert_decimal_eq(
+            actual["contractor_claim_to_date"],
+            expected["contractor_claim_to_date"],
+            f"{label}.contractor_claim_to_date",
+        )
         _assert_decimal_eq(actual["total_recommended"], expected["total_recommended"], f"{label}.total_recommended")
         _assert_decimal_eq(actual["previously_paid"], expected["previously_paid"], f"{label}.previously_paid")
-        _assert_decimal_eq(actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period")
-        assert actual["status"] == expected["status"], f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        _assert_decimal_eq(
+            actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period"
+        )
+        assert actual["status"] == expected["status"], (
+            f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        )
         assert actual.get("claim_line_item_id") is None, f"{label}: history row should have claim_line_item_id=null"
 
     # -- Check per-claim-item rows (self-consistent with claim line items) --
@@ -300,8 +278,12 @@ async def test_second_claim_e2e(client: AsyncClient):
         _assert_decimal_eq(row["previously_paid"], "0.00", f"{label}.previously_paid")
         # Values must match the linked claim line item's current amount
         expected_current = cli["current"]
-        _assert_decimal_eq(row["contractor_claim_to_date"], expected_current, f"{label}.contractor_claim_to_date vs cli.current")
-        _assert_decimal_eq(row["recommended_this_period"], expected_current, f"{label}.recommended_this_period vs cli.current")
+        _assert_decimal_eq(
+            row["contractor_claim_to_date"], expected_current, f"{label}.contractor_claim_to_date vs cli.current"
+        )
+        _assert_decimal_eq(
+            row["recommended_this_period"], expected_current, f"{label}.recommended_this_period vs cli.current"
+        )
         # Status: unapproved if current > 0, approved if current = 0
         if _d(expected_current) > 0:
             assert row["status"] == "unapproved", f"{label}.status: expected unapproved for current={expected_current}"
@@ -320,9 +302,11 @@ async def test_second_claim_e2e(client: AsyncClient):
     print(f"\n  Assessment 2 PS items ({len(assessment_2_ps)}):")
     for ps in assessment_2_ps:
         cli_tag = "H" if ps.get("claim_line_item_id") is None else "I"
-        print(f"    [{cli_tag}] claimed={ps['contractor_claim_to_date']} recommended={ps['total_recommended']} "
-              f"prev_paid={ps['previously_paid']} this_period={ps['recommended_this_period']} "
-              f"status={ps['status']}")
+        print(
+            f"    [{cli_tag}] claimed={ps['contractor_claim_to_date']} recommended={ps['total_recommended']} "
+            f"prev_paid={ps['previously_paid']} this_period={ps['recommended_this_period']} "
+            f"status={ps['status']}"
+        )
 
     # -- Check PS history rows (exact) --
     assert len(ps_history) == len(EXPECTED_ASSESSMENT_2_PS_HISTORY), (
@@ -332,16 +316,19 @@ async def test_second_claim_e2e(client: AsyncClient):
     for expected in EXPECTED_ASSESSMENT_2_PS_HISTORY:
         # Match by contractor_claim_to_date (unique among history rows)
         actual = next(
-            (ps for ps in ps_history
-             if _d(ps["contractor_claim_to_date"]) == _d(expected["contractor_claim_to_date"])),
+            (ps for ps in ps_history if _d(ps["contractor_claim_to_date"]) == _d(expected["contractor_claim_to_date"])),
             None,
         )
         assert actual is not None, f"Missing PS history row with claimed={expected['contractor_claim_to_date']}"
         label = f"PSHistory[claimed={expected['contractor_claim_to_date']}]"
         _assert_decimal_eq(actual["total_recommended"], expected["total_recommended"], f"{label}.total_recommended")
         _assert_decimal_eq(actual["previously_paid"], expected["previously_paid"], f"{label}.previously_paid")
-        _assert_decimal_eq(actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period")
-        assert actual["status"] == expected["status"], f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        _assert_decimal_eq(
+            actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period"
+        )
+        assert actual["status"] == expected["status"], (
+            f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        )
 
     # -- Check PS per-item rows (self-consistent) --
     ps_claim_items = [li for li in claim_2_items if li["item_type"] == "provisional_sum"]
@@ -354,8 +341,12 @@ async def test_second_claim_e2e(client: AsyncClient):
         assert cli is not None, f"PS per-item row references unknown claim_line_item_id={row['claim_line_item_id']}"
         label = f"PSItem[cli={row['claim_line_item_id'][:8]}]"
         _assert_decimal_eq(row["previously_paid"], "0.00", f"{label}.previously_paid")
-        _assert_decimal_eq(row["contractor_claim_to_date"], cli["current"], f"{label}.contractor_claim_to_date vs cli.current")
-        _assert_decimal_eq(row["recommended_this_period"], cli["current"], f"{label}.recommended_this_period vs cli.current")
+        _assert_decimal_eq(
+            row["contractor_claim_to_date"], cli["current"], f"{label}.contractor_claim_to_date vs cli.current"
+        )
+        _assert_decimal_eq(
+            row["recommended_this_period"], cli["current"], f"{label}.recommended_this_period vs cli.current"
+        )
 
     # ── 7c. Verify assessment 2 variation items ──────────────────────────
     assessment_2_vars = assessment_2.get("variation_items", [])
@@ -369,9 +360,11 @@ async def test_second_claim_e2e(client: AsyncClient):
     print(f"\n  Assessment 2 variation items ({len(assessment_2_vars)}):")
     for var in sorted(assessment_2_vars, key=lambda x: x.get("contractor_ref", "")):
         cli_tag = "H" if var.get("claim_line_item_id") is None else "I"
-        print(f"    [{cli_tag}] ref={var['contractor_ref']} claimed={var['contractor_claim_to_date']} "
-              f"recommended={var['total_recommended']} prev_paid={var['previously_paid']} "
-              f"this_period={var['recommended_this_period']} status={var['status']}")
+        print(
+            f"    [{cli_tag}] ref={var['contractor_ref']} claimed={var['contractor_claim_to_date']} "
+            f"recommended={var['total_recommended']} prev_paid={var['previously_paid']} "
+            f"this_period={var['recommended_this_period']} status={var['status']}"
+        )
 
     # -- Check variation history rows (exact) --
     assert len(var_history) == len(EXPECTED_ASSESSMENT_2_VAR_HISTORY), (
@@ -384,11 +377,19 @@ async def test_second_claim_e2e(client: AsyncClient):
         actual = actual_var_history_by_ref.get(ref)
         assert actual is not None, f"Missing variation history row for ref={ref}"
         label = f"VarHistory[ref={ref}]"
-        _assert_decimal_eq(actual["contractor_claim_to_date"], expected["contractor_claim_to_date"], f"{label}.contractor_claim_to_date")
+        _assert_decimal_eq(
+            actual["contractor_claim_to_date"],
+            expected["contractor_claim_to_date"],
+            f"{label}.contractor_claim_to_date",
+        )
         _assert_decimal_eq(actual["total_recommended"], expected["total_recommended"], f"{label}.total_recommended")
         _assert_decimal_eq(actual["previously_paid"], expected["previously_paid"], f"{label}.previously_paid")
-        _assert_decimal_eq(actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period")
-        assert actual["status"] == expected["status"], f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        _assert_decimal_eq(
+            actual["recommended_this_period"], expected["recommended_this_period"], f"{label}.recommended_this_period"
+        )
+        assert actual["status"] == expected["status"], (
+            f"{label}.status: expected {expected['status']}, got {actual['status']}"
+        )
 
     # -- Check variation per-item rows (self-consistent) --
     var_claim_items = [li for li in claim_2_items if li["item_type"] == "variation"]
@@ -401,8 +402,12 @@ async def test_second_claim_e2e(client: AsyncClient):
         assert cli is not None, f"Var per-item row references unknown claim_line_item_id={row['claim_line_item_id']}"
         label = f"VarItem[ref={row['contractor_ref']}]"
         _assert_decimal_eq(row["previously_paid"], "0.00", f"{label}.previously_paid")
-        _assert_decimal_eq(row["contractor_claim_to_date"], cli["current"], f"{label}.contractor_claim_to_date vs cli.current")
-        _assert_decimal_eq(row["recommended_this_period"], cli["current"], f"{label}.recommended_this_period vs cli.current")
+        _assert_decimal_eq(
+            row["contractor_claim_to_date"], cli["current"], f"{label}.contractor_claim_to_date vs cli.current"
+        )
+        _assert_decimal_eq(
+            row["recommended_this_period"], cli["current"], f"{label}.recommended_this_period vs cli.current"
+        )
         if _d(cli["current"]) > 0:
             assert row["status"] == "unapproved", f"{label}.status: expected unapproved for current={cli['current']}"
         else:
@@ -427,10 +432,7 @@ async def test_second_claim_e2e(client: AsyncClient):
         if li["status"] == "unapproved":
             await client.patch(
                 f"/api/v1/projects/{project_id}/assessments/{assessment_2_id}/line-items/{li['id']}",
-                json={
-                    "total_recommended": li["total_recommended"],
-                    "status": "approved",
-                },
+                json={"total_recommended": li["total_recommended"], "status": "approved"},
                 headers=headers,
             )
 
@@ -438,10 +440,7 @@ async def test_second_claim_e2e(client: AsyncClient):
         if ps["status"] == "unapproved":
             await client.patch(
                 f"/api/v1/projects/{project_id}/assessments/{assessment_2_id}/provisional-sum-items/{ps['id']}",
-                json={
-                    "total_recommended": ps["total_recommended"],
-                    "status": "approved",
-                },
+                json={"total_recommended": ps["total_recommended"], "status": "approved"},
                 headers=headers,
             )
 
@@ -449,8 +448,11 @@ async def test_second_claim_e2e(client: AsyncClient):
     # PR2_VAR3_RECOMMENDED is the cumulative total (34434.17). The history row
     # already holds previously_paid=5238.02, so the per-item row gets the remainder.
     var3_history_prev = next(
-        (_d(v["previously_paid"]) for v in assessment_2.get("variation_items", [])
-         if v["contractor_ref"] == "3" and v.get("claim_line_item_id") is None),
+        (
+            _d(v["previously_paid"])
+            for v in assessment_2.get("variation_items", [])
+            if v["contractor_ref"] == "3" and v.get("claim_line_item_id") is None
+        ),
         Decimal("0"),
     )
     var3_per_item_recommended = str(_d(PR2_VAR3_RECOMMENDED) - var3_history_prev)
@@ -462,17 +464,13 @@ async def test_second_claim_e2e(client: AsyncClient):
                 recommended = var3_per_item_recommended
             await client.patch(
                 f"/api/v1/projects/{project_id}/assessments/{assessment_2_id}/variation-items/{var['id']}",
-                json={
-                    "total_recommended": recommended,
-                    "status": "approved",
-                },
+                json={"total_recommended": recommended, "status": "approved"},
                 headers=headers,
             )
 
     # ── 9. Finalise assessment 2 ───────────────────────────────────────────
     finalise_2_resp = await client.post(
-        f"/api/v1/projects/{project_id}/assessments/{assessment_2_id}/finalise",
-        headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/{assessment_2_id}/finalise", headers=headers
     )
     assert finalise_2_resp.status_code == 200, finalise_2_resp.text
     finalised_2 = finalise_2_resp.json()
@@ -480,20 +478,12 @@ async def test_second_claim_e2e(client: AsyncClient):
     assert finalised_2["status"] == "finalised"
 
     # ── 10. Verify finalised assessment 2 totals ───────────────────────────
+    _assert_decimal_eq(finalised_2["contract_sum"], ASSESSMENT_2_EXPECTED["contract_sum"], "Assessment2.contract_sum")
     _assert_decimal_eq(
-        finalised_2["contract_sum"],
-        ASSESSMENT_2_EXPECTED["contract_sum"],
-        "Assessment2.contract_sum",
+        finalised_2["total_recommended"], ASSESSMENT_2_EXPECTED["total_recommended"], "Assessment2.total_recommended"
     )
     _assert_decimal_eq(
-        finalised_2["total_recommended"],
-        ASSESSMENT_2_EXPECTED["total_recommended"],
-        "Assessment2.total_recommended",
-    )
-    _assert_decimal_eq(
-        finalised_2["total_retention"],
-        ASSESSMENT_2_EXPECTED["total_retention"],
-        "Assessment2.total_retention",
+        finalised_2["total_retention"], ASSESSMENT_2_EXPECTED["total_retention"], "Assessment2.total_retention"
     )
     _assert_decimal_eq(
         finalised_2["total_payment_to_date"],
@@ -512,7 +502,7 @@ async def test_second_claim_e2e(client: AsyncClient):
     )
 
     # ── Summary ─────────────────────────────────────────────────────────────
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  E2E Second Claim Test PASSED")
     print(f"  Project:          {project_id}")
     print(f"  Claim 1:          {claim_1_id}")
@@ -526,4 +516,4 @@ async def test_second_claim_e2e(client: AsyncClient):
     print(f"    total_payment_to_date: {finalised_2['total_payment_to_date']}")
     print(f"    previously_certified:  {finalised_2['previously_certified']}")
     print(f"    recommended_this_period: {finalised_2['recommended_this_period']}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")

@@ -1,5 +1,6 @@
 """Smoke tests for variation, provisional_sum, claim, and wbs repo methods."""
-from app.repos import variation_repo, provisional_sum_repo, claim_repo, wbs_code_repo
+
+from app.repos import claim_repo, provisional_sum_repo, variation_repo, wbs_code_repo
 
 
 def test_variation_repo_has_create():

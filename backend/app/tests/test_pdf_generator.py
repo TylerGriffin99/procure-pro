@@ -1,8 +1,6 @@
 import os
 from decimal import Decimal
 
-import pytest
-
 from app.utils.pdf_generator import generate_payment_recommendation_pdf
 
 
@@ -27,9 +25,7 @@ def test_generate_pr_pdf():
         "value_claimed": Decimal("70317.39"),
         "adjustments": Decimal("-1730.00"),
         "total_recommended": Decimal("68587.39"),
-        "retention_details": [
-            {"percentage": "10%", "base": Decimal("68587.39"), "amount": Decimal("6858.74")},
-        ],
+        "retention_details": [{"percentage": "10%", "base": Decimal("68587.39"), "amount": Decimal("6858.74")}],
         "total_retention": Decimal("6858.74"),
         "total_payment_to_date": Decimal("61728.65"),
         "previously_certified": Decimal("0"),
@@ -48,7 +44,7 @@ def test_generate_pr_pdf():
                 "previously_paid": Decimal("0"),
                 "recommended_this_period": Decimal("6250.00"),
                 "comments": "As per progress noted on site",
-            },
+            }
         ],
     }
 
@@ -139,7 +135,7 @@ def test_pdf_includes_closed_out_status_and_comments():
                 "percentage": "40.0%",
                 "status": "Approved",
                 "comments": "Standard approval",
-            },
+            }
         ],
         "is_draft": False,
     }

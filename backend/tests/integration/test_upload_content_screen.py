@@ -1,4 +1,5 @@
 """The upload boundary rejects documents with prompt injection / embedded code."""
+
 import io
 from unittest.mock import patch
 
@@ -10,15 +11,8 @@ from tests.e2e.helpers import get_auth_headers
 
 def _mock_pdf(text: str = "", tables: list | None = None):
     """A pdfplumber-like context manager whose single page yields `text`/`tables`."""
-    page = type("Page", (), {
-        "extract_text": lambda self: text,
-        "extract_tables": lambda self: tables or [],
-    })()
-    return type("PDF", (), {
-        "pages": [page],
-        "__enter__": lambda self: self,
-        "__exit__": lambda self, *a: None,
-    })()
+    page = type("Page", (), {"extract_text": lambda self: text, "extract_tables": lambda self: tables or []})()
+    return type("PDF", (), {"pages": [page], "__enter__": lambda self: self, "__exit__": lambda self, *a: None})()
 
 
 async def _upload(client, headers, project_id, body=b"%PDF-1.4\nx\n%%EOF"):
@@ -96,8 +90,10 @@ async def test_upload_accepts_clean_claim(client):
     headers = await get_auth_headers(client)
     project_id = (await client.post("/api/v1/projects", json=PROJECT, headers=headers)).json()["id"]
 
-    pdf = _mock_pdf(text="Progress Claim No. 1\n1001 Excavation 100,000.00 50%",
-                    tables=[[["1001", "Excavation and earthworks", "100,000.00"]]])
+    pdf = _mock_pdf(
+        text="Progress Claim No. 1\n1001 Excavation 100,000.00 50%",
+        tables=[[["1001", "Excavation and earthworks", "100,000.00"]]],
+    )
     with patch("pdfplumber.open", return_value=pdf):
         resp = await _upload(client, headers, project_id)
 

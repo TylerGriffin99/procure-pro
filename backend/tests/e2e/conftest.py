@@ -7,6 +7,7 @@ Example:
     E2E_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/claimreview \
         python -m pytest tests/e2e/test_e2e_full_pipeline.py -v -x -s
 """
+
 import asyncio
 import os
 from collections.abc import AsyncGenerator
@@ -21,9 +22,9 @@ import app.database as database_module
 import app.services.harness_service as harness_module
 from app.database import Base, get_db
 from app.main import app
+from app.models.claim_parse_flag import ClaimParseFlag  # noqa: F401
 from app.models.harness_session import HarnessSession  # noqa: F401
 from app.models.harness_workspace_file import HarnessWorkspaceFile  # noqa: F401
-from app.models.claim_parse_flag import ClaimParseFlag  # noqa: F401
 
 _EXTERNAL_DB_URL = os.environ.get("E2E_DATABASE_URL")
 
@@ -45,10 +46,7 @@ def postgres_container():
         yield None
         return
     with PostgresContainer(
-        image="postgres:16-alpine",
-        username="test",
-        password="test",
-        dbname="claimreview_test",
+        image="postgres:16-alpine", username="test", password="test", dbname="claimreview_test"
     ) as pg:
         yield pg
 

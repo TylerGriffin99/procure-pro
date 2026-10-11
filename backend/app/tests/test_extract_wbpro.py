@@ -1,10 +1,15 @@
 """Tests for the deterministic WBPRO table parser."""
-import pytest
 
-from app.harness.executors.extract_wbpro import parse_decimal, is_skip_row
-from app.harness.executors.extract_wbpro import detect_sections, SECTION_CONTRACT, SECTION_VARIATION, SECTION_PS
-from app.harness.executors.extract_wbpro import extract_metadata
-from app.harness.executors.extract_wbpro import parse_wbpro
+from app.harness.executors.extract_wbpro import (
+    SECTION_CONTRACT,
+    SECTION_PS,
+    SECTION_VARIATION,
+    detect_sections,
+    extract_metadata,
+    is_skip_row,
+    parse_decimal,
+    parse_wbpro,
+)
 
 
 class TestParseWbpro:
@@ -15,13 +20,38 @@ class TestParseWbpro:
             "pages": [
                 {
                     "page_num": 1,
-                    "text": "CONTRACTOR PROGRESS CLAIM\nClaim No. 3\nPeriod From: 01/09/2025\nPeriod To: 30/09/2025\nPayment Due: 15/10/2025\nCONTRACT WORKS",
+                    "text": (
+                        "CONTRACTOR PROGRESS CLAIM\n"
+                        "Claim No. 3\n"
+                        "Period From: 01/09/2025\n"
+                        "Period To: 30/09/2025\n"
+                        "Payment Due: 15/10/2025\n"
+                        "CONTRACT WORKS"
+                    ),
                     "tables": [
                         [
-                            ["1.0", "Preliminaries", "100,000.00", "50.00", "50,000.00", "30,000.00", "20,000.00", "50,000.00"],
-                            ["2.0", "Excavation", "200,000.00", "25.00", "50,000.00", "30,000.00", "20,000.00", "150,000.00"],
+                            [
+                                "1.0",
+                                "Preliminaries",
+                                "100,000.00",
+                                "50.00",
+                                "50,000.00",
+                                "30,000.00",
+                                "20,000.00",
+                                "50,000.00",
+                            ],
+                            [
+                                "2.0",
+                                "Excavation",
+                                "200,000.00",
+                                "25.00",
+                                "50,000.00",
+                                "30,000.00",
+                                "20,000.00",
+                                "150,000.00",
+                            ],
                             ["", "Total Contract Works", "", "", "100,000.00", "60,000.00", "40,000.00", "200,000.00"],
-                        ],
+                        ]
                     ],
                 },
                 {
@@ -29,9 +59,19 @@ class TestParseWbpro:
                     "text": "VARIATION WORKS",
                     "tables": [
                         [
-                            ["CI-01", "Extra piling", "CR-01", "5,000.00", "100.00", "5,000.00", "5,000.00", "0.00", "0.00"],
+                            [
+                                "CI-01",
+                                "Extra piling",
+                                "CR-01",
+                                "5,000.00",
+                                "100.00",
+                                "5,000.00",
+                                "5,000.00",
+                                "0.00",
+                                "0.00",
+                            ],
                             ["CI-02", "Retaining wall", "", "10,000.00", "0.00", "0.00", "0.00", "0.00", "10,000.00"],
-                        ],
+                        ]
                     ],
                 },
                 {
@@ -39,8 +79,17 @@ class TestParseWbpro:
                     "text": "PROVISIONAL SUMS",
                     "tables": [
                         [
-                            ["PS-01", "Allowance for unforeseen", "15,000.00", "0.00", "0.00", "0.00", "0.00", "15,000.00"],
-                        ],
+                            [
+                                "PS-01",
+                                "Allowance for unforeseen",
+                                "15,000.00",
+                                "0.00",
+                                "0.00",
+                                "0.00",
+                                "0.00",
+                                "15,000.00",
+                            ]
+                        ]
                     ],
                 },
             ],
@@ -96,9 +145,7 @@ class TestParseWbpro:
                 {
                     "page_num": 1,
                     "text": "CONTRACT WORKS",
-                    "tables": [[
-                        ["1.0", "Prelims", "100000.00", "0.00", "0.00", "0.00", "0.00", "100000.00"],
-                    ]],
+                    "tables": [[["1.0", "Prelims", "100000.00", "0.00", "0.00", "0.00", "0.00", "100000.00"]]],
                 },
                 {
                     "page_num": 2,
@@ -214,8 +261,10 @@ class TestDetectSections:
 
 class TestColumnMapping:
     """Verify column counts are validated per section type."""
+
     def test_contract_works_8_cols(self):
         from app.harness.executors.extract_wbpro import map_row_to_item
+
         row = ["1.0", "Excavation", "100000.00", "50.00", "50000.00", "30000.00", "20000.00", "50000.00"]
         item = map_row_to_item(row, SECTION_CONTRACT, item_index=0)
         assert item is not None
@@ -227,6 +276,7 @@ class TestColumnMapping:
 
     def test_variation_9_cols(self):
         from app.harness.executors.extract_wbpro import map_row_to_item
+
         row = ["CI-01", "Variation desc", "ClientRef", "5000.00", "0.00", "0.00", "0.00", "0.00", "5000.00"]
         item = map_row_to_item(row, SECTION_VARIATION, item_index=5)
         assert item is not None
@@ -238,6 +288,7 @@ class TestColumnMapping:
 
     def test_provisional_sum_8_cols(self):
         from app.harness.executors.extract_wbpro import map_row_to_item
+
         row = ["PS-01", "Provisional Sum Item", "25000.00", "0.00", "0.00", "0.00", "0.00", "25000.00"]
         item = map_row_to_item(row, SECTION_PS, item_index=10)
         assert item is not None
@@ -245,6 +296,7 @@ class TestColumnMapping:
 
     def test_wrong_col_count_returns_none(self):
         from app.harness.executors.extract_wbpro import map_row_to_item
+
         row = ["1.0", "Too few cols", "100000.00"]
         item = map_row_to_item(row, SECTION_CONTRACT, item_index=0)
         assert item is None

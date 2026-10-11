@@ -1,5 +1,6 @@
 """Smoke tests for assessment sub-item repo function signatures."""
-from app.repos import assessment_line_item_repo, assessment_variation_repo, assessment_provisional_sum_repo
+
+from app.repos import assessment_line_item_repo, assessment_provisional_sum_repo, assessment_variation_repo
 
 
 def test_line_item_repo_has_create():

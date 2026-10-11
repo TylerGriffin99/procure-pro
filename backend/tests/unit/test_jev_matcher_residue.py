@@ -1,10 +1,11 @@
 import json
+
 import pytest
 from pydantic import TypeAdapter
+
+from app.harness.matchers.jev import NONE_OPTION, JevMatcher
+from app.harness.schemas import MatchOutcome, Subcat, WbsMatch
 from tests.unit.jev_fakes import fake_client
-from app.harness.matchers.jev import JevMatcher, NONE_OPTION
-from app.harness.schemas import MatchOutcome, Subcat
-from app.harness.schemas import WbsMatch
 
 
 class _Phase:
@@ -15,39 +16,51 @@ class _Phase:
 def _async(v):
     async def _a(*a, **k):
         return v
+
     return _a()
 
 
 @pytest.mark.asyncio
 async def test_none_and_lowconf_items_routed_to_llm(monkeypatch):
-    parsed = {"line_items": [
-        {"item_index": 0, "description": "x", "contract_value": "1", "item_type": "contract_work"},
-        {"item_index": 1, "description": "y", "contract_value": "2", "item_type": "contract_work"},
-    ]}
-    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
-                        lambda db, sid, path: _async(json.dumps(parsed)))
-    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
-                        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]))
+    parsed = {
+        "line_items": [
+            {"item_index": 0, "description": "x", "contract_value": "1", "item_type": "contract_work"},
+            {"item_index": 1, "description": "y", "contract_value": "2", "item_type": "contract_work"},
+        ]
+    }
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", lambda db, sid, path: _async(json.dumps(parsed)))
+    monkeypatch.setattr(
+        "app.harness.matchers.jev.wbs_subcategories",
+        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]),
+    )
 
     async def fake_decide(*, state, questions, **k):
         qid = next(iter(questions))
-        ans = {"item_0": {"choice": NONE_OPTION, "confidence": 0.9, "probabilities": {}},
-               "item_1": {"choice": "DM-01", "confidence": 0.2, "probabilities": {"DM-01": 0.2}}}[qid]
+        ans = {
+            "item_0": {"choice": NONE_OPTION, "confidence": 0.9, "probabilities": {}},
+            "item_1": {"choice": "DM-01", "confidence": 0.2, "probabilities": {"DM-01": 0.2}},
+        }[qid]
         return {"answers": {qid: ans}, "usage": {}}
 
-    llm_result = [WbsMatch(item_index=0, wbs_code="NEW-01", wbs_description="minted", parent_code="DM",
-                           is_new=True, confidence=0.7),
-                  WbsMatch(item_index=1, wbs_code="DM-01", wbs_code_id="u1", confidence=0.85)]
+    llm_result = [
+        WbsMatch(
+            item_index=0, wbs_code="NEW-01", wbs_description="minted", parent_code="DM", is_new=True, confidence=0.7
+        ),
+        WbsMatch(item_index=1, wbs_code="DM-01", wbs_code_id="u1", confidence=0.85),
+    ]
 
     async def fake_llm(*, phase_def, db, project_id, session_id):
-        return MatchOutcome(output=llm_result,
-                            output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode())
+        return MatchOutcome(output=llm_result, output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode())
+
     monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", fake_llm)
 
     import app.config
+
     monkeypatch.setattr(app.config.settings, "jev_confidence_floor", 0.6, raising=False)
 
-    out = await JevMatcher(client=fake_client(fake_decide)).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    out = await JevMatcher(client=fake_client(fake_decide)).match(
+        phase_def=_Phase(), db=None, project_id="p", session_id="s"
+    )
     by_index = {m.item_index: m for m in out.output}
     assert by_index[0].wbs_code == "NEW-01" and by_index[0].is_new is True
     assert by_index[1].wbs_code_id == "u1" and by_index[1].confidence == 0.85
@@ -55,13 +68,16 @@ async def test_none_and_lowconf_items_routed_to_llm(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplog):
-    parsed = {"line_items": [
-        {"item_index": i, "description": "x", "contract_value": "1", "item_type": "contract_work"}
-        for i in (0, 1)]}
-    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
-                        lambda db, sid, path: _async(json.dumps(parsed)))
-    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
-                        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]))
+    parsed = {
+        "line_items": [
+            {"item_index": i, "description": "x", "contract_value": "1", "item_type": "contract_work"} for i in (0, 1)
+        ]
+    }
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", lambda db, sid, path: _async(json.dumps(parsed)))
+    monkeypatch.setattr(
+        "app.harness.matchers.jev.wbs_subcategories",
+        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]),
+    )
 
     async def fake_decide(*, state, questions, **k):
         qid = next(iter(questions))
@@ -70,13 +86,15 @@ async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplo
     async def fake_llm(*, phase_def, db, project_id, session_id):
         res = [WbsMatch(item_index=0, wbs_code="NEW-01", is_new=True, confidence=0.7)]
         return MatchOutcome(output=res, output_json="[]")
+
     monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", fake_llm)
 
     with caplog.at_level("WARNING", logger="app.harness.matchers.jev"):
         out = await JevMatcher(client=fake_client(fake_decide)).match(
-            phase_def=_Phase(), db=None, project_id="p", session_id="s")
+            phase_def=_Phase(), db=None, project_id="p", session_id="s"
+        )
     by_index = {m.item_index: m for m in out.output}
-    assert by_index[0].wbs_code == "NEW-01"                       # replaced by LLM
+    assert by_index[0].wbs_code == "NEW-01"  # replaced by LLM
     assert by_index[1].wbs_code == "" and by_index[1].wbs_code_id is None  # placeholder kept
     warns = [r.getMessage() for r in caplog.records if "not resolved by LLM" in r.getMessage()]
     assert len(warns) == 1 and "[1]" in warns[0]
@@ -84,27 +102,38 @@ async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplo
 
 @pytest.mark.asyncio
 async def test_residue_tokens_and_counts_accumulate(monkeypatch):
-    parsed = {"line_items": [
-        {"item_index": 0, "description": "x", "contract_value": "1", "item_type": "contract_work"}]}
-    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file",
-                        lambda db, sid, path: _async(json.dumps(parsed)))
-    monkeypatch.setattr("app.harness.matchers.jev.wbs_subcategories",
-                        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]))
+    parsed = {
+        "line_items": [{"item_index": 0, "description": "x", "contract_value": "1", "item_type": "contract_work"}]
+    }
+    monkeypatch.setattr("app.repos.harness_repo.read_workspace_file", lambda db, sid, path: _async(json.dumps(parsed)))
+    monkeypatch.setattr(
+        "app.harness.matchers.jev.wbs_subcategories",
+        lambda **k: _async([Subcat(id="u1", code="DM-01", description="d", parent_code="DM", contract_sum=1.0)]),
+    )
 
     async def fake_decide(*, state, questions, **k):
         qid = next(iter(questions))
-        return {"answers": {qid: {"choice": NONE_OPTION, "confidence": 0.9, "probabilities": {}}},
-                "usage": {"input_tokens": 7}}
+        return {
+            "answers": {qid: {"choice": NONE_OPTION, "confidence": 0.9, "probabilities": {}}},
+            "usage": {"input_tokens": 7},
+        }
 
     llm_result = [WbsMatch(item_index=0, wbs_code="NEW-01", parent_code="DM", is_new=True, confidence=0.7)]
 
     async def fake_llm(*, phase_def, db, project_id, session_id):
-        return MatchOutcome(output=llm_result,
-                            output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode(),
-                            input_tokens=100, output_tokens=40, cost_usd=0.5)
+        return MatchOutcome(
+            output=llm_result,
+            output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode(),
+            input_tokens=100,
+            output_tokens=40,
+            cost_usd=0.5,
+        )
+
     monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", fake_llm)
 
-    out = await JevMatcher(client=fake_client(fake_decide)).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
+    out = await JevMatcher(client=fake_client(fake_decide)).match(
+        phase_def=_Phase(), db=None, project_id="p", session_id="s"
+    )
     assert out.input_tokens == 107 and out.output_tokens == 40
     assert out.cost_usd == 0.5
     assert out.residue == 1 and out.fell_back == 0

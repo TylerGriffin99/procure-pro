@@ -8,16 +8,21 @@ from app.repos import harness_repo
 @pytest.mark.asyncio
 async def test_get_session_not_found(client: AsyncClient, auth_headers):
     import uuid
+
     resp = await client.get(f"/api/v1/harness/sessions/{uuid.uuid4()}", headers=auth_headers)
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_get_session(client: AsyncClient, db_session: AsyncSession, test_user, test_project, auth_headers, test_document):
+async def test_get_session(
+    client: AsyncClient, db_session: AsyncSession, test_user, test_project, auth_headers, test_document
+):
     session = await harness_repo.create_session(
         document_id=test_document.id,
-        db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        db=db_session,
+        user_id=test_user.id,
+        project_id=test_project.id,
+        harness_type="claim_parse",
     )
     await db_session.commit()
     resp = await client.get(f"/api/v1/harness/sessions/{session.id}", headers=auth_headers)
@@ -28,11 +33,15 @@ async def test_get_session(client: AsyncClient, db_session: AsyncSession, test_u
 
 
 @pytest.mark.asyncio
-async def test_cancel_session(client: AsyncClient, db_session: AsyncSession, test_user, test_project, auth_headers, test_document):
+async def test_cancel_session(
+    client: AsyncClient, db_session: AsyncSession, test_user, test_project, auth_headers, test_document
+):
     session = await harness_repo.create_session(
         document_id=test_document.id,
-        db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="claim_parse",
+        db=db_session,
+        user_id=test_user.id,
+        project_id=test_project.id,
+        harness_type="claim_parse",
     )
     await db_session.commit()
     resp = await client.post(f"/api/v1/harness/sessions/{session.id}/cancel", headers=auth_headers)

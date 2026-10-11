@@ -2,13 +2,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.exc import (
-    DataError,
-    IntegrityError,
-    InterfaceError,
-    NoResultFound,
-    OperationalError,
-)
+from sqlalchemy.exc import DataError, IntegrityError, InterfaceError, NoResultFound, OperationalError
 
 from app.error_handlers import register
 from app.exceptions import ConflictError, NotFoundError, UnauthorizedError
@@ -38,7 +32,9 @@ def build_app() -> FastAPI:
 
     @app.get("/unique")
     async def unique():
-        orig = FakePgError('duplicate key value violates unique constraint "uq_claim"\nDETAIL: Key (x)=(1) exists.', "23505")
+        orig = FakePgError(
+            'duplicate key value violates unique constraint "uq_claim"\nDETAIL: Key (x)=(1) exists.', "23505"
+        )
         raise IntegrityError("INSERT INTO claims (secret) VALUES (?)", {"secret": "s3cr3t"}, orig)
 
     @app.get("/fk")

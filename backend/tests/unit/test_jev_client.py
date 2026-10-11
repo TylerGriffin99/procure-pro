@@ -54,9 +54,13 @@ async def test_choose_wraps_one_choice_question_and_validates():
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["questions"] = json.loads(request.content)["questions"]
-        return httpx.Response(200, json={"answers": {"item_3": {"choice": "A", "confidence": 0.7}}, "usage": {"input_tokens": 5}})
+        return httpx.Response(
+            200, json={"answers": {"item_3": {"choice": "A", "confidence": 0.7}}, "usage": {"input_tokens": 5}}
+        )
 
-    out = await make_client(handler).choose(qid="item_3", state={"d": 1}, criteria={"A": "a", "B": "b"}, instructions="pick")
+    out = await make_client(handler).choose(
+        qid="item_3", state={"d": 1}, criteria={"A": "a", "B": "b"}, instructions="pick"
+    )
     assert seen["questions"] == {"item_3": {"type": "choice", "instructions": "pick", "criteria": {"A": "a", "B": "b"}}}
     assert out.answers["item_3"].choice == "A"
     assert out.usage.input_tokens == 5
@@ -106,7 +110,9 @@ def test_check_context_budget_rejects_oversized_request():
     client = make_client(lambda r: httpx.Response(200))
     criteria = {f"C-{i}": "d" * 200 for i in range(1000)}
     with pytest.raises(ValueError, match="exceeds 32k context"):
-        client.check_context_budget(phase_name="WBS", states=[{"description": "x"}], criteria=criteria, instructions="i")
+        client.check_context_budget(
+            phase_name="WBS", states=[{"description": "x"}], criteria=criteria, instructions="i"
+        )
 
 
 def test_from_settings_reads_jev_settings():

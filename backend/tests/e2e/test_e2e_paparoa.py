@@ -14,6 +14,7 @@ Requires:
   - LLM_PROVIDER and matching API key set in environment
   - Paparoa PDF in claim/Paparoa/
 """
+
 from decimal import Decimal
 from pathlib import Path
 
@@ -21,34 +22,21 @@ import pytest
 from httpx import AsyncClient
 
 from tests.e2e.fixtures.paparoa_claim1 import (
-    PROJECT,
     EXPECTED_CLAIM_NUMBER,
     EXPECTED_CONTRACT_WORK_MIN,
     EXPECTED_PROVISIONAL_SUM_MIN,
     EXPECTED_VARIATION_MIN,
+    PROJECT,
 )
-from tests.e2e.helpers import (
-    _d,
-    auto_approve_assessment,
-    get_auth_headers,
-    upload_claim_deep_mode,
-)
+from tests.e2e.helpers import _d, auto_approve_assessment, get_auth_headers, upload_claim_deep_mode
 
-CLAIM_PDF = (
-    Path(__file__).parent.parent.parent.parent
-    / "claim"
-    / "Paparoa"
-    / "Paparoa Fire Station PC01 AUG25.pdf"
-)
+CLAIM_PDF = Path(__file__).parent.parent.parent.parent / "claim" / "Paparoa" / "Paparoa Fire Station PC01 AUG25.pdf"
 
 ZERO = Decimal("0")
 
 
 @pytest.mark.paparoa
-@pytest.mark.skipif(
-    not CLAIM_PDF.exists(),
-    reason="Paparoa claim PDF not available",
-)
+@pytest.mark.skipif(not CLAIM_PDF.exists(), reason="Paparoa claim PDF not available")
 @pytest.mark.asyncio
 async def test_paparoa_generic_format_single_claim(client: AsyncClient):
     """Process a non-WBPRO claim through the full pipeline."""
@@ -66,9 +54,7 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
     print(f"  Claim parsed: {claim_id}")
 
     # ── 3. Verify claim number ─────────────────────────────────────────────
-    claim_resp = await client.get(
-        f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers,
-    )
+    claim_resp = await client.get(f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers)
     assert claim_resp.status_code == 200
     claim = claim_resp.json()
     assert claim["claim_number"] == EXPECTED_CLAIM_NUMBER, (
@@ -77,7 +63,7 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
 
     # ── 4. Get assessment ──────────────────────────────────────────────────
     assessment_resp = await client.get(
-        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers
     )
     assert assessment_resp.status_code == 200
     assessment = assessment_resp.json()
@@ -96,9 +82,7 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
 
     # Verify some items have non-zero claims (LLM should extract claimed values)
     nonzero_lis = [li for li in actual_lis if _d(li["contractor_claim_to_date"]) != ZERO]
-    assert len(nonzero_lis) >= 1, (
-        "Expected at least 1 assessment LI with non-zero contractor_claim_to_date"
-    )
+    assert len(nonzero_lis) >= 1, "Expected at least 1 assessment LI with non-zero contractor_claim_to_date"
     print(f"  Assessment LIs: {len(actual_lis)} total, {len(nonzero_lis)} with claims")
 
     # ── 6. Verify provisional sums and variations exist ────────────────────
@@ -119,14 +103,11 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
 
     # ── 8. Finalise ────────────────────────────────────────────────────────
     finalise_resp = await client.post(
-        f"/api/v1/projects/{project_id}/assessments/{assessment_id}/finalise",
-        headers=headers,
+        f"/api/v1/projects/{project_id}/assessments/{assessment_id}/finalise", headers=headers
     )
     assert finalise_resp.status_code == 200, f"Finalise failed: {finalise_resp.text}"
     finalised = finalise_resp.json()
-    assert finalised["status"] == "finalised", (
-        f"Expected status=finalised, got {finalised['status']}"
-    )
+    assert finalised["status"] == "finalised", f"Expected status=finalised, got {finalised['status']}"
 
     # ── 9. Verify contract_sum matches project ─────────────────────────────
     assert _d(finalised["contract_sum"]) == _d(PROJECT["contract_sum"]), (
@@ -160,9 +141,11 @@ async def test_paparoa_generic_format_single_claim(client: AsyncClient):
         f"total_retention should be non-negative, got {finalised['total_retention']}"
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  PAPAROA E2E TEST PASSED (generic format)")
-    print(f"  Finalised: total_recommended={finalised['total_recommended']}, "
-          f"payment_to_date={finalised['total_payment_to_date']}, "
-          f"this_period={finalised['recommended_this_period']}")
-    print(f"{'='*60}")
+    print(
+        f"  Finalised: total_recommended={finalised['total_recommended']}, "
+        f"payment_to_date={finalised['total_payment_to_date']}, "
+        f"this_period={finalised['recommended_this_period']}"
+    )
+    print(f"{'=' * 60}")

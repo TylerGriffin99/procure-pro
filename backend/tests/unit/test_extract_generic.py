@@ -1,17 +1,14 @@
 """Unit tests for the generic LLM-based line-item extractor."""
+
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.harness.executors.extract_generic import (
-    _normalise_decimal,
-    parse_generic,
-    validate_and_normalise,
-)
-
+from app.harness.executors.extract_generic import _normalise_decimal, parse_generic, validate_and_normalise
 
 # ---------------------------------------------------------------------------
 # _normalise_decimal
 # ---------------------------------------------------------------------------
+
 
 class TestNormaliseDecimal:
     def test_normal_value(self):
@@ -49,6 +46,7 @@ class TestNormaliseDecimal:
 # validate_and_normalise
 # ---------------------------------------------------------------------------
 
+
 def _make_item(**overrides):
     """Helper: build a minimal valid line item dict with overrides."""
     base = {
@@ -73,9 +71,13 @@ _SENTINEL = object()
 def _make_response(items=None, metadata=_SENTINEL, summary=_SENTINEL):
     """Helper: build a minimal valid LLM response dict."""
     return {
-        "metadata": {"claim_number": "5", "period_from": "01/01/25", "period_to": "31/01/25", "payment_due": "15/02/25"} if metadata is _SENTINEL else metadata,
+        "metadata": {"claim_number": "5", "period_from": "01/01/25", "period_to": "31/01/25", "payment_due": "15/02/25"}
+        if metadata is _SENTINEL
+        else metadata,
         "line_items": items if items is not None else [_make_item()],
-        "summary": {"original_contract_total": "100.00", "revised_contract_total": "100.00", "claimed_amount": "50.00"} if summary is _SENTINEL else summary,
+        "summary": {"original_contract_total": "100.00", "revised_contract_total": "100.00", "claimed_amount": "50.00"}
+        if summary is _SENTINEL
+        else summary,
     }
 
 
@@ -151,6 +153,7 @@ class TestValidateAndNormalise:
 # ---------------------------------------------------------------------------
 # parse_generic (agent-backed extraction)
 # ---------------------------------------------------------------------------
+
 
 class TestParseGeneric:
     @pytest.mark.asyncio

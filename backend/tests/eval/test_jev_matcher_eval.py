@@ -28,6 +28,7 @@ Run it:   just eval            (N=10)   |   just eval runs=3   (demo)
 Requires: OPEN_ROUTER_API_KEY, Docker (testcontainers) or E2E_DATABASE_URL, and
 the Gilmours claim PDFs. Skips cleanly when the key or PDFs are absent.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -42,8 +43,8 @@ import app.harness.matchers.jev as jev_module
 from app.clients.jev_client import JevClient
 from app.config import settings
 from app.harness.definitions.claim_parse import claim_parse_definition
-from app.harness.schemas import MatchOutcome
 from app.harness.matchers.jev import JevMatcher
+from app.harness.schemas import MatchOutcome
 from app.repos import harness_repo
 from tests.e2e.fixtures import gilmours_claim1 as c1
 from tests.e2e.fixtures import gilmours_claim2 as c2
@@ -66,12 +67,13 @@ class MemoJevClient(JevClient):
         if qid not in self.cache:
             try:
                 self.cache[qid] = (True, await super().post_decisions(state=state, questions=questions))
-            except Exception as e:  # noqa: BLE001 - cached and re-raised immediately below
+            except Exception as e:
                 self.cache[qid] = (False, e)
         ok, value = self.cache[qid]
         if not ok:
             raise value
         return value
+
 
 # ── Config ───────────────────────────────────────────────────────────────────
 N_RUNS = int(os.environ.get("EVAL_RUNS", "10"))
@@ -111,8 +113,7 @@ def _expected_codes(expected_line_items: list[dict]) -> dict[str, str]:
     for item in expected_line_items:
         if item["item_type"] != "contract_work":
             continue
-        hits = [w["code"] for w in subs
-                if abs(float(w["contract_sum"]) - float(item["contract_value"])) < 0.01]
+        hits = [w["code"] for w in subs if abs(float(w["contract_sum"]) - float(item["contract_value"])) < 0.01]
         if len(hits) == 1:
             out[item["ref_code"]] = hits[0]
     return out
@@ -168,12 +169,12 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     session_id = resp.json()["harness_session_id"]
     event_types: list[str] = []
     async with client.stream(
-        "GET", f"/api/v1/harness/sessions/{session_id}/stream", headers=headers, timeout=600.0,
+        "GET", f"/api/v1/harness/sessions/{session_id}/stream", headers=headers, timeout=600.0
     ) as stream:
         async for line in stream.aiter_lines():
             if not line.startswith("data: "):
                 continue
-            payload = line[len("data: "):]
+            payload = line[len("data: ") :]
             if payload == "[DONE]":
                 break
             event_types.append(json.loads(payload).get("type", ""))
@@ -187,14 +188,13 @@ async def _no_residue(*, phase_def, db, project_id, session_id) -> MatchOutcome:
     return MatchOutcome(output=[], output_json="[]")
 
 
-async def _run_once(db, project_id, session_id, expected_by_index, memo_cache) -> tuple[RunResult, list[tuple[float, bool]]]:
+async def _run_once(
+    db, project_id, session_id, expected_by_index, memo_cache
+) -> tuple[RunResult, list[tuple[float, bool]]]:
     """One matcher run over one claim. WBS is scored twice (Jev-alone, post-residue)
     from a single memoised set of Jev calls; VPS once."""
     memo = MemoJevClient(
-        memo_cache,
-        url=settings.jev_decisions_url,
-        api_key=settings.open_router_api_key,
-        model=settings.jev_model,
+        memo_cache, url=settings.jev_decisions_url, api_key=settings.open_router_api_key, model=settings.jev_model
     )
 
     # Pass A: Jev-alone (residue resolver stubbed out so Jev's raw decisions stand).
@@ -202,17 +202,18 @@ async def _run_once(db, project_id, session_id, expected_by_index, memo_cache) -
     jev_module.run_llm_matches = _no_residue
     try:
         wbs_alone = await JevMatcher(client=memo).match(
-            phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id)
+            phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id
+        )
     finally:
         jev_module.run_llm_matches = real_llm
 
     # Pass B: post-residue (real LLM resolver; Jev decisions served from the cache).
     wbs_post = await JevMatcher(client=memo).match(
-        phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id)
+        phase_def=WBS_PHASE, db=db, project_id=project_id, session_id=session_id
+    )
 
     # VPS: single pass, real Jev.
-    vps = await JevMatcher().match(
-        phase_def=VPS_PHASE, db=db, project_id=project_id, session_id=session_id)
+    vps = await JevMatcher().match(phase_def=VPS_PHASE, db=db, project_id=project_id, session_id=session_id)
 
     alone_acc, wbs_scored, cal_pairs = _score_wbs(wbs_alone.output, expected_by_index)
     post_acc, _, _ = _score_wbs(wbs_post.output, expected_by_index)
@@ -251,8 +252,7 @@ async def test_jev_matcher_eval(client: AsyncClient, db_session):
         session_id = await _upload_and_freeze(client, project_id, pdf_path, headers)
 
         parsed = json.loads(await harness_repo.read_workspace_file(db_session, session_id, "parsed_claim.json"))
-        idx_by_ref = {i["ref_code"]: i["item_index"]
-                      for i in parsed["line_items"] if i["item_type"] == "contract_work"}
+        idx_by_ref = {i["ref_code"]: i["item_index"] for i in parsed["line_items"] if i["item_type"] == "contract_work"}
         exp_codes = _expected_codes(expected_line_items)
         assert exp_codes, f"{name}: no unambiguous ground-truth WBS items in fixtures"
         # Every expected ref MUST be present in the parsed claim; a shrunk expected set

@@ -1,9 +1,9 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.claim_parse_flag import ClaimParseFlag, FlagSeverity, FlagType
 from app.models.harness_session import HarnessSession, HarnessSessionStatus
 from app.models.harness_workspace_file import HarnessWorkspaceFile
-from app.models.claim_parse_flag import ClaimParseFlag, FlagType, FlagSeverity
 
 
 @pytest.mark.asyncio
@@ -27,19 +27,12 @@ async def test_create_harness_session(db_session: AsyncSession, test_user, test_
 @pytest.mark.asyncio
 async def test_create_workspace_file(db_session: AsyncSession, test_user, test_project, test_document):
     hs = HarnessSession(
-        user_id=test_user.id,
-        project_id=test_project.id,
-        harness_type="claim_parse",
-        document_id=test_document.id,
+        user_id=test_user.id, project_id=test_project.id, harness_type="claim_parse", document_id=test_document.id
     )
     db_session.add(hs)
     await db_session.flush()
 
-    wf = HarnessWorkspaceFile(
-        session_id=hs.id,
-        file_path="raw_extraction.json",
-        content='{"pages": []}',
-    )
+    wf = HarnessWorkspaceFile(session_id=hs.id, file_path="raw_extraction.json", content='{"pages": []}')
     db_session.add(wf)
     await db_session.flush()
 
@@ -50,10 +43,7 @@ async def test_create_workspace_file(db_session: AsyncSession, test_user, test_p
 @pytest.mark.asyncio
 async def test_create_claim_parse_flag(db_session: AsyncSession, test_user, test_project, test_document):
     hs = HarnessSession(
-        user_id=test_user.id,
-        project_id=test_project.id,
-        harness_type="claim_parse",
-        document_id=test_document.id,
+        user_id=test_user.id, project_id=test_project.id, harness_type="claim_parse", document_id=test_document.id
     )
     db_session.add(hs)
     await db_session.flush()

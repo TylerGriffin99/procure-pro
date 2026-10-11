@@ -20,9 +20,6 @@ def test_failed_session_marks_current_phase_failed():
     out = statuses(current_phase=1, phase_results={"0": {"summary": "ok"}}, status="failed")
     assert out[0] == "completed" and out[1] == "failed"
     infos = HarnessPhaseInfo.from_definition(
-        claim_parse_definition,
-        current_phase=1,
-        phase_results={"0": {"summary": "ok"}},
-        status="failed",
+        claim_parse_definition, current_phase=1, phase_results={"0": {"summary": "ok"}}, status="failed"
     )
     assert infos[0].result_summary == "ok" and infos[1].result_summary is None

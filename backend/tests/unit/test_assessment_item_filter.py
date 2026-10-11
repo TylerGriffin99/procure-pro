@@ -1,8 +1,7 @@
 """Unit tests for assessment line item filtering by item_type."""
+
 from decimal import Decimal
 from unittest.mock import MagicMock
-
-import pytest
 
 from app.models.claim import ClaimItemType
 
@@ -21,8 +20,7 @@ def _make_line_item(item_type: ClaimItemType, sort_order: int = 0) -> MagicMock:
 
 def _simulate_assessment_filter(line_items: list) -> list:
     """Mirror of the filter that should be applied in upload_and_parse_claim."""
-    return [i for i in sorted(line_items, key=lambda x: x.sort_order)
-            if i.item_type != ClaimItemType.variation]
+    return [i for i in sorted(line_items, key=lambda x: x.sort_order) if i.item_type != ClaimItemType.variation]
 
 
 def test_variations_excluded_from_assessment_line_items():
@@ -59,9 +57,7 @@ def test_provisional_sums_included_in_assessment_line_items():
 
 def test_all_contract_works_pass_through():
     """When no variations exist, all items flow through unchanged."""
-    items = [
-        _make_line_item(ClaimItemType.contract_work, sort_order=i) for i in range(5)
-    ]
+    items = [_make_line_item(ClaimItemType.contract_work, sort_order=i) for i in range(5)]
 
     result = _simulate_assessment_filter(items)
 

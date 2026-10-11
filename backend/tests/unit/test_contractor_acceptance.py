@@ -5,17 +5,13 @@ Tests that when a contractor's `previous` value on a new claim is lower than
 the stored `contractor_claim_to_date` from the previous assessment, the history
 row uses the contractor's accepted value.
 """
-from decimal import Decimal
 
-import pytest
+from decimal import Decimal
 
 ZERO = Decimal("0.00")
 
 
-def apply_acceptance(
-    prev_contractor_claim: Decimal,
-    claim_prev: Decimal | None,
-) -> Decimal:
+def apply_acceptance(prev_contractor_claim: Decimal, claim_prev: Decimal | None) -> Decimal:
     """
     Replicate the acceptance logic from create_records.py.
 
@@ -32,50 +28,32 @@ class TestContractorAcceptance:
 
     def test_acceptance_lower_value(self):
         """Contractor accepted QS valuation: previous < stored."""
-        result = apply_acceptance(
-            prev_contractor_claim=Decimal("7114.38"),
-            claim_prev=Decimal("5384.38"),
-        )
+        result = apply_acceptance(prev_contractor_claim=Decimal("7114.38"), claim_prev=Decimal("5384.38"))
         assert result == Decimal("5384.38")
 
     def test_no_acceptance_equal(self):
         """No acceptance: contractor's previous equals stored value."""
-        result = apply_acceptance(
-            prev_contractor_claim=Decimal("5000.00"),
-            claim_prev=Decimal("5000.00"),
-        )
+        result = apply_acceptance(prev_contractor_claim=Decimal("5000.00"), claim_prev=Decimal("5000.00"))
         assert result == Decimal("5000.00")
 
     def test_no_acceptance_higher(self):
         """No acceptance: contractor's previous is higher than stored."""
-        result = apply_acceptance(
-            prev_contractor_claim=Decimal("5000.00"),
-            claim_prev=Decimal("6000.00"),
-        )
+        result = apply_acceptance(prev_contractor_claim=Decimal("5000.00"), claim_prev=Decimal("6000.00"))
         assert result == Decimal("5000.00")
 
     def test_no_claim_items_this_period(self):
         """No claim items for this WBS/var/PS: claim_prev is None."""
-        result = apply_acceptance(
-            prev_contractor_claim=Decimal("7114.38"),
-            claim_prev=None,
-        )
+        result = apply_acceptance(prev_contractor_claim=Decimal("7114.38"), claim_prev=None)
         assert result == Decimal("7114.38")
 
     def test_acceptance_to_zero(self):
         """Contractor accepted down to zero."""
-        result = apply_acceptance(
-            prev_contractor_claim=Decimal("1000.00"),
-            claim_prev=ZERO,
-        )
+        result = apply_acceptance(prev_contractor_claim=Decimal("1000.00"), claim_prev=ZERO)
         assert result == ZERO
 
     def test_no_previous_assessment(self):
         """First claim: no previous assessment means stored is zero."""
-        result = apply_acceptance(
-            prev_contractor_claim=ZERO,
-            claim_prev=ZERO,
-        )
+        result = apply_acceptance(prev_contractor_claim=ZERO, claim_prev=ZERO)
         assert result == ZERO
 
 
@@ -95,10 +73,7 @@ class TestClaimPreviousAggregation:
 
         assert claim_prev_by_parent["wbs-1"] == Decimal("3000.00")
 
-        result = apply_acceptance(
-            prev_contractor_claim=Decimal("5000.00"),
-            claim_prev=claim_prev_by_parent["wbs-1"],
-        )
+        result = apply_acceptance(prev_contractor_claim=Decimal("5000.00"), claim_prev=claim_prev_by_parent["wbs-1"])
         assert result == Decimal("3000.00")
 
     def test_multiple_items_sum_above_stored(self):
@@ -114,8 +89,5 @@ class TestClaimPreviousAggregation:
 
         assert claim_prev_by_parent["wbs-1"] == Decimal("7000.00")
 
-        result = apply_acceptance(
-            prev_contractor_claim=Decimal("5000.00"),
-            claim_prev=claim_prev_by_parent["wbs-1"],
-        )
+        result = apply_acceptance(prev_contractor_claim=Decimal("5000.00"), claim_prev=claim_prev_by_parent["wbs-1"])
         assert result == Decimal("5000.00")

@@ -1,11 +1,8 @@
-import json
 import pytest
-from unittest.mock import AsyncMock, patch
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.harness.engine import HarnessEngine
-from app.harness.models import HarnessDefinition, HarnessPrerequisites, PhaseDefinition, PhaseType
+from app.harness.models import HarnessDefinition, PhaseDefinition, PhaseType
 from app.harness.registry import HarnessRegistry
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
@@ -29,7 +26,7 @@ def _make_test_harness() -> HarnessDefinition:
                 phase_type=PhaseType.PROGRAMMATIC,
                 workspace_output="raw_extraction.json",
                 executor=phase0_executor,
-            ),
+            )
         ],
     )
 
@@ -47,11 +44,7 @@ async def test_engine_runs_programmatic_phase(db_session: AsyncSession, test_use
     )
 
     engine = HarnessEngine(
-        definition=harness_def,
-        session_id=session.id,
-        user_id=test_user.id,
-        project_id=test_project.id,
-        db=db_session,
+        definition=harness_def, session_id=session.id, user_id=test_user.id, project_id=test_project.id, db=db_session
     )
 
     events = []
@@ -87,19 +80,20 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
                 phase_type=PhaseType.PROGRAMMATIC,
                 workspace_output="never.json",
                 executor=failing_executor,
-            ),
+            )
         ],
     )
 
     session = await harness_repo.create_session(
         document_id=test_document.id,
-        db=db_session, user_id=test_user.id,
-        project_id=test_project.id, harness_type="fail_test",
+        db=db_session,
+        user_id=test_user.id,
+        project_id=test_project.id,
+        harness_type="fail_test",
     )
 
     engine = HarnessEngine(
-        definition=harness_def, session_id=session.id,
-        user_id=test_user.id, project_id=test_project.id, db=db_session,
+        definition=harness_def, session_id=session.id, user_id=test_user.id, project_id=test_project.id, db=db_session
     )
 
     events = []

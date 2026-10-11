@@ -1,5 +1,7 @@
 """Smoke tests for assessment_repo function signatures."""
+
 from inspect import signature
+
 from app.repos import assessment_repo
 
 
@@ -36,12 +38,15 @@ def test_delete_by_project_function_exists():
 
 def test_revert_to_draft_function_exists():
     from app.services import assessment_service
+
     assert callable(assessment_service.revert_to_draft)
 
 
 def test_revert_to_draft_signature():
     from inspect import signature
+
     from app.services import assessment_service
+
     sig = signature(assessment_service.revert_to_draft)
     params = list(sig.parameters.keys())
     assert params == ["db", "project_id", "assessment_id", "user"]

@@ -1,5 +1,4 @@
 """Unit tests for format detection executor."""
-import pytest
 
 from app.harness.executors.detect_format import detect_format
 
@@ -21,12 +20,7 @@ class TestDetectFormat:
 
     def test_wbpro_detected_from_section_headers(self):
         """WBPRO detected when section headers present."""
-        text = (
-            "Claim No. 1\n"
-            "Period From: 01/01/25\n"
-            "CONTRACT WORKS\n"
-            "VARIATION WORKS\n"
-        )
+        text = "Claim No. 1\nPeriod From: 01/01/25\nCONTRACT WORKS\nVARIATION WORKS\n"
         result = detect_format(text)
         assert result["format"] == "wbpro"
         assert "CONTRACT WORKS" in result["markers_found"]
@@ -47,12 +41,7 @@ class TestDetectFormat:
 
     def test_markers_found_populated(self):
         """markers_found lists which markers were detected."""
-        text = (
-            "Claim No. 3\n"
-            "Period From: 01/01/25\n"
-            "Period To: 31/01/25\n"
-            "Payment Due: 15/02/25\n"
-        )
+        text = "Claim No. 3\nPeriod From: 01/01/25\nPeriod To: 31/01/25\nPayment Due: 15/02/25\n"
         result = detect_format(text)
         assert "Claim No." in result["markers_found"]
         assert "Period From:" in result["markers_found"]

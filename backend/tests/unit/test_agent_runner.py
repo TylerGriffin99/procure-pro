@@ -1,4 +1,5 @@
 """Unit tests for the pydantic-ai agent runner (no network)."""
+
 import pytest
 from pydantic import BaseModel
 from pydantic_ai import UnexpectedModelBehavior
@@ -82,8 +83,5 @@ async def test_run_structured_raises_on_schema_violation():
 
     with pytest.raises(UnexpectedModelBehavior):
         await run_structured(
-            output_type=list[_Item],
-            system_prompt="system",
-            user_prompt="user",
-            model=FunctionModel(bad_response),
+            output_type=list[_Item], system_prompt="system", user_prompt="user", model=FunctionModel(bad_response)
         )

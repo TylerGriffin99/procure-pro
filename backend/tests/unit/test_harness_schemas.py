@@ -1,18 +1,11 @@
 """Unit tests for harness structured-output schemas."""
+
 import json
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from app.harness.schemas import (
-    GenericExtraction,
-    ItemDecision,
-    MatchOutcome,
-    Subcat,
-    VpsMatch,
-    VpsRecord,
-    WbsMatch,
-)
+from app.harness.schemas import GenericExtraction, ItemDecision, MatchOutcome, Subcat, VpsMatch, VpsRecord, WbsMatch
 
 
 class TestWbsMatch:
@@ -28,8 +21,13 @@ class TestWbsMatch:
         )
         dumped = m.model_dump()
         assert set(dumped) == {
-            "item_index", "wbs_code_id", "wbs_code", "wbs_description",
-            "parent_code", "is_new", "confidence",
+            "item_index",
+            "wbs_code_id",
+            "wbs_code",
+            "wbs_description",
+            "parent_code",
+            "is_new",
+            "confidence",
         }
 
     def test_wbs_code_id_nullable_for_new_proposals(self):
@@ -88,7 +86,14 @@ class TestGenericExtraction:
 
 def test_match_outcome_defaults_and_frozen():
     out = MatchOutcome(output=[], output_json="[]")
-    assert (out.input_tokens, out.output_tokens, out.cost_usd, out.fell_back, out.residue, out.out_of_criteria) == (0, 0, None, 0, 0, 0)
+    assert (out.input_tokens, out.output_tokens, out.cost_usd, out.fell_back, out.residue, out.out_of_criteria) == (
+        0,
+        0,
+        None,
+        0,
+        0,
+        0,
+    )
     with pytest.raises(ValidationError):
         out.fell_back = 1  # type: ignore[misc]
 

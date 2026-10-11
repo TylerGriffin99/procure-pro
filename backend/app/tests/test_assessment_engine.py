@@ -1,8 +1,6 @@
 from decimal import Decimal
 
-import pytest
-
-from app.utils.assessment_engine import calculate_retention, calculate_assessment_totals
+from app.utils.assessment_engine import calculate_assessment_totals, calculate_retention
 
 
 def test_retention_tiered():

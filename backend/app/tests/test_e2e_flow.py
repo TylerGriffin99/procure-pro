@@ -1,5 +1,5 @@
 """End-to-end test: upload claim -> create assessment -> approve items -> generate PR PDF."""
-from decimal import Decimal
+
 from pathlib import Path
 
 import pytest
@@ -7,7 +7,13 @@ from httpx import AsyncClient
 
 from app.tests.test_projects import get_auth_headers
 
-CLAIM_1_PATH = Path(__file__).parent.parent.parent.parent / "claim" / "Gilmours" / "claims" / "Gilmours Central_Progress Claim No. 1.pdf"
+CLAIM_1_PATH = (
+    Path(__file__).parent.parent.parent.parent
+    / "claim"
+    / "Gilmours"
+    / "claims"
+    / "Gilmours Central_Progress Claim No. 1.pdf"
+)
 
 
 @pytest.mark.skipif(not CLAIM_1_PATH.exists(), reason="Sample PDF not available")
@@ -16,23 +22,27 @@ async def test_full_claim_flow(client: AsyncClient):
     headers = await get_auth_headers(client)
 
     # 1. Create project with retention tiers
-    project = await client.post("/api/v1/projects", json={
-        "name": "Gilmours Central - Seismic Upgrade",
-        "project_number": "S-02314",
-        "client_name": "Foodstuffs North Island",
-        "contractor_name": "Kynoch Construction",
-        "contract_sum": "4172492.92",
-        "gst_rate": "0.15",
-        "retention_tiers": [
-            {"tier_order": 1, "percentage": "0.10", "up_to_amount": "200000"},
-            {"tier_order": 2, "percentage": "0.05", "up_to_amount": "800000"},
-            {"tier_order": 3, "percentage": "0.0175", "up_to_amount": None},
-        ],
-    }, headers=headers)
+    project = await client.post(
+        "/api/v1/projects",
+        json={
+            "name": "Gilmours Central - Seismic Upgrade",
+            "project_number": "S-02314",
+            "client_name": "Foodstuffs North Island",
+            "contractor_name": "Kynoch Construction",
+            "contract_sum": "4172492.92",
+            "gst_rate": "0.15",
+            "retention_tiers": [
+                {"tier_order": 1, "percentage": "0.10", "up_to_amount": "200000"},
+                {"tier_order": 2, "percentage": "0.05", "up_to_amount": "800000"},
+                {"tier_order": 3, "percentage": "0.0175", "up_to_amount": None},
+            ],
+        },
+        headers=headers,
+    )
     project_id = project.json()["id"]
 
     # 2. Upload claim PDF
-    with open(CLAIM_1_PATH, "rb") as f:
+    with open(CLAIM_1_PATH, "rb") as f:  # noqa: ASYNC230
         claim_resp = await client.post(
             f"/api/v1/projects/{project_id}/claims/upload",
             files={"file": ("claim1.pdf", f, "application/pdf")},
@@ -45,9 +55,7 @@ async def test_full_claim_flow(client: AsyncClient):
 
     # 3. Create assessment
     assess_resp = await client.post(
-        f"/api/v1/projects/{project_id}/assessments",
-        json={"claim_id": claim_id},
-        headers=headers,
+        f"/api/v1/projects/{project_id}/assessments", json={"claim_id": claim_id}, headers=headers
     )
     assert assess_resp.status_code == 201
     assessment = assess_resp.json()
@@ -69,10 +77,7 @@ async def test_full_claim_flow(client: AsyncClient):
             assert resp.status_code == 200
 
     # 5. Download PR PDF
-    pdf_resp = await client.get(
-        f"/api/v1/projects/{project_id}/assessments/{assessment_id}/pdf",
-        headers=headers,
-    )
+    pdf_resp = await client.get(f"/api/v1/projects/{project_id}/assessments/{assessment_id}/pdf", headers=headers)
     assert pdf_resp.status_code == 200
     assert pdf_resp.headers["content-type"] == "application/pdf"
     assert pdf_resp.content[:5] == b"%PDF-"

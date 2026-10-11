@@ -1,8 +1,8 @@
+import io
 import os
 from decimal import Decimal
 
 from openpyxl import load_workbook
-import io
 
 from app.utils.excel_generator import generate_payment_recommendation_excel
 
@@ -35,9 +35,7 @@ def _sample_data():
         "value_claimed": Decimal("70317.39"),
         "adjustments": Decimal("-1730.00"),
         "total_recommended": Decimal("68587.39"),
-        "retention_details": [
-            {"percentage": "10%", "base": Decimal("68587.39"), "amount": Decimal("6858.74")},
-        ],
+        "retention_details": [{"percentage": "10%", "base": Decimal("68587.39"), "amount": Decimal("6858.74")}],
         "total_retention": Decimal("6858.74"),
         "total_payment_to_date": Decimal("61728.65"),
         "previously_certified": Decimal("0"),
@@ -56,7 +54,7 @@ def _sample_data():
                 "previously_paid": Decimal("0"),
                 "recommended_this_period": Decimal("6250.00"),
                 "comments": "As per progress noted on site",
-            },
+            }
         ],
         "variation_works": [
             {
@@ -69,7 +67,7 @@ def _sample_data():
                 "previously_paid": Decimal("0"),
                 "this_period": Decimal("4500.00"),
                 "status": "approved",
-            },
+            }
         ],
         "provisional_sums": [
             {
@@ -82,7 +80,7 @@ def _sample_data():
                 "this_period": Decimal("9500.00"),
                 "percentage": "19.0%",
                 "status": "open",
-            },
+            }
         ],
         "is_draft": True,
     }

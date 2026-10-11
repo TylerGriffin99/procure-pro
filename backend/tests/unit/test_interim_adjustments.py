@@ -1,8 +1,7 @@
 """Tests for interim adjustment and close-out logic."""
+
 import uuid
 from decimal import Decimal
-
-import pytest
 
 from app.models.assessment import AdjustmentType, LineItemStatus
 
@@ -69,7 +68,7 @@ def test_adjustment_row_aggregates_normally():
 def test_close_out_comment_prefix_replacement():
     comment = "Interim - Paid on account"
     if comment.startswith("Interim"):
-        comment = "Closed Out" + comment[len("Interim"):]
+        comment = "Closed Out" + comment[len("Interim") :]
     assert comment == "Closed Out - Paid on account"
 
 
@@ -83,7 +82,7 @@ def test_close_out_comment_no_existing():
 def test_close_out_comment_non_interim_prefix():
     comment = "Some other note"
     if comment.startswith("Interim"):
-        comment = "Closed Out" + comment[len("Interim"):]
+        comment = "Closed Out" + comment[len("Interim") :]
     else:
         comment = f"Closed Out - {comment}"
     assert comment == "Closed Out - Some other note"

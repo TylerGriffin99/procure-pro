@@ -36,9 +36,7 @@ def fake_assessment() -> SimpleNamespace:
 
 
 def test_from_aggregate_maps_fields_and_formats_finalised_at():
-    agg = AssessmentAggregate(
-        assessment=fake_assessment(), wbs_groups=[], variation_groups=[], ps_groups=[]
-    )
+    agg = AssessmentAggregate(assessment=fake_assessment(), wbs_groups=[], variation_groups=[], ps_groups=[])
     dto = AggregatedAssessmentResponse.from_aggregate(agg)
     assert dto.id == agg.assessment.id
     assert dto.status == "draft"
