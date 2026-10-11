@@ -182,3 +182,22 @@ async def test_phase_context_empty_file_is_fatal(db_session):
     assert await harness_repo.read_workspace_file(db_session, session_id, "parsed_claim.json") == ""
     with pytest.raises(BadRequestError, match="Workspace file parsed_claim.json missing for phase match"):
         await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)
+
+
+async def test_losing_stream_closed_after_already_running_leaves_session_untouched(db_session):
+    user_id, project_id, session_id = await _pending_session(db_session)
+    await harness_repo.set_status(db_session, session_id, HarnessSessionStatus.running)
+    await db_session.commit()
+
+    stream = harness_service.stream_events(
+        definition=_failing_definition(), session_id=session_id, user_id=user_id, project_id=project_id
+    )
+    first = json.loads((await anext(stream)).removeprefix("data: "))
+    assert first["error"] == "Session already running"
+    await stream.aclose()
+
+    db_session.expire_all()
+    stored = await harness_repo.get_session(db_session, session_id)
+    assert stored is not None
+    assert stored.status == HarnessSessionStatus.running
+    assert stored.error_message is None

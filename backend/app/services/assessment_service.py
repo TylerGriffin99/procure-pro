@@ -21,7 +21,7 @@ from app.constants.values import (
     PDF_MEDIA_TYPE,
     XLSX_MEDIA_TYPE,
 )
-from app.exceptions import BadRequestError, ConflictError, NotFoundError, require
+from app.exceptions import BadRequestError, ConflictError, NotFoundError, reloaded, require
 from app.models.assessment import Assessment
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
@@ -353,7 +353,7 @@ async def update_variation_item(
     item.updated_by = user.id
 
     await db.commit()
-    return require(await assessment_variation_repo.get_by_id(db, item.id, assessment_id), "Variation item")
+    return reloaded(await assessment_variation_repo.get_by_id(db, item.id, assessment_id), "Variation item")
 
 
 async def update_provisional_sum_item(
@@ -373,7 +373,7 @@ async def update_provisional_sum_item(
     item.updated_by = user.id
 
     await db.commit()
-    return require(await assessment_provisional_sum_repo.get_by_id(db, item.id, assessment_id), "Provisional sum item")
+    return reloaded(await assessment_provisional_sum_repo.get_by_id(db, item.id, assessment_id), "Provisional sum item")
 
 
 def find_source_row(assessment: Assessment, data: ReclassifyRequest) -> tuple[InterimItem, uuid.UUID]:
@@ -563,7 +563,7 @@ async def finalise_assessment(
     )
 
     await db.commit()
-    return require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
+    return reloaded(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
 
 
 async def revert_to_draft(db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, user: User) -> Assessment:
@@ -573,7 +573,7 @@ async def revert_to_draft(db: AsyncSession, project_id: uuid.UUID, assessment_id
 
     # Block revert if a subsequent claim exists
     claims = await claim_repo.get_by_project(db, project_id)
-    current_claim = require(next((c for c in claims if c.id == assessment.claim_id), None), "Associated claim")
+    current_claim = reloaded(next((c for c in claims if c.id == assessment.claim_id), None), "Associated claim")
     if any(c.claim_number > current_claim.claim_number for c in claims):
         raise ConflictError("Cannot revert: a subsequent claim exists for this project")
 
@@ -582,4 +582,4 @@ async def revert_to_draft(db: AsyncSession, project_id: uuid.UUID, assessment_id
     assessment.updated_by = user.id
 
     await db.commit()
-    return require(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")
+    return reloaded(await assessment_repo.get_by_id(db, assessment_id, project_id=project_id), "Assessment")

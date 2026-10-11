@@ -19,7 +19,7 @@ async def test_loads_wbpro_playbook():
 
     format_json = json.dumps({"format": "wbpro", "confidence": 0.95, "markers_found": []})
 
-    with patch("app.harness.context_loaders.harness_repo") as mock_repo:
+    with patch("app.harness.phase_context.harness_repo") as mock_repo:
         mock_repo.read_workspace_file = AsyncMock(return_value=format_json)
         result = await load_format_playbook(db, project_id, session_id)
 
@@ -37,7 +37,7 @@ async def test_loads_generic_playbook():
 
     format_json = json.dumps({"format": "generic", "confidence": 0.5, "markers_found": []})
 
-    with patch("app.harness.context_loaders.harness_repo") as mock_repo:
+    with patch("app.harness.phase_context.harness_repo") as mock_repo:
         mock_repo.read_workspace_file = AsyncMock(return_value=format_json)
         result = await load_format_playbook(db, project_id, session_id)
 
@@ -50,7 +50,7 @@ async def test_loads_generic_playbook():
 async def test_missing_format_detection_is_fatal(raw):
     db = AsyncMock()
 
-    with patch("app.harness.context_loaders.harness_repo") as mock_repo:
+    with patch("app.harness.phase_context.harness_repo") as mock_repo:
         mock_repo.read_workspace_file = AsyncMock(return_value=raw)
         with pytest.raises(BadRequestError, match="format_detection.json missing"):
             await load_format_playbook(db, uuid.uuid4(), uuid.uuid4())
@@ -68,26 +68,23 @@ async def test_missing_format_detection_is_fatal(raw):
 async def test_invalid_format_detection_is_fatal(raw):
     db = AsyncMock()
 
-    with patch("app.harness.context_loaders.harness_repo") as mock_repo:
+    with patch("app.harness.phase_context.harness_repo") as mock_repo:
         mock_repo.read_workspace_file = AsyncMock(return_value=raw)
         with pytest.raises(BadRequestError, match="format_detection.json is invalid"):
             await load_format_playbook(db, uuid.uuid4(), uuid.uuid4())
 
 
 def _no_playbook(fmt: str) -> str:
-    raise FileNotFoundError(fmt)
+    raise FileNotFoundError(f"playbooks/formats/{fmt}.md")
 
 
 @pytest.mark.asyncio
-async def test_valid_format_without_playbook_returns_fallback(monkeypatch, caplog):
+async def test_missing_playbook_file_propagates(monkeypatch):
     db = AsyncMock()
     monkeypatch.setattr("app.harness.context_loaders.load_playbook", _no_playbook)
     format_json = json.dumps({"format": "generic", "confidence": 0.5, "markers_found": []})
 
-    with patch("app.harness.context_loaders.harness_repo") as mock_repo:
+    with patch("app.harness.phase_context.harness_repo") as mock_repo:
         mock_repo.read_workspace_file = AsyncMock(return_value=format_json)
-        with caplog.at_level("WARNING", logger="app.harness.context_loaders"):
-            result = await load_format_playbook(db, uuid.uuid4(), uuid.uuid4())
-
-    assert "No format-specific playbook" in result["playbook_content"]
-    assert any("No playbook found for format 'generic'" in r.getMessage() for r in caplog.records)
+        with pytest.raises(FileNotFoundError, match="generic.md"):
+            await load_format_playbook(db, uuid.uuid4(), uuid.uuid4())

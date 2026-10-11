@@ -13,7 +13,7 @@ from app.constants.enums import ClaimItemType
 from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
 from app.harness.extract_shared import ITEM_MONEY_FIELDS, extract_metadata, money_warnings, summary_totals
 from app.harness.schemas import ParsedClaim, ParsedClaimItem, ParsedClaimMetadata, RawExtraction, RawPage
-from app.schemas.claim_extraction import MoneyFormatWarning
+from app.schemas.claim_extraction import DroppedRow, MoneyFormatWarning
 from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
@@ -108,25 +108,36 @@ def table_section(table: list[list[str | None]], page_section: str) -> str:
     return page_section
 
 
-def page_rows(raw_extraction: RawExtraction) -> list[tuple[list[str | None], str]]:
+type TableRow = tuple[int, int, list[str | None], str]
+
+
+def page_rows(raw_extraction: RawExtraction) -> list[TableRow]:
     page_sections = detect_sections(raw_extraction.pages)
-    rows: list[tuple[list[str | None], str]] = []
+    rows: list[TableRow] = []
     for page in raw_extraction.pages:
         for table in page.tables:
             section = table_section(table, page_sections.get(page.page_num, SECTION_CONTRACT))
-            rows += [(row, section) for row in table if not is_skip_row(row)]
+            rows += [(page.page_num, i, row, section) for i, row in enumerate(table) if not is_skip_row(row)]
     return rows
+
+
+def dropped_row(page: int, row_index: int, row: list[str | None]) -> DroppedRow:
+    first_cell = str(row[0]).strip() if row and row[0] is not None else None
+    return DroppedRow(page=page, row_index=row_index, column_count=len(row), first_cell=first_cell)
 
 
 def parse_wbpro(raw_extraction: RawExtraction) -> ParsedClaim:
     metadata = extract_metadata(raw_extraction.all_text())
     line_items: list[ParsedClaimItem] = []
     format_warnings: list[MoneyFormatWarning] = []
-    for row, section in page_rows(raw_extraction):
+    dropped_rows: list[DroppedRow] = []
+    for page, row_index, row, section in page_rows(raw_extraction):
         item = map_row_to_item(row, section, len(line_items))
-        if item is not None:
-            line_items.append(item)
-            format_warnings += row_warnings(item, row, section)
+        if item is None:
+            dropped_rows.append(dropped_row(page, row_index, row))
+            continue
+        line_items.append(item)
+        format_warnings += row_warnings(item, row, section)
 
     logger.info(
         "WBPRO parse: %d line items (%d contract, %d variation, %d PS)",
@@ -140,4 +151,5 @@ def parse_wbpro(raw_extraction: RawExtraction) -> ParsedClaim:
         line_items=line_items,
         summary=summary_totals(line_items),
         format_warnings=format_warnings,
+        dropped_rows=dropped_rows,
     )

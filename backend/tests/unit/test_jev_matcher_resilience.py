@@ -4,7 +4,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from app.clients.jev_client import JevClient
 from app.constants import MatcherName
-from app.exceptions import ExternalServiceError
+from app.exceptions import ExternalServiceError, UnprocessableError
 from app.harness.matchers.jev import NONE_OPTION, match_vps, match_wbs
 from app.harness.schemas import JevTuning, MatchOutcome, ParsedClaimItem, Subcat, VpsRecord, WbsMatch
 from tests.unit.jev_fakes import fake_client
@@ -134,7 +134,7 @@ async def test_32k_guard_wbs():
     async def decide(**k):
         raise AssertionError("should not be called")
 
-    with pytest.raises(ValueError, match="exceeds 32k context"):
+    with pytest.raises(UnprocessableError, match="exceeds 32k context"):
         await wbs(fake_client(decide), subcats=big)
 
 

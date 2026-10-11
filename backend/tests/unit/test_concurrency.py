@@ -43,6 +43,32 @@ async def test_exception_propagates():
         await bounded_gather([1, 2, 3], boom, limit=2)
 
 
+async def test_first_exception_cancels_the_remaining_calls():
+    finished: list[int] = []
+
+    async def fail_fast_or_finish_slowly(n: int) -> int:
+        if n == 0:
+            raise ValueError("zero")
+        await asyncio.sleep(0.05)
+        finished.append(n)
+        return n
+
+    with pytest.raises(ValueError, match="zero") as exc_info:
+        await bounded_gather([0, 1, 2], fail_fast_or_finish_slowly, limit=3)
+    assert not isinstance(exc_info.value, ExceptionGroup)
+    await asyncio.sleep(0.1)
+    assert finished == []
+
+
+async def test_simultaneous_failures_surface_as_an_exception_group():
+    async def boom(n: int) -> int:
+        raise ValueError(str(n))
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        await bounded_gather([1, 2], boom, limit=2)
+    assert len(exc_info.value.exceptions) == 2
+
+
 async def test_limit_must_be_positive():
     async def ident(n: int) -> int:
         return n

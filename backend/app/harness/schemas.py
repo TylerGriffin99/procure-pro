@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, MatcherName, VpsKind
 from app.schemas.assessment_aggregate import AssessmentAggregate
 from app.schemas.base import StrictModel
-from app.schemas.claim_extraction import ClaimMetadata, MoneyFormatWarning
+from app.schemas.claim_extraction import ClaimMetadata, DroppedRow, MoneyFormatWarning
 from app.schemas.common import Confidence, ItemIndex
 
 # Decimal-ish fields arrive as strings ("$1,234.56", "(500.00)") or numbers;
@@ -72,6 +72,8 @@ class ParsedClaim(BaseModel):
     summary: ParsedClaimSummary = Field(default_factory=ParsedClaimSummary)
     # Malformed cells seen before the extractor normalised them to "0.00"; create_records flags each one.
     format_warnings: list[MoneyFormatWarning] = Field(default_factory=list)
+    # Table rows the deterministic parser could not map (wrong column count); each one understates the claim.
+    dropped_rows: list[DroppedRow] = Field(default_factory=list)
 
 
 class RawPage(StrictModel):
@@ -121,7 +123,7 @@ class FlagSpec(StrictModel):
 class CreateRecordsInputs(StrictModel):
     parsed: ParsedClaim
     wbs_matches: list[WbsMatch]
-    vps_matches: list[VpsMatch] | None
+    vps_matches: list[VpsMatch]
 
 
 class VpsLinks(StrictModel):

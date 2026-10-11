@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimItemType, FlagSeverity, FlagType, WorkspaceFile
+from app.harness.phase_context import load_workspace
 from app.harness.schemas import FlagSpec, ParsedClaim, ParsedClaimItem, ValidationSummary
 from app.models.project import Project
 from app.repos import harness_repo, project_repo
@@ -141,10 +142,7 @@ async def execute_validate_claim(
     config: dict[str, Any],
     llm: LlmClient,
 ) -> ValidationSummary:
-    raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.parsed_claim)
-    if raw is None:
-        raise ValueError("parsed_claim.json not found in workspace")
-    parsed = ParsedClaim.model_validate_json(raw)
+    parsed = await load_workspace(db, session_id, WorkspaceFile.parsed_claim, ParsedClaim.model_validate_json)
     project = await project_repo.get_by_id(db, project_id)
 
     flags = collect_flags(parsed, project)

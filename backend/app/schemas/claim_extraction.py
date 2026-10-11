@@ -18,6 +18,13 @@ class MoneyFormatWarning(StrictModel):
     description: str
 
 
+class DroppedRow(StrictModel):
+    page: int
+    row_index: int
+    column_count: int
+    first_cell: str | None
+
+
 class ClaimLineValues(StrictModel):
     item_type: ClaimItemType
     ref_code: str

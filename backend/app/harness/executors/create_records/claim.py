@@ -8,6 +8,7 @@ from typing import Final
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import FlagSeverity, FlagType
+from app.constants.values import STANDARD_COLUMNS, VARIATION_COLUMNS
 from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings
 from app.harness.schemas import ClaimLinks, FlagSpec, ParsedClaim, ParsedClaimItem, ParsedClaimSummary
 from app.models.claim import Claim
@@ -83,17 +84,28 @@ async def build_claim(
     )
 
 
-async def record_format_warnings(db: AsyncSession, session_id: uuid.UUID, parsed: ParsedClaim) -> None:
+def parse_warning_flags(parsed: ParsedClaim) -> list[FlagSpec]:
     # Extractor warnings cover cells already normalised to "0.00"; the re-parse covers a hand-written parsed_claim.
-    for warning in [*parsed.format_warnings, *money_format_warnings(parsed.line_items, parsed.summary)]:
-        logger.warning("create_records: %s (ref=%s)", warning.description, warning.ref)
-        await harness_repo.create_flag(
-            db,
-            session_id,
-            FlagSpec(
-                flag_type=FlagType.format_warning,
-                severity=FlagSeverity.warning,
-                description=warning.description,
-                line_item_ref=warning.ref,
-            ),
+    money = [*parsed.format_warnings, *money_format_warnings(parsed.line_items, parsed.summary)]
+    flags = [format_warning(w.description, w.ref) for w in money]
+    flags += [
+        format_warning(
+            f"Table row dropped: {row.column_count} columns (expected {STANDARD_COLUMNS} or {VARIATION_COLUMNS}) "
+            f"on page {row.page}, row {row.row_index}",
+            row.first_cell,
         )
+        for row in parsed.dropped_rows
+    ]
+    return flags
+
+
+def format_warning(description: str, ref: str | None) -> FlagSpec:
+    return FlagSpec(
+        flag_type=FlagType.format_warning, severity=FlagSeverity.warning, description=description, line_item_ref=ref
+    )
+
+
+async def record_parse_warnings(db: AsyncSession, session_id: uuid.UUID, parsed: ParsedClaim) -> None:
+    for spec in parse_warning_flags(parsed):
+        logger.warning("create_records: %s (ref=%s)", spec.description, spec.line_item_ref)
+        await harness_repo.create_flag(db, session_id, spec)

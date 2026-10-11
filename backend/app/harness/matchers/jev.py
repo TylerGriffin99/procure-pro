@@ -107,7 +107,7 @@ def to_wbs_match(decision: ItemDecision, key_to_id: dict[str, str], by_id: dict[
     out_of_criteria = choice != NONE_OPTION and not known
     if out_of_criteria:
         logger.warning("JevMatcher: out-of-criteria choice %r for item %s; treating as none/new", choice, idx)
-    if choice is None or choice == NONE_OPTION or not known:
+    if choice == NONE_OPTION or not known:
         return WbsMatch(item_index=idx, wbs_code="", is_new=True, confidence=conf), out_of_criteria
     sub = by_id[key_to_id[choice]]
     match = WbsMatch(
@@ -122,6 +122,11 @@ def to_wbs_match(decision: ItemDecision, key_to_id: dict[str, str], by_id: dict[
     return match, out_of_criteria
 
 
+def failed_decision(item: ParsedClaimItem, exc: Exception) -> ItemDecision:
+    logger.warning("JevMatcher: Jev call for item %s failed (%s)", item.item_index, type(exc).__name__, exc_info=exc)
+    return ItemDecision(item_index=item.item_index, error=exc)
+
+
 async def decide_item(
     item: ParsedClaimItem, *, client: JevClient, criteria: dict[str, str], instructions: str
 ) -> ItemDecision:
@@ -130,14 +135,14 @@ async def decide_item(
     qid = f"item_{item.item_index}"
     try:
         data = await client.choose(qid=qid, state=client.item_state(item), criteria=criteria, instructions=instructions)
-        answer = data.answers[qid]
-    except (httpx.HTTPError, ValidationError, KeyError, json.JSONDecodeError) as exc:
+    except (httpx.HTTPError, ValidationError, json.JSONDecodeError) as exc:
         if client.is_fatal(exc):
             raise
-        logger.warning(
-            "JevMatcher: Jev call for item %s failed (%s)", item.item_index, type(exc).__name__, exc_info=True
-        )
-        return ItemDecision(item_index=item.item_index, error=exc)
+        return failed_decision(item, exc)
+    try:
+        answer = data.answers[qid]
+    except KeyError as exc:
+        return failed_decision(item, exc)
     return ItemDecision(
         item_index=item.item_index,
         choice=answer.choice,

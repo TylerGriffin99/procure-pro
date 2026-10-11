@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from app.exceptions import UnprocessableError
 from app.harness.schemas import JevDecisionResponse
 from app.schemas.common import RetryPolicy
 from app.utils.retry import retry_async
@@ -92,7 +93,7 @@ class JevClient:
             {"state": worst, "questions": {"item_0": {"instructions": instructions, "criteria": criteria}}}, default=str
         )
         if len(payload) / 4 > max_tokens:
-            raise ValueError(f"Jev request for '{phase_name}' exceeds 32k context")
+            raise UnprocessableError(f"Jev request for '{phase_name}' exceeds 32k context")
 
     async def post_decisions(self, *, state: dict[str, Any], questions: dict[str, Any]) -> dict[str, Any]:
         """POST one decisions request. Raises httpx.HTTPStatusError on non-2xx."""

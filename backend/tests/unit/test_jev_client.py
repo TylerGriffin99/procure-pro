@@ -5,6 +5,7 @@ import pytest
 
 from app.clients.jev_client import FATAL_STATUS, JevClient
 from app.config import settings
+from app.exceptions import UnprocessableError
 from app.schemas.common import RetryPolicy
 
 
@@ -109,7 +110,7 @@ async def test_choose_fatal_status_raises_without_retry(code):
 def test_check_context_budget_rejects_oversized_request():
     client = make_client(lambda r: httpx.Response(200))
     criteria = {f"C-{i}": "d" * 200 for i in range(1000)}
-    with pytest.raises(ValueError, match="exceeds 32k context"):
+    with pytest.raises(UnprocessableError, match="exceeds 32k context"):
         client.check_context_budget(
             phase_name="WBS", states=[{"description": "x"}], criteria=criteria, instructions="i"
         )

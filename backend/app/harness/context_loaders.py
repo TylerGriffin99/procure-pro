@@ -7,21 +7,15 @@ format-specific playbook content that LLM phases need.
 import logging
 import uuid
 
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import WBSLevel, WorkspaceFile
-from app.exceptions import BadRequestError
+from app.harness.phase_context import load_workspace
 from app.harness.prompts import load_playbook
 from app.harness.schemas import FormatDetection
-from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
+from app.repos import provisional_sum_repo, variation_repo, wbs_code_repo
 
 logger = logging.getLogger(__name__)
-
-FALLBACK_PLAYBOOK = (
-    "(No format-specific playbook available. "
-    "Use the document's column headers and structure to determine field mapping.)"
-)
 
 
 async def load_wbs_context(db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, str]:
@@ -75,18 +69,9 @@ async def load_variations_context(db: AsyncSession, project_id: uuid.UUID, sessi
 
 async def load_format_playbook(db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, str]:
     """Load format-specific playbook based on format_detection.json."""
-    raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.format_detection)
-    if not raw:
-        raise BadRequestError(f"{WorkspaceFile.format_detection} missing")
-    try:
-        fmt = FormatDetection.model_validate_json(raw).format
-    except ValidationError as e:
-        raise BadRequestError(f"{WorkspaceFile.format_detection} is invalid") from e
-
-    try:
-        playbook_text = load_playbook(fmt)
-    except FileNotFoundError:
-        logger.warning("No playbook found for format '%s' — using fallback", fmt)
-        return {"playbook_content": FALLBACK_PLAYBOOK}
-    logger.info("Loaded playbook for format '%s' (%d chars)", fmt, len(playbook_text))
+    detection = await load_workspace(
+        db, session_id, WorkspaceFile.format_detection, FormatDetection.model_validate_json
+    )
+    playbook_text = load_playbook(detection.format)
+    logger.info("Loaded playbook for format '%s' (%d chars)", detection.format, len(playbook_text))
     return {"playbook_content": playbook_text}

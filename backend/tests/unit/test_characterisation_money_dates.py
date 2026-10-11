@@ -11,7 +11,7 @@ from app.harness.executors.create_records.claim import money_format_warnings
 from app.harness.executors.extract_generic import validate_and_normalise
 from app.harness.executors.extract_wbpro import parse_wbpro
 from app.harness.schemas import GenericExtraction, ParsedClaimItem, ParsedClaimSummary, RawExtraction, RawPage
-from app.schemas.claim_extraction import MoneyFormatWarning
+from app.schemas.claim_extraction import DroppedRow, MoneyFormatWarning
 from app.utils.dates import parse_ddmmyy
 from app.utils.money import parse_money
 
@@ -101,3 +101,13 @@ def test_generic_extraction_ignores_unused_summary_cells():
     )
 
     assert validate_and_normalise(extraction).format_warnings == []
+
+
+def test_wbpro_extraction_records_a_row_with_the_wrong_column_count():
+    seven = ["1.2", "Short row", "100.00", "50.00", "50.00", "0.00", "50.00"]
+    raw = RawExtraction(pages=[RawPage(page_num=2, text="CONTRACT WORKS", tables=[[MALFORMED_WBPRO_ROW, seven]])])
+
+    parsed = parse_wbpro(raw)
+
+    assert len(parsed.line_items) == 1
+    assert parsed.dropped_rows == [DroppedRow(page=2, row_index=1, column_count=7, first_cell="1.2")]

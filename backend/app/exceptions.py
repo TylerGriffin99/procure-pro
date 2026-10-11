@@ -45,7 +45,18 @@ class ExternalServiceError(AppError):
     status_code = 502
 
 
+class InternalError(AppError):
+    status_code = 500
+
+
 def require[T](value: T | None, what: str) -> T:
     if value is None:
         raise NotFoundError(f"{what} not found")
+    return value
+
+
+def reloaded[T](value: T | None, what: str) -> T:
+    """For a re-read of a row this request just wrote: ``None`` is an invariant violation (500), not a 404."""
+    if value is None:
+        raise InternalError(f"{what} vanished after commit")
     return value

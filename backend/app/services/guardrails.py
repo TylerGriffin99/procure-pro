@@ -9,6 +9,7 @@ import logging
 import re
 import unicodedata
 from io import BytesIO
+from typing import Final
 
 import pdfplumber
 from pdfminer.psexceptions import PSException
@@ -19,6 +20,9 @@ from app.exceptions import BadRequestError
 from app.schemas.guardrails import Violation
 
 logger = logging.getLogger(__name__)
+
+# Deterministic "this is not a readable PDF" faults; anything else is a server fault (500).
+PARSER_FAULTS: Final = (PSException, MalformedPDFException, PdfminerException, ValueError)
 
 # Phrases that attempt to override or hijack an LLM's instructions. Kept specific
 # enough that ordinary construction-claim prose does not trip them.
@@ -77,6 +81,13 @@ def screen_text(text: str) -> list[Violation]:
     return violations
 
 
+def wrapped_cause(exc: BaseException) -> BaseException:
+    # pdfplumber wraps EVERY error raised while opening or interpreting a page as PdfminerException(original).
+    if isinstance(exc, PdfminerException) and exc.args and isinstance(exc.args[0], BaseException):
+        return exc.args[0]
+    return exc
+
+
 def extract_screenable_text(content: bytes) -> str:
     """Return the page text + table-cell text a PDF would expose downstream.
 
@@ -106,7 +117,10 @@ def screen_pdf(content: bytes) -> None:
     """
     try:
         text = extract_screenable_text(content)
-    except (PdfminerException, MalformedPDFException, PSException, ValueError) as e:
+    except PARSER_FAULTS as e:
+        cause = wrapped_cause(e)
+        if not isinstance(cause, PARSER_FAULTS):
+            raise cause from e
         logger.warning("Rejected upload: PDF could not be read for screening", exc_info=True)
         raise BadRequestError("Could not read the PDF to screen it") from e
 

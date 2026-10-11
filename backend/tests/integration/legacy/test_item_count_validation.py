@@ -5,6 +5,7 @@ import json
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.exceptions import ExternalServiceError
 from app.harness.executors.create_records import execute_create_records
 from app.repos import harness_repo
 
@@ -85,7 +86,7 @@ async def test_wbs_count_mismatch_raises(db_session: AsyncSession, test_user, te
     await db_session.flush()
 
     with pytest.raises(
-        ValueError,
+        ExternalServiceError,
         match=("WBS categorisation returned 1 contract_work matches but extraction has 2 contract_work items"),
     ):
         await execute_create_records(
@@ -132,7 +133,7 @@ async def test_vps_count_mismatch_raises(db_session: AsyncSession, test_user, te
     await db_session.flush()
 
     with pytest.raises(
-        ValueError,
+        ExternalServiceError,
         match=("VPS matching returned 0 variation/PS matches but extraction has 1 variation/provisional_sum items"),
     ):
         await execute_create_records(
@@ -175,7 +176,7 @@ async def test_out_of_range_item_index_raises(db_session: AsyncSession, test_use
     await harness_repo.write_workspace_file(db_session, session.id, "vps_matches.json", json.dumps([]))
     await db_session.flush()
 
-    with pytest.raises(ValueError, match="out-of-range item_index"):
+    with pytest.raises(ExternalServiceError, match="out-of-range item_index"):
         await execute_create_records(
             db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}, llm=None
         )

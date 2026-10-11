@@ -14,7 +14,7 @@ from app.constants.enums import HarnessSessionStatus
 from app.database import async_session
 from app.exceptions import BadRequestError, ConflictError, require
 from app.harness.definitions import HARNESS_DEFINITIONS
-from app.harness.engine import describe_error, mark_session_failed
+from app.harness.engine import HarnessEngine, describe_error, mark_session_failed
 from app.harness.factory import build_engine
 from app.harness.models import HarnessDefinition, HarnessErrorEvent, HarnessEvent, HarnessType
 from app.models.harness_session import HarnessSession
@@ -73,7 +73,6 @@ async def prepare_stream(
 
 
 async def mark_stream_cancelled(db: AsyncSession, session_id: uuid.UUID) -> None:
-    """Only a still-running session is failed, so a disconnect after completion leaves it completed."""
     await db.rollback()
     await harness_repo.fail_if_running(db, session_id, "Stream cancelled")
     await db.commit()
@@ -92,6 +91,7 @@ async def stream_events(
 ) -> AsyncGenerator[str, None]:
     """Run the engine on a DB session that outlives the HTTP request and yield SSE frames."""
     async with async_session() as engine_db:
+        engine: HarnessEngine | None = None
         try:
             engine = build_engine(
                 settings=settings,
@@ -106,14 +106,16 @@ async def stream_events(
             yield "data: [DONE]\n\n"
         except Exception as e:
             logger.exception("harness_stream.error")
-            await record_stream_failure(mark_session_failed(engine_db, session_id, describe_error(e)), session_id)
+            with anyio.CancelScope(shield=True):
+                await record_stream_failure(mark_session_failed(engine_db, session_id, describe_error(e)), session_id)
             yield sse(HarnessErrorEvent(session_id=session_id, error=describe_error(e)))
             yield "data: [DONE]\n\n"
         except BaseException:
             # Client disconnect (CancelledError) or generator close (GeneratorExit): no frame can be sent.
             logger.warning("harness_stream.cancelled session=%s", session_id)
-            with anyio.CancelScope(shield=True):
-                await record_stream_failure(mark_stream_cancelled(engine_db, session_id), session_id)
+            if engine is not None and engine.claimed:
+                with anyio.CancelScope(shield=True):
+                    await record_stream_failure(mark_stream_cancelled(engine_db, session_id), session_id)
             raise
 
 

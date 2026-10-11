@@ -100,6 +100,7 @@ async def test_each_phase_type_reaches_its_runner(client, db_session):
         "line_items": [{"item_index": 0, "ref_code": "", "description": "", "item_type": "contract_work"}],
         "summary": {},
         "format_warnings": [],
+        "dropped_rows": [],
     }
     assert json.loads(await harness_repo.read_workspace_file(db_session, session.id, "single.json"))[0]["wbs_code"] == (
         "DM-01"

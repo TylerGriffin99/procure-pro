@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import ClaimItemType, WBSLevel, WorkspaceFile
+from app.harness.phase_context import load_workspace
 from app.harness.schemas import ParsedClaim, ParsedClaimItem, Subcat, VpsRecord
-from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
+from app.repos import provisional_sum_repo, variation_repo, wbs_code_repo
 
 
 def _num(v) -> float | None:
@@ -60,10 +60,5 @@ async def vps_records(*, db, project_id) -> list[VpsRecord]:
 
 
 async def read_parsed_items(db: AsyncSession, session_id: uuid.UUID) -> list[ParsedClaimItem]:
-    raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.parsed_claim)
-    if not raw:
-        raise ValueError(f"parsed_claim.json missing or empty for session {session_id}")
-    try:
-        return ParsedClaim.model_validate_json(raw).line_items
-    except ValidationError as exc:
-        raise ValueError(f"parsed_claim.json is malformed for session {session_id}: {exc}") from exc
+    parsed = await load_workspace(db, session_id, WorkspaceFile.parsed_claim, ParsedClaim.model_validate_json)
+    return parsed.line_items

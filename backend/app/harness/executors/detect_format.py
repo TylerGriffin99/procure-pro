@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimFormat, WorkspaceFile
+from app.harness.phase_context import load_workspace
 from app.harness.schemas import FormatDetection, RawExtraction
-from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +54,7 @@ async def execute_detect_format(
     config: dict[str, Any],
     llm: LlmClient,
 ) -> FormatDetection:
-    raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.raw_extraction)
-    if not raw:
-        raise ValueError("raw_extraction.json not found")
-
-    result = detect_format(RawExtraction.model_validate_json(raw).all_text())
+    raw = await load_workspace(db, session_id, WorkspaceFile.raw_extraction, RawExtraction.model_validate_json)
+    result = detect_format(raw.all_text())
     logger.info("Format detection: %s (confidence: %s)", result.format, result.confidence)
     return result

@@ -179,6 +179,7 @@ async def test_malformed_amount_persists_zero_and_records_a_format_warning_flag(
     items = [_variation_item(0, ref="CI-09", desc="Malformed var", value="1,2OO.00")]
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
     await harness_repo.write_workspace_file(db_session, session.id, "wbs_matches.json", json.dumps([]))
+    await harness_repo.write_workspace_file(db_session, session.id, "vps_matches.json", json.dumps([]))
     await db_session.flush()
 
     result = await execute_create_records(
@@ -210,6 +211,8 @@ async def test_draft_totals_come_from_the_aggregator(db_session: AsyncSession, t
     )
     items = [{**_variation_item(0, ref="CI-01", desc="New var"), "ptd": "400.00", "current": "400.00"}]
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
+    await harness_repo.write_workspace_file(db_session, session.id, "wbs_matches.json", json.dumps([]))
+    await harness_repo.write_workspace_file(db_session, session.id, "vps_matches.json", json.dumps([]))
     await db_session.flush()
 
     result = await execute_create_records(

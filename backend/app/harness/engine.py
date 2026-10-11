@@ -63,6 +63,8 @@ class HarnessEngine:
     llm: LlmClient = field(kw_only=True)
     matchers: Mapping[MatcherName, Matcher] = field(kw_only=True)
     default_matcher: MatcherName = field(kw_only=True)
+    # True once this engine won try_claim_running; only the claimant may fail the session on a disconnect.
+    claimed: bool = field(default=False, init=False)
 
     async def run(self) -> AsyncGenerator[HarnessEvent, None]:
         """Execute harness from current_phase, yielding SSE events."""
@@ -70,6 +72,7 @@ class HarnessEngine:
         if not claimed:
             yield HarnessErrorEvent(session_id=self.session_id, error="Session already running")
             return
+        self.claimed = True
 
         await self.db.commit()
 

@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from string import Template
 from typing import Any
 
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.exceptions import BadRequestError
 from app.repos import harness_repo
+
+
+async def load_workspace[T](db: AsyncSession, session_id: Any, path: str, parse: Callable[[str], T]) -> T:
+    """An earlier phase always writes ``path``, so a missing, empty or schema-invalid file is fatal."""
+    raw = await harness_repo.read_workspace_file(db, session_id, path)
+    if not raw:
+        raise BadRequestError(f"Workspace file {path} missing")
+    try:
+        return parse(raw)
+    except ValidationError as e:
+        raise BadRequestError(f"Workspace file {path} is invalid") from e
 
 
 async def build_phase_context(*, db: Any, session_id: Any, project_id: Any, phase_def: Any) -> dict[str, str]:

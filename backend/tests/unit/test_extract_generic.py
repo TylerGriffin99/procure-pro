@@ -5,6 +5,7 @@ from pydantic_ai.models.test import TestModel
 
 from app.clients.llm_client import LlmClient
 from app.constants import LlmProvider
+from app.exceptions import ExternalServiceError
 from app.harness.executors.extract_generic import money_text, parse_generic, validate_and_normalise
 from app.harness.schemas import GenericExtraction, RawExtraction
 
@@ -128,7 +129,7 @@ class TestValidateAndNormalise:
             assert getattr(item, field) == "0.00"
 
     def test_empty_line_items_raises(self):
-        with pytest.raises(ValueError, match="line_items is empty"):
+        with pytest.raises(ExternalServiceError, match="line_items is empty"):
             validate_and_normalise(_make_response(items=[]))
 
     def test_missing_metadata_uses_defaults(self):
@@ -196,5 +197,5 @@ class TestParseGeneric:
     @pytest.mark.asyncio
     async def test_empty_line_items_raises(self):
         model = TestModel(custom_output_args={"metadata": {}, "line_items": [], "summary": {}})
-        with pytest.raises(ValueError, match="line_items is empty"):
+        with pytest.raises(ExternalServiceError, match="line_items is empty"):
             await parse_generic(RawExtraction(), llm=_llm(model))

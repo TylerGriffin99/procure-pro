@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from app.exceptions import NotFoundError, require
+from app.exceptions import InternalError, NotFoundError, reloaded, require
 from app.models.harness_session import HarnessSession
 from app.models.wbs_code import WBSCode
 from app.services.harness_service import require_owned
@@ -52,3 +52,15 @@ def test_require_in_project_reports_missing_and_foreign_wbs_as_not_found(wbs):
 def test_require_in_project_returns_the_project_wbs():
     wbs = WBSCode(project_id=PROJECT)
     assert require_in_project(wbs, PROJECT) is wbs
+
+
+def test_reloaded_none_is_an_internal_error_not_a_404():
+    with pytest.raises(InternalError) as excinfo:
+        reloaded(None, "Assessment")
+    assert excinfo.value.detail == "Assessment vanished after commit"
+    assert excinfo.value.status_code == 500
+
+
+def test_reloaded_returns_the_value_itself():
+    value = object()
+    assert reloaded(value, "Thing") is value

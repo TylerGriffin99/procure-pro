@@ -6,18 +6,22 @@ Each test asserts current behaviour so the refactor that applies a decision flip
 import uuid
 from io import BytesIO
 
+import pypdfium2 as pdfium
 import pytest
 from fastapi import Depends, FastAPI, UploadFile
 from httpx import ASGITransport, AsyncClient
+from pdfminer.pdfinterp import PDFPageInterpreter
+from pdfminer.pdfparser import PDFSyntaxError
 from pdfplumber.utils.exceptions import PdfminerException
 from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
 from starlette.datastructures import Headers
 
+from app import dependencies
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.error_handlers import register
-from app.exceptions import BadRequestError, NotFoundError, UnauthorizedError
+from app.exceptions import NotFoundError, UnauthorizedError
 from app.harness.engine import describe_error
 from app.models.user import User
 from app.schemas.claim import ClaimCreate, ClaimLineItemCreate
@@ -32,10 +36,8 @@ def _user() -> User:
     return User(id=uuid.uuid4())
 
 
-def _pdf_upload() -> UploadFile:
-    return UploadFile(
-        file=BytesIO(b"%PDF-1.4 bytes"), filename="c.pdf", headers=Headers({"content-type": "application/pdf"})
-    )
+def _pdf_upload(content: bytes = b"%PDF-1.4 bytes") -> UploadFile:
+    return UploadFile(file=BytesIO(content), filename="c.pdf", headers=Headers({"content-type": "application/pdf"}))
 
 
 BOGUS_CLAIM_LINE_ITEM = {
@@ -64,8 +66,20 @@ def _raise_os_error(content: bytes) -> str:
     raise OSError("disk read failed")
 
 
-def _raise_memory_error(content: bytes) -> str:
+def _raise_memory_error_in_interpreter(self, page) -> None:
     raise MemoryError
+
+
+def _raise_syntax_error_in_interpreter(self, page) -> None:
+    raise PDFSyntaxError("bad content stream")
+
+
+def _blank_page_pdf() -> bytes:
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(200, 200)
+    buffer = BytesIO()
+    pdf.save(buffer)
+    return buffer.getvalue()
 
 
 def _raise_parser_error(content: bytes) -> str:
@@ -88,6 +102,10 @@ def build_app() -> FastAPI:
     @app.get("/upload")
     async def upload():
         await claim_service.create_document_from_upload(None, PROJECT_ID, _pdf_upload())  # type: ignore[arg-type]
+
+    @app.get("/upload-blank-page")
+    async def upload_blank_page():
+        await claim_service.create_document_from_upload(None, PROJECT_ID, _pdf_upload(_blank_page_pdf()))  # type: ignore[arg-type]
 
     @app.get("/me")
     async def me(user: User = Depends(get_current_user)):
@@ -143,11 +161,19 @@ async def test_upload_non_parser_fault_returns_500(client, unreadable_pdf, caplo
     assert _unhandled_cause(caplog) is OSError
 
 
-async def test_upload_memory_error_returns_500(client, monkeypatch, caplog):
-    monkeypatch.setattr(guardrails, "extract_screenable_text", _raise_memory_error)
-    resp = await client.get("/upload")
+async def test_memory_error_inside_pdfminer_page_interpreter_returns_500(client, monkeypatch, caplog):
+    monkeypatch.setattr(PDFPageInterpreter, "process_page", _raise_memory_error_in_interpreter)
+    resp = await client.get("/upload-blank-page")
     assert resp.status_code == 500
+    assert resp.json() == {"detail": "Internal server error"}
     assert _unhandled_cause(caplog) is MemoryError
+
+
+async def test_pdfminer_syntax_error_inside_page_interpreter_returns_400(client, monkeypatch):
+    monkeypatch.setattr(PDFPageInterpreter, "process_page", _raise_syntax_error_in_interpreter)
+    resp = await client.get("/upload-blank-page")
+    assert resp.status_code == 400
+    assert resp.json() == {"detail": "Could not read the PDF to screen it"}
 
 
 @pytest.mark.parametrize("parser_fault", [_raise_parser_error, _raise_zero_pages])
@@ -165,6 +191,13 @@ async def test_malformed_sub_raises_unauthorized():
     token = create_access_token({"sub": "not-a-uuid"})
     with pytest.raises(UnauthorizedError, match="Invalid token"):
         await get_current_user(token, None)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("sub", [123, ["x"], {"id": "x"}])
+async def test_non_string_sub_raises_unauthorized(monkeypatch, sub):
+    monkeypatch.setattr(dependencies, "decode_access_token", lambda token: {"sub": sub})
+    with pytest.raises(UnauthorizedError, match="Invalid token"):
+        await get_current_user("t", None)  # type: ignore[arg-type]
 
 
 async def test_malformed_sub_returns_401(client):

@@ -11,6 +11,7 @@ import string
 
 from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimFormat, ClaimItemType
+from app.exceptions import ExternalServiceError
 from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings, summary_totals
 from app.harness.prompts import load_playbook, load_prompt
 from app.harness.schemas import (
@@ -81,7 +82,7 @@ def normalise_summary(raw_summary: GenericSummary, line_items: list[ParsedClaimI
 def validate_and_normalise(extraction: GenericExtraction) -> ParsedClaim:
     """Raises ValueError if line_items is empty; item indexes are reassigned 0..n-1."""
     if not extraction.line_items:
-        raise ValueError("line_items is empty or missing — LLM returned no data")
+        raise ExternalServiceError("line_items is empty or missing — LLM returned no data")
     line_items = [normalise_item(idx, raw_item) for idx, raw_item in enumerate(extraction.line_items)]
     meta = extraction.metadata
     metadata = ParsedClaimMetadata(

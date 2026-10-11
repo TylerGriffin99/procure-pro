@@ -1,8 +1,10 @@
 import logging
+import uuid
 
 import pytest
 
-from app.harness.executors.create_records.inputs import reclassify_provisional_sums, validate_counts
+from app.exceptions import BadRequestError, ExternalServiceError
+from app.harness.executors.create_records.inputs import load_inputs, reclassify_provisional_sums, validate_counts
 from app.harness.schemas import CreateRecordsInputs, ParsedClaim, ParsedClaimItem, VpsMatch, WbsMatch
 
 
@@ -10,13 +12,11 @@ def items(*types):
     return [ParsedClaimItem(item_index=i, item_type=t, description=f"item {i}") for i, t in enumerate(types)]
 
 
-def inputs(line_items, wbs=(), vps=None):
+def inputs(line_items, wbs=(), vps=()):
     return CreateRecordsInputs(
         parsed=ParsedClaim(line_items=line_items),
         wbs_matches=[WbsMatch(item_index=i, wbs_code="EX-01", confidence=0.9) for i in wbs],
-        vps_matches=None
-        if vps is None
-        else [VpsMatch(item_index=i, item_type="variation", confidence=0.9) for i in vps],
+        vps_matches=[VpsMatch(item_index=i, item_type="variation", confidence=0.9) for i in vps],
     )
 
 
@@ -27,7 +27,9 @@ def test_wbs_matches_outside_contract_work_are_dropped():
 
 
 def test_wbs_count_mismatch_raises():
-    with pytest.raises(ValueError, match="WBS categorisation returned 1 contract_work matches but extraction has 2"):
+    with pytest.raises(
+        ExternalServiceError, match="WBS categorisation returned 1 contract_work matches but extraction has 2"
+    ):
         validate_counts(inputs(items("contract_work", "contract_work"), wbs=[0]))
 
 
@@ -42,15 +44,21 @@ def test_vps_count_mismatch_warns_and_keeps_going(caplog):
     assert "VPS matching returned 1 matches but extraction has 2 variation/PS items" in caplog.text
 
 
-def test_missing_vps_file_skips_the_vps_check(caplog):
-    with caplog.at_level(logging.WARNING):
-        assert validate_counts(inputs(items("variation"))).vps_matches is None
-    assert caplog.text == ""
+@pytest.mark.parametrize("missing", ["parsed_claim.json", "wbs_matches.json", "vps_matches.json"])
+async def test_missing_workspace_input_is_fatal(monkeypatch, missing):
+    files = {"parsed_claim.json": '{"line_items": []}', "wbs_matches.json": "[]", "vps_matches.json": "[]"}
+
+    async def read(db, session_id, path):
+        return None if path == missing else files[path]
+
+    monkeypatch.setattr("app.harness.phase_context.harness_repo.read_workspace_file", read)
+    with pytest.raises(BadRequestError, match=f"Workspace file {missing} missing"):
+        await load_inputs(None, uuid.uuid4())  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize(("wbs", "vps", "kind"), [([5], None, "WBS"), ([], [3], "VPS")])
+@pytest.mark.parametrize(("wbs", "vps", "kind"), [([5], [], "WBS"), ([], [3], "VPS")])
 def test_out_of_range_index_raises(wbs, vps, kind):
-    with pytest.raises(ValueError, match=f"{kind} match has out-of-range item_index"):
+    with pytest.raises(ExternalServiceError, match=f"{kind} match has out-of-range item_index"):
         validate_counts(inputs(items("contract_work", "variation"), wbs=wbs, vps=vps))
 
 

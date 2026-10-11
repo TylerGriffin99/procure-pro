@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.enums import WBSLevel
-from app.exceptions import UnprocessableError, require
+from app.exceptions import UnprocessableError, reloaded, require
 from app.models.project import Project
 from app.models.user import User
 from app.models.wbs_code import WBSCode
@@ -158,7 +158,7 @@ async def create_wbs_code(db: AsyncSession, project_id: uuid.UUID, data: WBSCode
     )
     await db.commit()
 
-    return require(await wbs_code_repo.get_by_id_with_children(db, wbs.id), "WBS code")
+    return reloaded(await wbs_code_repo.get_by_id_with_children(db, wbs.id), "WBS code")
 
 
 def require_in_project(wbs: WBSCode | None, project_id: uuid.UUID) -> WBSCode:
@@ -193,4 +193,4 @@ async def update_wbs_code(
     wbs = await wbs_code_repo.update(db, wbs, **update_data)
     await db.commit()
 
-    return require(await wbs_code_repo.get_by_id_with_children(db, wbs.id), "WBS code")
+    return reloaded(await wbs_code_repo.get_by_id_with_children(db, wbs.id), "WBS code")
