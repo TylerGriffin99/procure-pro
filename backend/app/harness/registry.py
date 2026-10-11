@@ -13,8 +13,5 @@ class HarnessRegistry:
     def get(self, harness_type: HarnessType) -> HarnessDefinition | None:
         return self._definitions.get(harness_type)
 
-    def list_types(self) -> list[HarnessDefinition]:
-        return list(self._definitions.values())
-
 
 harness_registry = HarnessRegistry()

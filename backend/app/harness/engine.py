@@ -116,11 +116,9 @@ class HarnessEngine:
         elif phase_def.phase_type == PhaseType.LLM_SINGLE:
             async for event in self._run_llm_single(phase_index, phase_def, session_config):
                 yield event
-        elif phase_def.phase_type == PhaseType.LLM_BATCH_AGENTS:
+        else:
             async for event in self._run_decision_match(phase_index, phase_def, session_config):
                 yield event
-        else:
-            raise ValueError(f"Unsupported phase type: {phase_def.phase_type}")
 
     async def _run_programmatic(
         self, phase_index: int, phase_def: PhaseDefinition, session_config: dict[str, Any]

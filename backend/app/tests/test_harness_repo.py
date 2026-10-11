@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.claim_parse_flag import FlagSeverity, FlagType
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
+from app.tests.conftest import list_flags_by_session
 
 
 @pytest.mark.asyncio
@@ -130,7 +131,7 @@ async def test_create_and_list_flags(db_session: AsyncSession, test_user, test_p
         severity=FlagSeverity.error,
         description="Section total mismatch",
     )
-    flags = await harness_repo.list_flags_by_session(db_session, session.id)
+    flags = await list_flags_by_session(db_session, session.id)
     assert len(flags) == 2
 
 

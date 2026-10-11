@@ -1,15 +1,17 @@
 import asyncio
+import uuid
 from collections.abc import AsyncGenerator
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.database import Base, get_db
 from app.main import app
-from app.models.claim_parse_flag import ClaimParseFlag  # noqa: F401
+from app.models.claim_parse_flag import ClaimParseFlag
 from app.models.document import Document
 from app.models.harness_session import HarnessSession  # noqa: F401
 from app.models.harness_workspace_file import HarnessWorkspaceFile  # noqa: F401
@@ -18,6 +20,14 @@ from app.models.user import User
 from app.models.wbs_code import WBSCode, WBSLevel
 from app.repos import document_repo
 from app.utils.auth import create_access_token
+
+
+async def list_flags_by_session(db: AsyncSession, session_id: uuid.UUID) -> list[ClaimParseFlag]:
+    result = await db.execute(
+        select(ClaimParseFlag).where(ClaimParseFlag.session_id == session_id).order_by(ClaimParseFlag.created_at)
+    )
+    return list(result.scalars().all())
+
 
 TEST_DB_URL = "postgresql+asyncpg://claimreview:claimreview_dev@localhost:6000/claimreview_test"
 

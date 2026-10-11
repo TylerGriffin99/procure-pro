@@ -13,10 +13,6 @@ async def create(db: AsyncSession, **kwargs) -> ProvisionalSum:
     return ps
 
 
-async def get_by_id(db: AsyncSession, ps_id: uuid.UUID) -> ProvisionalSum | None:
-    return await db.get(ProvisionalSum, ps_id)
-
-
 async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[ProvisionalSum]:
     result = await db.execute(select(ProvisionalSum).where(ProvisionalSum.project_id == project_id))
     return list(result.scalars().all())
@@ -27,18 +23,6 @@ async def get_max_ps_number(db: AsyncSession, project_id: uuid.UUID) -> int:
         select(func.coalesce(func.max(ProvisionalSum.ps_number), 0)).where(ProvisionalSum.project_id == project_id)
     )
     return result.scalar_one()
-
-
-async def update(db: AsyncSession, ps: ProvisionalSum, **kwargs) -> ProvisionalSum:
-    for field, value in kwargs.items():
-        setattr(ps, field, value)
-    await db.flush()
-    return ps
-
-
-async def delete(db: AsyncSession, ps: ProvisionalSum) -> None:
-    await db.delete(ps)
-    await db.flush()
 
 
 async def delete_by_project(db: AsyncSession, project_id: uuid.UUID) -> None:

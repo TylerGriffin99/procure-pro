@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from app.harness.matchers.jev import JevMatcher
 from app.harness.matchers.llm import LlmMatcher
 from app.harness.schemas import MatchOutcome
 
 
-@runtime_checkable
 class DecisionMatcher(Protocol):
-    name: str
-
     async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome: ...
 
 

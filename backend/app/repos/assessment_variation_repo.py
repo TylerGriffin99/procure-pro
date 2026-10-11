@@ -23,13 +23,6 @@ async def create(db: AsyncSession, **kwargs) -> AssessmentVariation:
     return item
 
 
-async def update(db: AsyncSession, item: AssessmentVariation, **kwargs) -> AssessmentVariation:
-    for key, value in kwargs.items():
-        setattr(item, key, value)
-    await db.flush()
-    return item
-
-
 async def delete(db: AsyncSession, item: AssessmentVariation) -> None:
     await db.delete(item)
     await db.flush()

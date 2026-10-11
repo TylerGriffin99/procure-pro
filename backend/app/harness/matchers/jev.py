@@ -110,8 +110,6 @@ def to_wbs_match(decision: ItemDecision, key_to_id: dict[str, str], by_id: dict[
 
 
 class JevMatcher:
-    name = "jev"
-
     def __init__(self, client: JevClient | None = None) -> None:
         self.client = client or JevClient.from_settings(settings)
 

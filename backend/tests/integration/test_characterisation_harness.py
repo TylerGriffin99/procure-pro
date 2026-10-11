@@ -19,7 +19,6 @@ def _failing_definition() -> HarnessDefinition:
         harness_type=HarnessType.CLAIM_PARSE,
         display_name="Failing",
         description="First phase raises",
-        prerequisites=None,
         phases=[
             PhaseDefinition(
                 name="broken",

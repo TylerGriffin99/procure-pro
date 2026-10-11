@@ -22,7 +22,5 @@ async def run_llm_matches(*, phase_def, db, project_id, session_id) -> MatchOutc
 
 
 class LlmMatcher:
-    name = "llm"
-
     async def match(self, *, phase_def, db, project_id, session_id) -> MatchOutcome:
         return await run_llm_matches(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)

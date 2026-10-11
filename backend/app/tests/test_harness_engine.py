@@ -18,7 +18,6 @@ def _make_test_harness() -> HarnessDefinition:
         harness_type="test_harness",
         display_name="Test Harness",
         description="For testing",
-        prerequisites=None,
         phases=[
             PhaseDefinition(
                 name="extract",
@@ -72,7 +71,6 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
         harness_type="fail_test",
         display_name="Fail Test",
         description="Test failure",
-        prerequisites=None,
         phases=[
             PhaseDefinition(
                 name="broken",
@@ -112,4 +110,3 @@ async def test_registry():
     registry.register(defn)
     assert registry.get("test_harness") is defn
     assert registry.get("nonexistent") is None
-    assert len(registry.list_types()) == 1

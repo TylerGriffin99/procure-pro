@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.harness.executors.validate_claim import execute_validate_claim
 from app.models.claim_parse_flag import FlagType
 from app.repos import harness_repo
+from app.tests.conftest import list_flags_by_session
 
 
 def _make_parsed_claim_json(line_items: list[dict] | None = None, summary: dict | None = None) -> str:
@@ -52,7 +53,7 @@ async def test_valid_claim_no_flags(db_session: AsyncSession, test_user, test_pr
         db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
     )
 
-    flags = await harness_repo.list_flags_by_session(db_session, session.id)
+    flags = await list_flags_by_session(db_session, session.id)
     assert len(flags) == 0
     assert result["total_items"] == 1
 
@@ -87,7 +88,7 @@ async def test_over_claim_flagged(db_session: AsyncSession, test_user, test_proj
         db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
     )
 
-    flags = await harness_repo.list_flags_by_session(db_session, session.id)
+    flags = await list_flags_by_session(db_session, session.id)
     over_claims = [f for f in flags if f.flag_type == FlagType.over_claim]
     pct_errors = [f for f in flags if f.flag_type == FlagType.percentage_error]
     assert len(over_claims) >= 1
@@ -141,7 +142,7 @@ async def test_project_over_budget_flagged(db_session: AsyncSession, test_user, 
         db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
     )
 
-    flags = await harness_repo.list_flags_by_session(db_session, session.id)
+    flags = await list_flags_by_session(db_session, session.id)
     over_budget = [f for f in flags if f.flag_type == FlagType.project_over_budget]
     assert len(over_budget) >= 1
 
@@ -193,6 +194,6 @@ async def test_duplicate_refs_flagged(db_session: AsyncSession, test_user, test_
         db=db_session, session_id=session.id, user_id=test_user.id, project_id=test_project.id, config={}
     )
 
-    flags = await harness_repo.list_flags_by_session(db_session, session.id)
+    flags = await list_flags_by_session(db_session, session.id)
     dups = [f for f in flags if f.flag_type == FlagType.duplicate_item]
     assert len(dups) >= 1

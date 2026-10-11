@@ -24,7 +24,6 @@ def _batch_harness(matcher: str | None) -> HarnessDefinition:
         harness_type=HarnessType.CLAIM_PARSE,
         display_name="Batch agents test",
         description="test",
-        prerequisites=None,
         phases=[
             PhaseDefinition(
                 name="Seed",

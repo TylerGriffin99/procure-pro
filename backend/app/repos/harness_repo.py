@@ -150,13 +150,6 @@ async def create_flag(
     return flag
 
 
-async def list_flags_by_session(db: AsyncSession, session_id: uuid.UUID) -> list[ClaimParseFlag]:
-    result = await db.execute(
-        select(ClaimParseFlag).where(ClaimParseFlag.session_id == session_id).order_by(ClaimParseFlag.created_at)
-    )
-    return list(result.scalars().all())
-
-
 async def list_flags_by_claim(db: AsyncSession, claim_id: uuid.UUID) -> list[ClaimParseFlag]:
     result = await db.execute(
         select(ClaimParseFlag).where(ClaimParseFlag.claim_id == claim_id).order_by(ClaimParseFlag.created_at)

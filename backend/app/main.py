@@ -1,5 +1,4 @@
 import logging
-from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,12 +10,7 @@ from app.routers import assessments, auth, claim_flags, claims, harness, project
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-
-
-app = FastAPI(title="Claim Review API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Claim Review API", version="0.1.0")
 error_handlers.register(app)
 
 app.add_middleware(

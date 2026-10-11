@@ -363,7 +363,6 @@ async def execute_create_records(
         revised_contract_total=_dec(summary.get("revised_contract_total")),
         retention_amount=_dec(summary.get("retention_amount")),
         claimed_amount=_dec(summary.get("claimed_amount")),
-        raw_pdf_path=config.get("file_path"),
         created_by=user_id,
     )
 

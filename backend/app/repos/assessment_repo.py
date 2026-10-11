@@ -9,27 +9,12 @@ from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.assessment_variation import AssessmentVariation
 
 
-def _eager_options(
-    *, with_line_items: bool = True, with_variations: bool = True, with_provisional_sums: bool = True
-) -> list:
-    """Build a list of selectinload options for Assessment queries."""
-    opts: list = []
-    if with_line_items:
-        opts.append(selectinload(Assessment.line_items))
-    if with_variations:
-        opts.append(selectinload(Assessment.variation_items).selectinload(AssessmentVariation.variation))
-    if with_provisional_sums:
-        opts.append(
-            selectinload(Assessment.provisional_sum_items).selectinload(AssessmentProvisionalSum.provisional_sum)
-        )
-    return opts
-
-
-async def create(db: AsyncSession, **kwargs) -> Assessment:
-    assessment = Assessment(**kwargs)
-    db.add(assessment)
-    await db.flush()
-    return assessment
+def _eager_options() -> list:
+    return [
+        selectinload(Assessment.line_items),
+        selectinload(Assessment.variation_items).selectinload(AssessmentVariation.variation),
+        selectinload(Assessment.provisional_sum_items).selectinload(AssessmentProvisionalSum.provisional_sum),
+    ]
 
 
 async def add(db: AsyncSession, assessment: Assessment) -> Assessment:
@@ -40,25 +25,9 @@ async def add(db: AsyncSession, assessment: Assessment) -> Assessment:
 
 
 async def get_by_id(
-    db: AsyncSession,
-    assessment_id: uuid.UUID,
-    project_id: uuid.UUID | None = None,
-    *,
-    with_line_items: bool = True,
-    with_variations: bool = True,
-    with_provisional_sums: bool = True,
+    db: AsyncSession, assessment_id: uuid.UUID, project_id: uuid.UUID | None = None
 ) -> Assessment | None:
-    stmt = (
-        select(Assessment)
-        .options(
-            *_eager_options(
-                with_line_items=with_line_items,
-                with_variations=with_variations,
-                with_provisional_sums=with_provisional_sums,
-            )
-        )
-        .where(Assessment.id == assessment_id)
-    )
+    stmt = select(Assessment).options(*_eager_options()).where(Assessment.id == assessment_id)
     if project_id is not None:
         stmt = stmt.where(Assessment.project_id == project_id)
     result = await db.execute(stmt)
@@ -66,23 +35,11 @@ async def get_by_id(
 
 
 async def get_latest_by_claim(
-    db: AsyncSession,
-    claim_id: uuid.UUID,
-    project_id: uuid.UUID | None = None,
-    *,
-    with_line_items: bool = True,
-    with_variations: bool = True,
-    with_provisional_sums: bool = True,
+    db: AsyncSession, claim_id: uuid.UUID, project_id: uuid.UUID | None = None
 ) -> Assessment | None:
     stmt = (
         select(Assessment)
-        .options(
-            *_eager_options(
-                with_line_items=with_line_items,
-                with_variations=with_variations,
-                with_provisional_sums=with_provisional_sums,
-            )
-        )
+        .options(*_eager_options())
         .where(Assessment.claim_id == claim_id)
         .order_by(Assessment.version.desc())
     )
@@ -100,23 +57,10 @@ async def get_latest_version_number(db: AsyncSession, claim_id: uuid.UUID) -> in
     return latest.version if latest else 0
 
 
-async def get_latest_finalised(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    *,
-    with_line_items: bool = True,
-    with_variations: bool = True,
-    with_provisional_sums: bool = True,
-) -> Assessment | None:
+async def get_latest_finalised(db: AsyncSession, project_id: uuid.UUID) -> Assessment | None:
     result = await db.execute(
         select(Assessment)
-        .options(
-            *_eager_options(
-                with_line_items=with_line_items,
-                with_variations=with_variations,
-                with_provisional_sums=with_provisional_sums,
-            )
-        )
+        .options(*_eager_options())
         .where(Assessment.project_id == project_id, Assessment.status == AssessmentStatus.finalised)
         .order_by(Assessment.created_at.desc())
     )

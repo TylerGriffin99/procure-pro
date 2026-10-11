@@ -25,7 +25,6 @@ def _llm_single_harness() -> HarnessDefinition:
         harness_type=HarnessType.CLAIM_PARSE,
         display_name="LLM single test",
         description="test",
-        prerequisites=None,
         phases=[
             PhaseDefinition(
                 name="Seed",

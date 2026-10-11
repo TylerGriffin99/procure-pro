@@ -7,13 +7,6 @@ from sqlalchemy.orm import selectinload
 from app.models.claim import Claim
 
 
-async def create(db: AsyncSession, **kwargs) -> Claim:
-    claim = Claim(**kwargs)
-    db.add(claim)
-    await db.flush()
-    return claim
-
-
 async def get_by_project(db: AsyncSession, project_id: uuid.UUID) -> list[Claim]:
     result = await db.execute(
         select(Claim)
