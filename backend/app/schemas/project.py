@@ -1,7 +1,11 @@
 import uuid
+from collections.abc import Collection
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel
+
+from app.constants.enums import WBSLevel
 
 
 class RetentionTierCreate(BaseModel):
@@ -22,7 +26,7 @@ class RetentionTierResponse(BaseModel):
 class WBSCodeCreate(BaseModel):
     code: str
     description: str
-    level: str = "subcategory"
+    level: WBSLevel = WBSLevel.subcategory
     parent_id: uuid.UUID | None = None
     parent_code: str | None = None
     sort_order: int = 0
@@ -32,7 +36,7 @@ class WBSCodeCreate(BaseModel):
 class WBSCodeUpdate(BaseModel):
     code: str | None = None
     description: str | None = None
-    level: str | None = None
+    level: WBSLevel | None = None
     parent_id: uuid.UUID | None = None
     sort_order: int | None = None
     contract_sum: Decimal | None = None
@@ -42,7 +46,7 @@ class WBSCodeResponse(BaseModel):
     id: uuid.UUID
     code: str
     description: str
-    level: str
+    level: WBSLevel
     parent_id: uuid.UUID | None
     sort_order: int
     contract_sum: Decimal | None = None
@@ -50,6 +54,10 @@ class WBSCodeResponse(BaseModel):
     children: list["WBSCodeResponse"] = []
 
     model_config = {"from_attributes": True}
+
+    def with_in_use(self, in_use_ids: Collection[uuid.UUID]) -> "WBSCodeResponse":
+        children = [child.with_in_use(in_use_ids) for child in self.children]
+        return self.model_copy(update={"in_use": self.id in in_use_ids, "children": children})
 
 
 class ProjectCreate(BaseModel):
@@ -104,3 +112,8 @@ class ProjectResponse(BaseModel):
     wbs_codes: list[WBSCodeResponse] = []
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_project(cls, project: Any, in_use_ids: Collection[uuid.UUID]) -> "ProjectResponse":
+        dto = cls.model_validate(project, from_attributes=True)
+        return dto.model_copy(update={"wbs_codes": [code.with_in_use(in_use_ids) for code in dto.wbs_codes]})

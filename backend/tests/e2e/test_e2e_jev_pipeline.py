@@ -10,7 +10,9 @@ is booby-trapped so any accidental LLM call fails the test loudly.
 Requires: Docker (testcontainers Postgres) or E2E_DATABASE_URL, and
 claim/Gilmours/claims/Gilmours Central_Progress Claim No. 1.pdf.
 """
+
 import difflib
+import functools
 import json
 import re
 from pathlib import Path
@@ -22,20 +24,26 @@ from sqlalchemy import select
 
 import app.harness.matchers.jev as jev_module
 from app.clients.jev_client import JevClient
+from app.clients.llm_client import LlmClient
 from app.config import settings
+from app.constants import MatcherName
+from app.dependencies import get_engine_builder, get_llm_client
+from app.harness.factory import engine_builder
+from app.harness.matchers.jev import match_with_jev
+from app.harness.matchers.llm import match_with_llm
+from app.harness.schemas import JevTuning
+from app.main import app
 from app.models.harness_session import HarnessSession
 from app.repos import harness_repo
-from tests.e2e.fixtures.gilmours_claim1 import (
-    EXPECTED_CLAIM_ITEM_COUNT,
-    EXPECTED_CLAIM_LINE_ITEMS,
-    PROJECT,
-    WBS_CODES,
-)
+from tests.e2e.fixtures.gilmours_claim1 import EXPECTED_CLAIM_ITEM_COUNT, EXPECTED_CLAIM_LINE_ITEMS, PROJECT, WBS_CODES
 from tests.e2e.helpers import get_auth_headers, upload_claim_deep_mode
 
 CLAIM_1_PATH = (
     Path(__file__).parent.parent.parent.parent
-    / "claim" / "Gilmours" / "claims" / "Gilmours Central_Progress Claim No. 1.pdf"
+    / "claim"
+    / "Gilmours"
+    / "claims"
+    / "Gilmours Central_Progress Claim No. 1.pdf"
 )
 
 EXPECTED_CONTRACT_WORK = [i for i in EXPECTED_CLAIM_LINE_ITEMS if i["item_type"] == "contract_work"]
@@ -48,8 +56,7 @@ def _unambiguous_expected_codes() -> dict[str, str]:
     subs = [w for w in WBS_CODES if w.get("parent_code")]
     out = {}
     for item in EXPECTED_CONTRACT_WORK:
-        hits = [w["code"] for w in subs
-                if abs(float(w["contract_sum"]) - float(item["contract_value"])) < 0.01]
+        hits = [w["code"] for w in subs if abs(float(w["contract_sum"]) - float(item["contract_value"])) < 0.01]
         if len(hits) == 1:
             out[item["ref_code"]] = hits[0]
     return out
@@ -60,8 +67,10 @@ _SUM_RE = re.compile(r"contract sum \$([\d,]+\.\d\d)")
 
 
 @pytest.fixture
-def fake_jev(monkeypatch):
-    """Deterministic stand-in for the Jev decisions endpoint. Returns the call log."""
+def fake_jev():
+    """Deterministic stand-in for the Jev decisions endpoint, injected through the engine-builder
+    provider. Returns the call log."""
+
     class CallLog(list):
         llm_called = False
 
@@ -71,45 +80,50 @@ def fake_jev(monkeypatch):
         body = json.loads(request.content)
         state, questions = body["state"], body["questions"]
         api_key = request.headers["Authorization"].removeprefix("Bearer ")
-        (qid, q), = questions.items()
+        ((qid, q),) = questions.items()
         criteria = {k: v for k, v in q["criteria"].items() if k != jev_module.NONE_OPTION}
         choice = jev_module.NONE_OPTION
         if criteria:
             value = state.get("contract_value")
             exact = [
-                k for k, text in criteria.items()
-                if (m := _SUM_RE.search(text)) and value is not None
+                k
+                for k, text in criteria.items()
+                if (m := _SUM_RE.search(text))
+                and value is not None
                 and abs(float(m.group(1).replace(",", "")) - float(value)) < 0.01
             ]
             pool = exact or list(criteria)
             # Exact contract-sum match wins; otherwise nearest description.
-            choice = max(pool, key=lambda k: difflib.SequenceMatcher(
-                None, state["description"].lower(), criteria[k].lower()).ratio())
-        calls.append({"qid": qid, "choice": choice, "api_key": api_key})
-        return httpx.Response(200, json={
-            "answers": {qid: {"choice": choice, "confidence": 0.95}},
-            "usage": {"input_tokens": 1},
-        })
-
-    async def llm_must_not_run(*a, **kw):
-        calls.llm_called = True
-        raise AssertionError("LLM residue fallback invoked; jev fake should resolve every item")
-
-    monkeypatch.setattr(
-        JevClient,
-        "from_settings",
-        classmethod(
-            lambda cls, s: JevClient(
-                url=s.jev_decisions_url,
-                api_key=s.open_router_api_key,
-                model=s.jev_model,
-                transport=httpx.MockTransport(handler),
+            choice = max(
+                pool,
+                key=lambda k: difflib.SequenceMatcher(None, state["description"].lower(), criteria[k].lower()).ratio(),
             )
-        ),
+        calls.append({"qid": qid, "choice": choice, "api_key": api_key})
+        return httpx.Response(
+            200, json={"answers": {qid: {"choice": choice, "confidence": 0.95}}, "usage": {"input_tokens": 1}}
+        )
+
+    class LlmMustNotRun(LlmClient):
+        async def run_structured(self, **kwargs):
+            calls.llm_called = True
+            raise AssertionError("LLM residue fallback invoked; jev fake should resolve every item")
+
+    llm = get_llm_client()
+    jev_client = JevClient(
+        url=settings.jev_decisions_url,
+        api_key="test-key",
+        model=settings.jev_model,
+        transport=httpx.MockTransport(handler),
     )
-    monkeypatch.setattr(jev_module, "run_llm_matches", llm_must_not_run)
-    monkeypatch.setattr(settings, "open_router_api_key", "test-key")
-    return calls
+    tuning = JevTuning(confidence_floor=settings.jev_confidence_floor, max_concurrency=settings.jev_max_concurrency)
+    trap = LlmMustNotRun(provider=settings.llm_provider, model_name=settings.llm_model, api_key="unused")
+    matchers = {
+        MatcherName.llm: functools.partial(match_with_llm, llm=llm),
+        MatcherName.jev: functools.partial(match_with_jev, client=jev_client, llm=trap, tuning=tuning),
+    }
+    app.dependency_overrides[get_engine_builder] = lambda: engine_builder(settings=settings, llm=llm, matchers=matchers)
+    yield calls
+    app.dependency_overrides.pop(get_engine_builder, None)
 
 
 @pytest.mark.skipif(not CLAIM_1_PATH.exists(), reason="Sample PDF not available")
@@ -157,8 +171,9 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
     assert len(EXPECTED_CODES) >= 20, EXPECTED_CODES
     match_by_index = {m["item_index"]: m for m in wbs}
     idx_by_ref = {i["ref_code"]: i["item_index"] for i in parsed_cw}
-    stored_by_ref = {li["ref_code"]: li["suggested_wbs_code_id"]
-                     for li in claim["line_items"] if li["item_type"] == "contract_work"}
+    stored_by_ref = {
+        li["ref_code"]: li["suggested_wbs_code_id"] for li in claim["line_items"] if li["item_type"] == "contract_work"
+    }
     for ref, code in EXPECTED_CODES.items():
         m = match_by_index[idx_by_ref[ref]]
         assert m["wbs_code"] == code, f"ref {ref}: matched {m['wbs_code']}, expected {code}"
@@ -178,7 +193,6 @@ async def test_gilmours_claim1_pipeline_under_jev(client: AsyncClient, db_sessio
 
 
 async def _assessment(client, project_id, claim_id, headers) -> dict:
-    resp = await client.get(
-        f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers)
+    resp = await client.get(f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()

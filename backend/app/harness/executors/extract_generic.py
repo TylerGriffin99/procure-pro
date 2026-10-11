@@ -8,164 +8,129 @@ the response into the parsed_claim.json schema.
 import json
 import logging
 import string
-from decimal import Decimal, InvalidOperation
 
-from pydantic_ai.models import Model
-
-from app.harness.agent_runner import run_structured
+from app.clients.llm_client import LlmClient
+from app.constants.enums import ClaimFormat, ClaimItemType
+from app.exceptions import ExternalServiceError
+from app.harness.extract_shared import ITEM_MONEY_FIELDS, MoneyCell, money_warnings, summary_totals
 from app.harness.prompts import load_playbook, load_prompt
-from app.harness.schemas import GenericExtraction
+from app.harness.schemas import (
+    GenericExtraction,
+    GenericLineItem,
+    GenericSummary,
+    ParsedClaim,
+    ParsedClaimItem,
+    ParsedClaimMetadata,
+    ParsedClaimSummary,
+    RawExtraction,
+)
+from app.schemas.claim_extraction import ParseWarning
+from app.utils.money import format_money, parse_money
 
 logger = logging.getLogger(__name__)
 
-_VALID_ITEM_TYPES = {"contract_work", "variation", "provisional_sum"}
-
-_DECIMAL_FIELDS = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
+SUMMARY_FIELDS = ("original_contract_total", "revised_contract_total", "claimed_amount")
 
 
-def _normalise_decimal(value) -> str:
-    """Normalise any value to a 2-decimal-place string.
-
-    Handles: strings, ints, floats, None, empty strings, dashes,
-    parenthesised negatives like "(1,234.56)", dollar signs, commas, spaces.
-    """
-    if value is None:
-        return "0.00"
-
-    if isinstance(value, (int, float)):
-        return str(Decimal(str(value)).quantize(Decimal("0.01")))
-
-    s = str(value).strip()
-    if not s or s == "-":
-        return "0.00"
-
-    # Strip dollar signs and spaces
-    s = s.replace("$", "").replace(" ", "")
-
-    # Parenthesised negative: (1,234.56) -> -1234.56
-    neg = False
-    if s.startswith("(") and s.endswith(")"):
-        neg = True
-        s = s[1:-1]
-
-    # Strip commas
-    s = s.replace(",", "")
-
-    try:
-        d = Decimal(s)
-    except InvalidOperation:
+def money_text(value: str | float | int | None) -> str:
+    parsed = parse_money(value)
+    if parsed.warning is not None:
         # A non-empty value we couldn't parse is bad data, not a true zero — surface it.
         logger.warning("Could not parse decimal value %r; defaulting to 0.00", value)
-        return "0.00"
-
-    if neg:
-        d = -d
-
-    return str(d.quantize(Decimal("0.01")))
+    return format_money(parsed.value)
 
 
-def validate_and_normalise(raw_response: dict) -> dict:
-    """Validate and normalise an LLM response to match parsed_claim.json schema.
-
-    Raises ValueError if line_items is empty.
-    """
-    # --- metadata ---
-    raw_meta = raw_response.get("metadata") or {}
-    metadata = {
-        "claim_number": str(raw_meta.get("claim_number", "") or ""),
-        "period_from": str(raw_meta.get("period_from", "") or ""),
-        "period_to": str(raw_meta.get("period_to", "") or ""),
-        "payment_due": str(raw_meta.get("payment_due", "") or ""),
-    }
-
-    # --- line_items ---
-    raw_items = raw_response.get("line_items")
-    if not raw_items:
-        raise ValueError("line_items is empty or missing — LLM returned no data")
-
-    line_items: list[dict] = []
-    for idx, raw_item in enumerate(raw_items):
-        item_type = str(raw_item.get("item_type", "contract_work") or "contract_work")
-        if item_type not in _VALID_ITEM_TYPES:
-            logger.warning("Unknown item_type %r on item %d; coercing to contract_work", item_type, idx)
-            item_type = "contract_work"
-
-        item = {
-            "item_index": idx,
-            "ref_code": str(raw_item.get("ref_code", "") or ""),
-            "description": str(raw_item.get("description", "") or ""),
-            "item_type": item_type,
-        }
-        for field in _DECIMAL_FIELDS:
-            item[field] = _normalise_decimal(raw_item.get(field))
-
-        line_items.append(item)
-
-    # --- summary ---
-    raw_summary = raw_response.get("summary") or {}
-    # Recompute from items if summary is missing or incomplete
-    needs_recompute = not raw_summary or not all(
-        raw_summary.get(k) for k in ("original_contract_total", "revised_contract_total", "claimed_amount")
+def normalise_item(index: int, raw_item: GenericLineItem) -> ParsedClaimItem:
+    known = raw_item.item_type in ClaimItemType
+    return ParsedClaimItem(
+        item_index=index,
+        ref_code=raw_item.ref_code or "",
+        description=raw_item.description or "",
+        item_type=ClaimItemType(raw_item.item_type) if known else ClaimItemType.contract_work,
+        **{field: money_text(getattr(raw_item, field)) for field in ITEM_MONEY_FIELDS},
     )
 
-    if needs_recompute:
-        contract_total = Decimal("0")
-        revised_total = Decimal("0")
-        claimed_total = Decimal("0")
-        for item in line_items:
-            val = Decimal(item["contract_value"])
-            revised_total += val
-            if item["item_type"] == "contract_work":
-                contract_total += val
-            claimed_total += Decimal(item["ptd"])
-        summary = {
-            "original_contract_total": str(contract_total.quantize(Decimal("0.01"))),
-            "revised_contract_total": str(revised_total.quantize(Decimal("0.01"))),
-            "claimed_amount": str(claimed_total.quantize(Decimal("0.01"))),
-        }
-    else:
-        summary = {
-            "original_contract_total": _normalise_decimal(raw_summary["original_contract_total"]),
-            "revised_contract_total": _normalise_decimal(raw_summary["revised_contract_total"]),
-            "claimed_amount": _normalise_decimal(raw_summary["claimed_amount"]),
-        }
 
-    return {"metadata": metadata, "line_items": line_items, "summary": summary}
+def uses_raw_summary(raw_summary: GenericSummary) -> bool:
+    return all(getattr(raw_summary, k) for k in SUMMARY_FIELDS)
 
 
-async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dict:
-    """Parse a generic-format claim using a structured LLM agent.
+def extraction_warnings(extraction: GenericExtraction) -> list[ParseWarning]:
+    cells: list[MoneyCell] = [
+        (item.ref_code or "", field, getattr(item, field))
+        for item in extraction.line_items
+        for field in ITEM_MONEY_FIELDS
+    ]
+    if uses_raw_summary(extraction.summary):
+        cells += [(None, field, getattr(extraction.summary, field)) for field in SUMMARY_FIELDS]
+    return money_warnings(cells) + item_type_warnings(extraction.line_items)
 
-    Loads the prompt template and generic playbook, runs the extraction through
-    a pydantic-ai agent (validated against ``GenericExtraction``), and normalises
-    the typed result. ``model`` is for tests; production uses the configured one.
-    """
+
+def item_type_warnings(items: list[GenericLineItem]) -> list[ParseWarning]:
+    # A blank item_type is the extractor's default, not an unknown type.
+    return [
+        ParseWarning(
+            ref=item.ref_code or "",
+            field="item_type",
+            description=f"item_type {item.item_type!r} unknown; recorded as {ClaimItemType.contract_work.value}",
+        )
+        for item in items
+        if item.item_type and item.item_type not in ClaimItemType
+    ]
+
+
+def normalise_summary(raw_summary: GenericSummary, line_items: list[ParsedClaimItem]) -> ParsedClaimSummary:
+    if not uses_raw_summary(raw_summary):
+        return summary_totals(line_items)
+    return ParsedClaimSummary(
+        original_contract_total=money_text(raw_summary.original_contract_total),
+        revised_contract_total=money_text(raw_summary.revised_contract_total),
+        claimed_amount=money_text(raw_summary.claimed_amount),
+    )
+
+
+def validate_and_normalise(extraction: GenericExtraction) -> ParsedClaim:
+    """Raises ValueError if line_items is empty; item indexes are reassigned 0..n-1."""
+    if not extraction.line_items:
+        raise ExternalServiceError("line_items is empty or missing — LLM returned no data")
+    line_items = [normalise_item(idx, raw_item) for idx, raw_item in enumerate(extraction.line_items)]
+    meta = extraction.metadata
+    metadata = ParsedClaimMetadata(
+        claim_number=meta.claim_number or "",
+        period_from=meta.period_from or "",
+        period_to=meta.period_to or "",
+        payment_due=meta.payment_due or "",
+    )
+    return ParsedClaim(
+        metadata=metadata,
+        line_items=line_items,
+        summary=normalise_summary(extraction.summary, line_items),
+        format_warnings=extraction_warnings(extraction),
+    )
+
+
+async def parse_generic(raw_extraction: RawExtraction, *, llm: LlmClient) -> ParsedClaim:
     template_text = load_prompt("extract_line_items")
-    playbook_text = load_playbook("generic")
+    playbook_text = load_playbook(ClaimFormat.generic)
 
-    # Render prompt
     prompt = string.Template(template_text).safe_substitute(
-        playbook_content=playbook_text, workspace_raw_extraction=json.dumps(raw_extraction)
+        playbook_content=playbook_text,
+        workspace_raw_extraction=json.dumps(raw_extraction.model_dump(mode="json", exclude_none=True)),
     )
 
-    # Run the structured agent — output is a validated GenericExtraction.
-    response = await run_structured(
+    response = await llm.run_structured(
         output_type=GenericExtraction,
         system_prompt=prompt,
         user_prompt="Extract all line items from this contractor payment claim.",
-        model=model,
         phase_name="extract_line_items_generic",
     )
-
-    # Normalise the typed extraction into the parsed_claim.json schema.
-    result = validate_and_normalise(response.output.model_dump())
+    result = validate_and_normalise(response.output)
 
     logger.info(
         "Generic parse: %d line items (%d contract, %d variation, %d PS)",
-        len(result["line_items"]),
-        sum(1 for i in result["line_items"] if i["item_type"] == "contract_work"),
-        sum(1 for i in result["line_items"] if i["item_type"] == "variation"),
-        sum(1 for i in result["line_items"] if i["item_type"] == "provisional_sum"),
+        len(result.line_items),
+        sum(1 for i in result.line_items if i.item_type == ClaimItemType.contract_work),
+        sum(1 for i in result.line_items if i.item_type == ClaimItemType.variation),
+        sum(1 for i in result.line_items if i.item_type == ClaimItemType.provisional_sum),
     )
-
     return result

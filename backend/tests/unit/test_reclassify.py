@@ -1,11 +1,12 @@
 """Tests for the reclassify_item service function."""
+
 import uuid
 from decimal import Decimal
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import BadRequestError
+from app.exceptions import BadRequestError, InternalError
 from app.models.assessment import Assessment, AssessmentStatus, LineItemStatus
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_variation import AssessmentVariation
@@ -15,7 +16,7 @@ from app.models.project import Project
 from app.models.user import User
 from app.models.variation import Variation, VariationStatus
 from app.models.wbs_code import WBSCode, WBSLevel
-from app.schemas.assessment import ReclassifyRequest, ReclassifyNewRecord
+from app.schemas.assessment import ReclassifyNewRecord, ReclassifyRequest
 from app.services import assessment_service
 
 
@@ -45,19 +46,25 @@ async def _seed(db: AsyncSession):
     await db.flush()
 
     wbs_a = WBSCode(
-        project_id=project.id, code="A", description="Category A",
-        level=WBSLevel.subcategory, sort_order=0, created_by=user.id,
+        project_id=project.id,
+        code="A",
+        description="Category A",
+        level=WBSLevel.subcategory,
+        sort_order=0,
+        created_by=user.id,
     )
     wbs_b = WBSCode(
-        project_id=project.id, code="B", description="Category B",
-        level=WBSLevel.subcategory, sort_order=1, created_by=user.id,
+        project_id=project.id,
+        code="B",
+        description="Category B",
+        level=WBSLevel.subcategory,
+        sort_order=1,
+        created_by=user.id,
     )
     db.add_all([wbs_a, wbs_b])
     await db.flush()
 
-    claim = Claim(
-        project_id=project.id, claim_number=1, created_by=user.id,
-    )
+    claim = Claim(project_id=project.id, claim_number=1, created_by=user.id)
     db.add(claim)
     await db.flush()
 
@@ -78,11 +85,7 @@ async def _seed(db: AsyncSession):
     await db.flush()
 
     assessment = Assessment(
-        claim_id=claim.id,
-        project_id=project.id,
-        version=1,
-        status=AssessmentStatus.draft,
-        created_by=user.id,
+        claim_id=claim.id, project_id=project.id, version=1, status=AssessmentStatus.draft, created_by=user.id
     )
     db.add(assessment)
     await db.flush()
@@ -120,16 +123,14 @@ async def test_reclassify_line_item_to_new_variation(db_session: AsyncSession):
         new_record=ReclassifyNewRecord(description="Concrete Works Variation"),
     )
 
-    result = await assessment_service.reclassify_item(
-        db_session, project.id, assessment.id, req, user,
-    )
+    result = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
 
     # Source line item should be deleted
-    assert len(result.line_items) == 0
+    assert len(result.assessment.line_items) == 0
 
     # New variation item should be created
-    assert len(result.variation_items) == 1
-    av = result.variation_items[0]
+    assert len(result.assessment.variation_items) == 1
+    av = result.assessment.variation_items[0]
     assert av.claim_line_item_id == cli.id
     assert av.contractor_claim_to_date == Decimal("10000")
     assert av.recommended_this_period == Decimal("8000")
@@ -179,20 +180,15 @@ async def test_reclassify_line_item_to_existing_variation(db_session: AsyncSessi
     await db_session.flush()
 
     req = ReclassifyRequest(
-        source_item_id=ali.id,
-        source_type="line-item",
-        target_type="variation",
-        target_id=existing_var.id,
+        source_item_id=ali.id, source_type="line-item", target_type="variation", target_id=existing_var.id
     )
 
-    result = await assessment_service.reclassify_item(
-        db_session, project.id, assessment.id, req, user,
-    )
+    result = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
 
-    assert len(result.line_items) == 0
+    assert len(result.assessment.line_items) == 0
     # Should have original history row + new reclassified row
-    assert len(result.variation_items) == 2
-    new_av = next(av for av in result.variation_items if av.claim_line_item_id == cli.id)
+    assert len(result.assessment.variation_items) == 2
+    new_av = next(av for av in result.assessment.variation_items if av.claim_line_item_id == cli.id)
     assert new_av.variation_id == existing_var.id
     assert new_av.contractor_claim_to_date == Decimal("10000")
 
@@ -229,9 +225,7 @@ async def test_reclassify_rejects_history_row(db_session: AsyncSession):
     )
 
     with pytest.raises(BadRequestError) as exc_info:
-        await assessment_service.reclassify_item(
-            db_session, project.id, assessment.id, req, user,
-        )
+        await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
     assert exc_info.value.status_code == 400
 
 
@@ -240,19 +234,14 @@ async def test_reclassify_wbs_to_wbs(db_session: AsyncSession):
     user, project, claim, cli, assessment, ali, wbs_a, wbs_b = await _seed(db_session)
 
     req = ReclassifyRequest(
-        source_item_id=ali.id,
-        source_type="line-item",
-        target_type="line-item",
-        target_wbs_code_id=wbs_b.id,
+        source_item_id=ali.id, source_type="line-item", target_type="line-item", target_wbs_code_id=wbs_b.id
     )
 
-    result = await assessment_service.reclassify_item(
-        db_session, project.id, assessment.id, req, user,
-    )
+    result = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)
 
     # Line item should still exist, not deleted
-    assert len(result.line_items) == 1
-    li = result.line_items[0]
+    assert len(result.assessment.line_items) == 1
+    li = result.assessment.line_items[0]
     assert li.id == ali.id
     assert li.wbs_code_id == wbs_b.id
     # Values should be unchanged
@@ -277,14 +266,12 @@ async def test_reclassify_roundtrip_line_item_to_ps_and_back(db_session: AsyncSe
         target_wbs_code_id=wbs_a.id,
         new_record=ReclassifyNewRecord(description="Provisional sum - Concrete Works"),
     )
-    result1 = await assessment_service.reclassify_item(
-        db_session, project.id, assessment.id, req1, user,
-    )
+    result1 = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req1, user)
 
     # Source line item deleted, PS row created with correct values
-    assert len(result1.line_items) == 0
-    assert len(result1.provisional_sum_items) == 1
-    ps_row = result1.provisional_sum_items[0]
+    assert len(result1.assessment.line_items) == 0
+    assert len(result1.assessment.provisional_sum_items) == 1
+    ps_row = result1.assessment.provisional_sum_items[0]
     assert ps_row.claim_line_item_id == cli.id
     assert ps_row.recommended_this_period == Decimal("8000")
     assert ps_row.total_recommended == Decimal("8000")
@@ -292,22 +279,36 @@ async def test_reclassify_roundtrip_line_item_to_ps_and_back(db_session: AsyncSe
 
     # Step 2: provisional sum → line-item
     req2 = ReclassifyRequest(
-        source_item_id=ps_row.id,
-        source_type="provisional-sum",
-        target_type="line-item",
-        target_wbs_code_id=wbs_a.id,
+        source_item_id=ps_row.id, source_type="provisional-sum", target_type="line-item", target_wbs_code_id=wbs_a.id
     )
-    result2 = await assessment_service.reclassify_item(
-        db_session, project.id, assessment.id, req2, user,
-    )
+    result2 = await assessment_service.reclassify_item(db_session, project.id, assessment.id, req2, user)
 
     # PS row should be deleted
-    assert len(result2.provisional_sum_items) == 0
+    assert len(result2.assessment.provisional_sum_items) == 0
 
     # Line item should be recreated with the original financial values
-    assert len(result2.line_items) == 1
-    li = result2.line_items[0]
+    assert len(result2.assessment.line_items) == 1
+    li = result2.assessment.line_items[0]
     assert li.claim_line_item_id == cli.id
     assert li.recommended_this_period == Decimal("8000")
     assert li.total_recommended == Decimal("8000")
     assert li.contractor_claim_to_date == Decimal("10000")
+
+
+async def no_claim_line_item(db, claim_line_item_id):
+    return None
+
+
+@pytest.mark.asyncio
+async def test_reclassify_raises_when_the_claim_line_item_is_missing(db_session: AsyncSession, monkeypatch):
+    user, project, claim, cli, assessment, ali, wbs_a, wbs_b = await _seed(db_session)
+    monkeypatch.setattr(assessment_service.claim_line_item_repo, "get_by_id", no_claim_line_item)
+    req = ReclassifyRequest(
+        source_item_id=ali.id,
+        source_type="line-item",
+        target_type="variation",
+        new_record=ReclassifyNewRecord(description="Concrete Works Variation"),
+    )
+
+    with pytest.raises(InternalError, match="Claim line item missing"):
+        await assessment_service.reclassify_item(db_session, project.id, assessment.id, req, user)

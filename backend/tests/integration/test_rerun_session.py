@@ -2,11 +2,14 @@ import uuid
 
 import pytest
 
+from app.exceptions import ConflictError
 from app.harness.models import HarnessType
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import document_repo, harness_repo, user_repo
+from app.services import harness_service
 from tests.e2e.fixtures.gilmours_claim1 import PROJECT
 from tests.e2e.helpers import get_auth_headers
+from tests.integration.characterisation_fixtures import seed_claim, seed_project, seed_user
 
 
 async def _make_session(client, db_session, status):
@@ -14,12 +17,13 @@ async def _make_session(client, db_session, status):
     user = await user_repo.get_by_email(db_session, "qs@dmp.co.nz")
     proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = uuid.UUID(proj_resp.json()["id"])
-    doc = await document_repo.create_document(
-        db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x",
-    )
+    doc = await document_repo.create_document(db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x")
     session = await harness_repo.create_session(
-        db=db_session, user_id=user.id, project_id=project_id,
-        harness_type=HarnessType.CLAIM_PARSE, document_id=doc.id,
+        db=db_session,
+        user_id=user.id,
+        project_id=project_id,
+        harness_type=HarnessType.CLAIM_PARSE,
+        document_id=doc.id,
         config={"document_id": str(doc.id)},
     )
     await harness_repo.set_status(db_session, session.id, status)
@@ -54,3 +58,19 @@ async def test_rerun_unknown_session_404(client):
     headers = await get_auth_headers(client)
     resp = await client.post(f"/api/v1/harness/sessions/{uuid.uuid4()}/rerun", headers=headers)
     assert resp.status_code == 404
+
+
+async def test_rerun_rejects_a_failed_session_that_already_created_a_claim(db_session):
+    user = await seed_user(db_session)
+    project = await seed_project(db_session, user)
+    claim, _ = await seed_claim(db_session, project, user)
+    doc = await document_repo.create_document(db_session, project.id, "c.pdf", "application/pdf", b"%PDF-1.4 x")
+    session = await harness_repo.create_session(
+        db=db_session, user_id=user.id, project_id=project.id, harness_type=HarnessType.CLAIM_PARSE, document_id=doc.id
+    )
+    await harness_repo.set_status(db_session, session.id, HarnessSessionStatus.failed, error_message="Cancelled")
+    await harness_repo.set_claim_id(db_session, session.id, claim.id)
+    await db_session.commit()
+
+    with pytest.raises(ConflictError, match="Session already created a claim"):
+        await harness_service.rerun_session(db_session, session.id, user)

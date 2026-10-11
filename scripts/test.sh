@@ -21,25 +21,25 @@ shift 2>/dev/null || true
 case "$SUITE" in
     unit)
         echo "Running unit tests..."
-        uv run pytest tests/unit -v "$@"
+        uv run --extra test pytest tests/unit -v "$@"
         ;;
     e2e)
         echo "Running e2e tests (real LLM calls)..."
-        uv run pytest tests/e2e -v -s "$@"
+        uv run --extra test pytest tests/e2e -v -s "$@"
         ;;
     e2e-file)
         FILE="${1#backend/}"
         shift 2>/dev/null || true
         echo "Running e2e test: $FILE..."
-        uv run pytest "$FILE" -v -s "$@"
+        uv run --extra test pytest "$FILE" -v -s "$@"
         ;;
     all)
         echo "Running all tests (evals excluded)..."
-        uv run pytest tests/ -v -m "not eval" "$@"
+        uv run --extra test pytest tests/ -v -m "not eval" "$@"
         ;;
     eval)
         echo "Running Jev matcher eval (real Jev + LLM, paid)..."
-        uv run pytest tests/eval -v -s -m eval "$@"
+        uv run --extra test pytest tests/eval -v -s -m eval "$@"
         ;;
     *)
         echo "Usage: $0 [unit|e2e|all|eval] [pytest args...]"

@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -8,27 +7,17 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants.enums import (  # noqa: F401 — re-export for alembic/metadata
+    AdjustmentType,
+    AssessmentStatus,
+    LineItemStatus,
+)
 from app.database import AuditMixin, Base
 
 if TYPE_CHECKING:
     from app.models.assessment_line_item import AssessmentLineItem
     from app.models.assessment_provisional_sum import AssessmentProvisionalSum
     from app.models.assessment_variation import AssessmentVariation
-
-
-class AssessmentStatus(str, enum.Enum):
-    draft = "draft"
-    finalised = "finalised"
-
-
-class LineItemStatus(str, enum.Enum):
-    unapproved = "unapproved"
-    approved = "approved"
-    interim = "interim"
-
-
-class AdjustmentType(str, enum.Enum):
-    interim_adjustment = "interim_adjustment"
 
 
 class Assessment(AuditMixin, Base):

@@ -1,4 +1,5 @@
 """Guards the shipped claim_parse wiring: phases 4 & 5 run through JevMatcher."""
+
 import pytest
 
 from app.harness.definitions.claim_parse import claim_parse_definition
@@ -11,8 +12,7 @@ def _phase(name):
 
 
 @pytest.mark.parametrize(
-    "name,schema",
-    [("WBS Categorisation", list[WbsMatch]), ("Variation Matching", list[VpsMatch])],
+    "name,schema", [("WBS Categorisation", list[WbsMatch]), ("Variation Matching", list[VpsMatch])]
 )
 def test_matching_phases_run_through_jev(name, schema):
     phase = _phase(name)

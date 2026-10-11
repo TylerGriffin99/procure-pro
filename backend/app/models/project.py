@@ -22,7 +22,6 @@ class Project(AuditMixin, Base):
     client_name: Mapped[str] = mapped_column(String(500))
     client_contact: Mapped[str | None] = mapped_column(String(255))
 
-    # End client (principal) details
     end_client_name: Mapped[str | None] = mapped_column(String(500))
     end_client_representative: Mapped[str | None] = mapped_column(String(255))
     end_client_address: Mapped[str | None] = mapped_column(String(1000))

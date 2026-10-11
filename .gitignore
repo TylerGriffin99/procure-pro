@@ -67,3 +67,6 @@ uploads/
 
 docs
 CONTEXT.md
+
+# git worktrees for parallel branches
+.worktrees/

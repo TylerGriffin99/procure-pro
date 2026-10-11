@@ -1,14 +1,16 @@
 """Integration test: the engine's LLM_SINGLE phase writes validated structured output."""
+
 import json
 import uuid
 
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.harness import agent_runner
+from app.clients.llm_client import LlmClient
+from app.constants import LlmProvider, MatcherName
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
-from app.harness.schemas import WbsMatch
+from app.harness.schemas import ParsedClaim, ParsedClaimItem, WbsMatch
 from app.repos import document_repo, harness_repo, user_repo
 from tests.e2e.fixtures.gilmours_claim1 import PROJECT
 from tests.e2e.helpers import get_auth_headers
@@ -17,14 +19,13 @@ from tests.e2e.helpers import get_auth_headers
 def _llm_single_harness() -> HarnessDefinition:
     """A programmatic seed phase feeding one LLM_SINGLE phase (output: list[WbsMatch])."""
 
-    async def seed(db, session_id, user_id, project_id, config):
-        return {"line_items": [{"item_index": 0, "item_type": "contract_work"}]}
+    async def seed(**_):
+        return ParsedClaim(line_items=[ParsedClaimItem(item_index=0)])
 
     return HarnessDefinition(
         harness_type=HarnessType.CLAIM_PARSE,
         display_name="LLM single test",
         description="test",
-        prerequisites=None,
         phases=[
             PhaseDefinition(
                 name="Seed",
@@ -51,12 +52,13 @@ async def _make_session(client, db_session):
     user = await user_repo.get_by_email(db_session, "qs@dmp.co.nz")
     proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = uuid.UUID(proj_resp.json()["id"])
-    doc = await document_repo.create_document(
-        db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x",
-    )
+    doc = await document_repo.create_document(db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x")
     session = await harness_repo.create_session(
-        db=db_session, user_id=user.id, project_id=project_id,
-        harness_type=HarnessType.CLAIM_PARSE, document_id=doc.id,
+        db=db_session,
+        user_id=user.id,
+        project_id=project_id,
+        harness_type=HarnessType.CLAIM_PARSE,
+        document_id=doc.id,
         config={"document_id": str(doc.id)},
     )
     await db_session.commit()
@@ -64,7 +66,7 @@ async def _make_session(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_llm_single_writes_validated_json_array(client, db_session, monkeypatch):
+async def test_llm_single_writes_validated_json_array(client, db_session):
     session = await _make_session(client, db_session)
 
     fake_model = TestModel(
@@ -80,14 +82,15 @@ async def test_llm_single_writes_validated_json_array(client, db_session, monkey
             }
         ]
     )
-    monkeypatch.setattr(agent_runner, "build_model", lambda *a, **k: fake_model)
-
     engine = HarnessEngine(
         definition=_llm_single_harness(),
         session_id=session.id,
         user_id=session.user_id,
         project_id=session.project_id,
         db=db_session,
+        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=fake_model),
+        matchers={},
+        default_matcher=MatcherName.llm,
     )
 
     events = [event async for event in engine.run()]
@@ -104,24 +107,27 @@ async def test_llm_single_writes_validated_json_array(client, db_session, monkey
     assert parsed[0]["item_index"] == 0
     # Fully validated: every schema field is present and typed.
     assert set(parsed[0]) == {
-        "item_index", "wbs_code_id", "wbs_code", "wbs_description",
-        "parent_code", "is_new", "confidence",
+        "item_index",
+        "wbs_code_id",
+        "wbs_code",
+        "wbs_description",
+        "parent_code",
+        "is_new",
+        "confidence",
     }
 
 
 @pytest.mark.asyncio
-async def test_llm_single_without_output_schema_errors(client, db_session, monkeypatch):
+async def test_llm_single_without_output_schema_errors(client, db_session):
     """An LLM_SINGLE phase missing an output_schema must fail loudly, not silently."""
     session = await _make_session(client, db_session)
 
     definition = _llm_single_harness()
     definition.phases[1].output_schema = None  # strip the schema
 
-    # build_model must never be reached — guard fires first.
-    def _boom(*a, **k):
-        raise AssertionError("build_model should not be called without an output_schema")
-
-    monkeypatch.setattr(agent_runner, "build_model", _boom)
+    class _ExplodingModel(TestModel):
+        async def request(self, *args, **kwargs):
+            raise AssertionError("the model must not be called without an output_schema")
 
     engine = HarnessEngine(
         definition=definition,
@@ -129,6 +135,9 @@ async def test_llm_single_without_output_schema_errors(client, db_session, monke
         user_id=session.user_id,
         project_id=session.project_id,
         db=db_session,
+        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=_ExplodingModel()),
+        matchers={},
+        default_matcher=MatcherName.llm,
     )
 
     events = [event async for event in engine.run()]

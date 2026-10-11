@@ -1,33 +1,19 @@
-"""Generate payment recommendation PDF using WeasyPrint."""
-
-import os
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-# WeasyPrint needs pango/cairo libs from Homebrew. On macOS with Anaconda Python,
-# the dynamic linker doesn't search /opt/homebrew/lib by default.
-if "DYLD_FALLBACK_LIBRARY_PATH" not in os.environ:
-    os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib"
+from app.schemas.payment_recommendation import PaymentRecommendation
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
 
 
-def generate_payment_recommendation_pdf(data: dict) -> bytes:
-    """Generate a payment recommendation PDF from assessment data.
-
-    Args:
-        data: Dict containing all PR fields (see template for expected keys)
-
-    Returns:
-        PDF file contents as bytes
-    """
+def generate_payment_recommendation_pdf(rec: PaymentRecommendation) -> bytes:
     # Lazy on purpose: weasyprint pulls in cairo/pango natively and is only needed for PDF export.
     from weasyprint import HTML
 
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
     template = env.get_template("payment_recommendation.html")
-    html_content = template.render(**data)
+    html_content = template.render(**rec.model_dump())
     pdf_bytes = HTML(string=html_content).write_pdf()
     if pdf_bytes is None:
         raise RuntimeError("weasyprint returned no PDF bytes for payment recommendation")

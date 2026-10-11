@@ -6,8 +6,8 @@ from sqlalchemy import Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants.enums import ClaimItemType
 from app.database import AuditMixin, Base
-from app.models.claim import ClaimItemType
 
 if TYPE_CHECKING:
     from app.models.claim import Claim

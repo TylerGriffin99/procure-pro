@@ -15,9 +15,7 @@ async def test_session_requires_document_and_cascades(client, db_session):
     proj_resp = await client.post("/api/v1/projects", json=PROJECT, headers=headers)
     project_id = uuid.UUID(proj_resp.json()["id"])
 
-    doc = await document_repo.create_document(
-        db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x",
-    )
+    doc = await document_repo.create_document(db_session, project_id, "c.pdf", "application/pdf", b"%PDF-1.4 x")
     session = await harness_repo.create_session(
         db=db_session,
         user_id=user.id,

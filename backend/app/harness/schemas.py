@@ -10,14 +10,17 @@ contract is unchanged — only now it is typed and validated at the source.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+import uuid
+from decimal import Decimal
+from typing import Any, Final
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from app.constants.enums import ClaimFormat, ClaimItemType, FlagSeverity, FlagType, MatcherName, VpsKind
+from app.schemas.assessment_aggregate import AssessmentAggregate
 from app.schemas.base import StrictModel
-
-_Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
-_ItemIndex = Annotated[int, Field(ge=0)]
+from app.schemas.claim_extraction import ClaimMetadata, DroppedRow, ParseWarning
+from app.schemas.common import Confidence, ItemIndex
 
 # Decimal-ish fields arrive as strings ("$1,234.56", "(500.00)") or numbers;
 # downstream normalisation (`validate_and_normalise`) handles the conversion.
@@ -25,20 +28,142 @@ _Numeric = str | float | int | None
 
 
 class ParsedClaimItem(BaseModel):
-    """A single line item as stored in ``parsed_claim.json`` and read by the
-    matchers. Only the fields matchers consume are declared; any other keys the
-    extraction wrote (``ref_code``, ``percentage``, ``ptd``, …) are ignored.
-
-    ``contract_value`` keeps its raw extracted form (it is forwarded verbatim to
-    the Jev decisions API and never used arithmetically here).
-    """
+    """Money fields keep their raw extracted form: ``contract_value`` is forwarded verbatim to the Jev
+    decisions API, and ``parse_money`` converts at the point of use."""
 
     model_config = ConfigDict(extra="ignore")
 
-    item_index: _ItemIndex
+    item_index: ItemIndex
+    ref_code: str = ""
     description: str = ""
-    item_type: str = "contract_work"
+    item_type: ClaimItemType = ClaimItemType.contract_work
     contract_value: _Numeric = None
+    percentage: _Numeric = None
+    ptd: _Numeric = None
+    previous: _Numeric = None
+    current: _Numeric = None
+    balance: _Numeric = None
+
+
+class ParsedClaimMetadata(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    claim_number: str = ""
+    period_from: str = ""
+    period_to: str = ""
+    payment_due: str = ""
+
+
+class ParsedClaimSummary(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    original_contract_total: _Numeric = None
+    variations_total: _Numeric = None
+    revised_contract_total: _Numeric = None
+    retention_amount: _Numeric = None
+    claimed_amount: _Numeric = None
+
+
+class ParsedClaim(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    metadata: ParsedClaimMetadata = Field(default_factory=ParsedClaimMetadata)
+    line_items: list[ParsedClaimItem]
+    summary: ParsedClaimSummary = Field(default_factory=ParsedClaimSummary)
+    # Malformed cells or unknown item types the extractor normalised ("0.00", contract_work); create_records flags each.
+    format_warnings: list[ParseWarning] = Field(default_factory=list)
+    # Table rows the deterministic parser could not map (wrong column count); each one understates the claim.
+    dropped_rows: list[DroppedRow] = Field(default_factory=list)
+
+
+class RawPage(StrictModel):
+    page_num: int
+    text: str = ""
+    tables: list[list[list[str | None]]] = Field(default_factory=list)
+
+
+class RawExtraction(StrictModel):
+    metadata: ClaimMetadata = Field(default_factory=ClaimMetadata)
+    pages: list[RawPage] = Field(default_factory=list)
+
+    def all_text(self) -> str:
+        return "\n".join(p.text for p in self.pages)
+
+
+class FormatDetection(StrictModel):
+    format: ClaimFormat
+    confidence: float
+    markers_found: list[str]
+
+    def detail(self) -> str:
+        percent = f" ({int(self.confidence * 100)}%)" if self.confidence else ""
+        return f"Format: {self.format.upper()}{percent}"
+
+
+class ValidationSummary(StrictModel):
+    total_items: int
+    flags_created: int
+
+
+class CreationSummary(StrictModel):
+    claim_id: uuid.UUID
+    assessment_id: uuid.UUID
+    line_items_created: int
+
+
+class FlagSpec(StrictModel):
+    flag_type: FlagType
+    severity: FlagSeverity
+    description: str
+    line_item_ref: str | None = None
+    expected_value: Decimal | None = None
+    actual_value: Decimal | None = None
+
+
+class CreateRecordsInputs(StrictModel):
+    parsed: ParsedClaim
+    wbs_matches: list[WbsMatch]
+    vps_matches: list[VpsMatch]
+
+
+class VpsLinks(StrictModel):
+    variations: dict[int, uuid.UUID]
+    provisional_sums: dict[int, uuid.UUID]
+
+
+class ClaimLinks(StrictModel):
+    wbs: dict[int, uuid.UUID]
+    vps: VpsLinks
+    confidence: dict[int, Decimal]
+
+
+class MasterRef(StrictModel):
+    id: uuid.UUID
+    denominator: Decimal | None
+    description: str | None = None
+    sort_order: int | None = None
+
+
+class KindHistory(StrictModel):
+    recommended: dict[uuid.UUID, Decimal]
+    claimed: dict[uuid.UUID, Decimal]
+    comments: dict[uuid.UUID, str]
+    accepted: dict[uuid.UUID, Decimal]
+
+
+class HistorySource(StrictModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+
+    claim_lines: list[Any]
+    previous: AssessmentAggregate | None
+    latest: Any
+    wbs_codes: list[Any]
+    variations: list[Any]
+    provisional_sums: list[Any]
+    user_id: uuid.UUID
+
+
+ExecutorResult = RawExtraction | FormatDetection | ParsedClaim | ValidationSummary | CreationSummary
 
 
 class JevAnswer(BaseModel):
@@ -46,8 +171,8 @@ class JevAnswer(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    choice: str | None = None
-    confidence: float = 0.0
+    choice: str
+    confidence: Confidence
 
 
 class JevUsage(BaseModel):
@@ -71,23 +196,23 @@ class WbsMatch(BaseModel):
     Serialized list -> ``wbs_matches.json``.
     """
 
-    item_index: _ItemIndex
+    item_index: ItemIndex
     wbs_code_id: str | None = None
     wbs_code: str
     wbs_description: str = ""
     parent_code: str = ""
     is_new: bool = False
     # Required and range-checked: an omitted confidence must not silently read as 0.0.
-    confidence: _Confidence
+    confidence: Confidence
 
 
 class VpsMatch(BaseModel):
     """One variation / provisional-sum match. Serialized list -> ``vps_matches.json``."""
 
-    item_index: _ItemIndex
-    item_type: Literal["variation", "provisional_sum"]
+    item_index: ItemIndex
+    item_type: VpsKind
     matched_id: str | None = None
-    confidence: _Confidence
+    confidence: Confidence
 
 
 class Subcat(StrictModel):
@@ -106,28 +231,39 @@ class VpsRecord(StrictModel):
     id: str
     description: str
     value: float | None
-    item_type: Literal["variation", "provisional_sum"]
+    item_type: VpsKind
+
+
+class JevTuning(StrictModel):
+    confidence_floor: float
+    max_concurrency: int
 
 
 class ItemDecision(StrictModel):
-    """One Jev answer for one line item. ``failed`` means the call failed non-fatally
-    and the caller should treat the item as unmatched."""
+    """One Jev answer for one line item. ``error`` is the non-fatal failure that left the item
+    unmatched; it is kept so an all-failed phase can report and chain it."""
 
-    item_index: int
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    item_index: ItemIndex
     choice: str | None = None
-    confidence: float = 0.0
+    confidence: Confidence = 0.0
     input_tokens: int = 0
-    failed: bool = False
+    error: Exception | None = Field(default=None, exclude=True)
+
+    @property
+    def failed(self) -> bool:
+        return self.error is not None
 
 
 class MatchOutcome(StrictModel):
     """Result of a matcher run: the typed list, its serialized form, and usage counters."""
 
+    matcher: MatcherName
     output: list[Any]  # list[WbsMatch] or list[VpsMatch]
     output_json: str  # bare JSON array matching the phase output_schema
     input_tokens: int = 0
     output_tokens: int = 0
-    cost_usd: float | None = None
     fell_back: int = 0  # items that fell back after a Jev failure
     residue: int = 0  # items routed to the LLM (none / low confidence)
     out_of_criteria: int = 0  # the model named an option that was never offered
@@ -144,8 +280,8 @@ class GenericLineItem(BaseModel):
     ref_code: str = ""
     description: str = ""
     # Kept as a plain string (not Literal) so a stray type does not fail the whole
-    # extraction — `validate_and_normalise` coerces unknown types to contract_work.
-    item_type: str = "contract_work"
+    # extraction — `validate_and_normalise` records unknown types as contract_work with a format warning.
+    item_type: str = ClaimItemType.contract_work
     contract_value: _Numeric = None
     percentage: _Numeric = None
     ptd: _Numeric = None
@@ -166,3 +302,8 @@ class GenericExtraction(BaseModel):
     metadata: GenericMetadata = Field(default_factory=GenericMetadata)
     line_items: list[GenericLineItem]
     summary: GenericSummary = Field(default_factory=GenericSummary)
+
+
+VPS_KINDS: Final = frozenset({ClaimItemType.variation, ClaimItemType.provisional_sum})
+WBS_MATCHES: Final = TypeAdapter(list[WbsMatch])
+VPS_MATCHES: Final = TypeAdapter(list[VpsMatch])

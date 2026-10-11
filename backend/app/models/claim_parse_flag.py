@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -8,28 +7,11 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, Tex
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants.enums import FlagSeverity, FlagType
 from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.harness_session import HarnessSession
-
-
-class FlagType(str, enum.Enum):
-    total_mismatch = "total_mismatch"  # kept for DB compat with existing rows
-    project_over_budget = "project_over_budget"
-    over_claim = "over_claim"
-    percentage_error = "percentage_error"
-    ptd_decrease = "ptd_decrease"
-    missing_ref = "missing_ref"
-    duplicate_item = "duplicate_item"
-    format_warning = "format_warning"
-    confidence_low = "confidence_low"
-
-
-class FlagSeverity(str, enum.Enum):
-    error = "error"
-    warning = "warning"
-    info = "info"
 
 
 class ClaimParseFlag(Base):

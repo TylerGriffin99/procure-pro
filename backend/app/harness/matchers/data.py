@@ -5,16 +5,14 @@ Mirrors the queries in ``app.harness.context_loaders``.
 
 from __future__ import annotations
 
-import json
 import uuid
-from typing import TYPE_CHECKING
 
-from app.harness.schemas import ParsedClaimItem, Subcat, VpsRecord
-from app.models.wbs_code import WBSLevel
-from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
+from sqlalchemy.ext.asyncio import AsyncSession
 
-if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+from app.constants.enums import ClaimItemType, WBSLevel, WorkspaceFile
+from app.harness.phase_context import load_workspace
+from app.harness.schemas import ParsedClaim, ParsedClaimItem, Subcat, VpsRecord
+from app.repos import provisional_sum_repo, variation_repo, wbs_code_repo
 
 
 def _num(v) -> float | None:
@@ -42,13 +40,19 @@ async def vps_records(*, db, project_id) -> list[VpsRecord]:
     sums = await provisional_sum_repo.get_by_project(db, project_id)
     out = [
         VpsRecord(
-            id=str(v.id), description=v.description or "", value=_num(v.contractor_submission), item_type="variation"
+            id=str(v.id),
+            description=v.description or "",
+            value=_num(v.contractor_submission),
+            item_type=ClaimItemType.variation.value,
         )
         for v in variations
     ]
     out += [
         VpsRecord(
-            id=str(p.id), description=p.description or "", value=_num(p.contract_sum), item_type="provisional_sum"
+            id=str(p.id),
+            description=p.description or "",
+            value=_num(p.contract_sum),
+            item_type=ClaimItemType.provisional_sum.value,
         )
         for p in sums
     ]
@@ -56,11 +60,5 @@ async def vps_records(*, db, project_id) -> list[VpsRecord]:
 
 
 async def read_parsed_items(db: AsyncSession, session_id: uuid.UUID) -> list[ParsedClaimItem]:
-    """Load and validate the parsed claim's line items from the session workspace."""
-    raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
-    if not raw:
-        raise ValueError(f"parsed_claim.json missing or empty for session {session_id}")
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict) or "line_items" not in parsed:
-        raise ValueError(f"parsed_claim.json has no 'line_items' for session {session_id}")
-    return [ParsedClaimItem.model_validate(i) for i in parsed["line_items"]]
+    parsed = await load_workspace(db, session_id, WorkspaceFile.parsed_claim, ParsedClaim.model_validate_json)
+    return parsed.line_items

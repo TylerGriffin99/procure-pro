@@ -2,16 +2,10 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.exc import (
-    DataError,
-    IntegrityError,
-    InterfaceError,
-    NoResultFound,
-    OperationalError,
-)
+from sqlalchemy.exc import DataError, IntegrityError, InterfaceError, NoResultFound, OperationalError
 
 from app.error_handlers import register
-from app.exceptions import ConflictError, NotFoundError, UnauthorizedError
+from app.exceptions import ConflictError, InternalError, NotFoundError, UnauthorizedError
 
 
 class FakePgError(Exception):
@@ -38,7 +32,9 @@ def build_app() -> FastAPI:
 
     @app.get("/unique")
     async def unique():
-        orig = FakePgError('duplicate key value violates unique constraint "uq_claim"\nDETAIL: Key (x)=(1) exists.', "23505")
+        orig = FakePgError(
+            'duplicate key value violates unique constraint "uq_claim"\nDETAIL: Key (x)=(1) exists.', "23505"
+        )
         raise IntegrityError("INSERT INTO claims (secret) VALUES (?)", {"secret": "s3cr3t"}, orig)
 
     @app.get("/fk")
@@ -82,6 +78,10 @@ def build_app() -> FastAPI:
         req = httpx.Request("POST", "https://jev.test/decisions")
         raise httpx.HTTPStatusError("boom", request=req, response=httpx.Response(402, request=req))
 
+    @app.get("/internal")
+    async def internal():
+        raise InternalError("Assessment vanished after commit")
+
     @app.get("/boom")
     async def boom():
         raise KeyError("database_password=hunter2")
@@ -109,12 +109,13 @@ async def client():
         ("/integrity-no-sqlstate", 400, "integrity failed"),
         ("/data", 400, "invalid input syntax for type uuid"),
         ("/no-result", 404, "Resource not found"),
-        ("/db-down", 503, "connection refused"),
-        ("/db-down-empty", 503, "ConnectionResetError"),
-        ("/db-interface", 503, "connection lost"),
+        ("/db-down", 503, "Database unavailable"),
+        ("/db-down-empty", 503, "Database unavailable"),
+        ("/db-interface", 503, "Database unavailable"),
         ("/integrity-empty", 400, "Exception"),
         ("/upstream", 502, "Upstream service error (402)"),
         ("/boom", 500, "Internal server error"),
+        ("/internal", 500, "Assessment vanished after commit"),
     ],
 )
 async def test_status_and_detail(client, path, status, detail):
@@ -136,3 +137,27 @@ async def test_db_error_never_echoes_statement_or_params(client):
 async def test_500_never_echoes_exception_message(client):
     body = (await client.get("/boom")).text
     assert "hunter2" not in body and "KeyError" not in body
+
+
+async def test_db_unavailable_logs_driver_message_not_body(client, caplog):
+    resp = await client.get("/db-down")
+    assert "connection refused" not in resp.text
+    assert any("connection refused" in r.getMessage() for r in caplog.records)
+
+
+async def test_5xx_app_error_is_logged_with_traceback(client, caplog):
+    await client.get("/internal")
+    [record] = [r for r in caplog.records if "vanished after commit" in r.getMessage()]
+    assert record.levelname == "ERROR"
+    assert record.exc_info is not None and record.exc_info[0] is InternalError
+
+
+async def test_4xx_app_error_is_not_logged(client, caplog):
+    await client.get("/not-found")
+    assert not [r for r in caplog.records if r.name == "app.error_handlers"]
+
+
+async def test_upstream_error_is_logged_with_traceback(client, caplog):
+    await client.get("/upstream")
+    [record] = [r for r in caplog.records if r.getMessage().startswith("Upstream")]
+    assert record.exc_info is not None

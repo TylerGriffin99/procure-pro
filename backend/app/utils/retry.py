@@ -1,5 +1,3 @@
-"""Generic async retry with exponential backoff and jitter."""
-
 from __future__ import annotations
 
 import asyncio

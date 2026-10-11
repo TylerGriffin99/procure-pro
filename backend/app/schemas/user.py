@@ -1,14 +1,9 @@
 import uuid
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, EmailStr
 
-from app.models.user import UserRole
-
-COUNTRY_CURRENCY_MAP: dict[str, str] = {"NZ": "NZD", "AU": "AUD"}
-SUPPORTED_COUNTRIES = Literal["NZ", "AU"]
-SUPPORTED_CURRENCIES = Literal["NZD", "AUD"]
+from app.constants.enums import Country, UserRole
 
 
 class UserCreate(BaseModel):
@@ -16,7 +11,7 @@ class UserCreate(BaseModel):
     password: str
     first_name: str
     last_name: str
-    country: SUPPORTED_COUNTRIES
+    country: Country
 
 
 class UserResponse(BaseModel):

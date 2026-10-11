@@ -6,12 +6,8 @@ from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants.enums import AdjustmentType, LineItemStatus
 from app.database import AuditMixin, Base
-from app.models.assessment import AdjustmentType, LineItemStatus
-
-if TYPE_CHECKING:
-    from app.models.assessment import Assessment
-    from app.models.variation import Variation
 
 if TYPE_CHECKING:
     from app.models.assessment import Assessment

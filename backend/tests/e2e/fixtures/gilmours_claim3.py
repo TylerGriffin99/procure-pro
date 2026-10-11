@@ -183,9 +183,9 @@ PR3_VAR15_RECOMMENDED = "13562.09"
 # These may differ by +/-0.01 from the PDF (which used different rounding).
 ASSESSMENT_3_EXPECTED = {
     "contract_sum": "4172492.92",
-    "total_recommended": "609670.12",       # 467891.23 + 7838.76 + 133940.13
-    "total_retention": "40483.51",          # 10% of 200k + 5% of 409670.12
-    "total_payment_to_date": "569186.61",   # 609670.12 - 40483.51
-    "previously_certified": "233153.31",    # from PR2 total_payment_to_date
-    "recommended_this_period": "336033.30", # 569186.61 - 233153.31
+    "total_recommended": "609670.12",  # 467891.23 + 7838.76 + 133940.13
+    "total_retention": "40483.51",  # 10% of 200k + 5% of 409670.12
+    "total_payment_to_date": "569186.61",  # 609670.12 - 40483.51
+    "previously_certified": "233153.31",  # from PR2 total_payment_to_date
+    "recommended_this_period": "336033.30",  # 569186.61 - 233153.31
 }

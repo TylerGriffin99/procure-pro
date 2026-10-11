@@ -42,6 +42,8 @@ def sqlstate(exc: Exception) -> str | None:
 
 async def handle_app_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)
+    if exc.status_code >= 500:
+        logger.error("%s on %s %s: %s", type(exc).__name__, request.method, request.url.path, exc.detail, exc_info=exc)
     return detail_response(exc.status_code, exc.detail, exc.headers)
 
 
@@ -80,13 +82,15 @@ async def handle_db_unavailable(request: Request, exc: Exception) -> JSONRespons
         message,
         exc_info=exc,
     )
-    return detail_response(503, message)
+    return detail_response(503, "Database unavailable")
 
 
 async def handle_upstream_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, httpx.HTTPStatusError)
     status = exc.response.status_code
-    logger.error("Upstream %s returned %s on %s %s", exc.request.url.host, status, request.method, request.url.path)
+    logger.error(
+        "Upstream %s returned %s on %s %s", exc.request.url.host, status, request.method, request.url.path, exc_info=exc
+    )
     return detail_response(502, f"Upstream service error ({status})")
 
 

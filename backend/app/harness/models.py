@@ -1,24 +1,30 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.constants.enums import MatcherName, PhaseStatus
+from app.harness.schemas import ExecutorResult, MatchOutcome
+from app.schemas.base import StrictModel
 
 
 class PhaseType(StrEnum):
     PROGRAMMATIC = "programmatic"
     LLM_SINGLE = "llm_single"
-    LLM_AGENT = "llm_agent"
     LLM_BATCH_AGENTS = "llm_batch_agents"
-    LLM_HUMAN_INPUT = "llm_human_input"
 
 
 class HarnessType(StrEnum):
     CLAIM_PARSE = "claim_parse"
+
+
+Executor = Callable[..., Awaitable[ExecutorResult]]
 
 
 @dataclass
@@ -29,26 +35,24 @@ class PhaseDefinition:
     workspace_output: str
     system_prompt_template: str = ""
     model: str | None = None
-    matcher: Literal["llm", "jev"] | None = None
-    tools: list[str] | None = None
+    matcher: MatcherName | None = None
     # pydantic-ai output spec for LLM phases: a BaseModel subclass or list[Model].
     output_schema: Any = None
     workspace_inputs: list[str] = field(default_factory=list)
-    executor: Callable | None = None
+    executor: Executor | None = None
     context_loaders: list[Callable] = field(default_factory=list)  # async (db, project_id, session_id) -> dict
-    validator: Callable | None = None
-    post_execute: Callable | None = None
     internal: bool = False
-    max_rounds: int = 25
-    timeout_seconds: int = 300
-    batch_items_file: str | None = None
-    batch_size: int = 5
 
 
-@dataclass
-class HarnessPrerequisites:
-    intro_text: str
-    required_document_count: int = 0
+@dataclass(frozen=True)
+class PhaseRun:
+    phase_def: PhaseDefinition
+    db: AsyncSession
+    project_id: uuid.UUID
+    session_id: uuid.UUID
+
+
+Matcher = Callable[[PhaseRun], Awaitable[MatchOutcome]]
 
 
 @dataclass
@@ -56,18 +60,7 @@ class HarnessDefinition:
     harness_type: HarnessType
     display_name: str
     description: str
-    prerequisites: HarnessPrerequisites | None
     phases: list[PhaseDefinition]
-
-
-# --- SSE event models ---
-
-
-class PhaseStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 class HarnessErrorEvent(BaseModel):
@@ -115,6 +108,13 @@ class UsageEvent(BaseModel):
     type: Literal["usage"] = "usage"
     prompt_tokens: int
     completion_tokens: int
+
+
+class PhaseOutput(StrictModel):
+    output_json: str
+    summary: str
+    detail: str | None = None
+    usage: UsageEvent | None = None
 
 
 HarnessEvent = (

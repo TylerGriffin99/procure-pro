@@ -1,18 +1,23 @@
 """Unit tests for harness structured-output schemas."""
+
 import json
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
+from app.constants import MatcherName
 from app.harness.schemas import (
     GenericExtraction,
     ItemDecision,
+    JevAnswer,
     MatchOutcome,
+    ParsedClaim,
     Subcat,
     VpsMatch,
     VpsRecord,
     WbsMatch,
 )
+from app.schemas.claim_extraction import ParseWarning
 
 
 class TestWbsMatch:
@@ -28,8 +33,13 @@ class TestWbsMatch:
         )
         dumped = m.model_dump()
         assert set(dumped) == {
-            "item_index", "wbs_code_id", "wbs_code", "wbs_description",
-            "parent_code", "is_new", "confidence",
+            "item_index",
+            "wbs_code_id",
+            "wbs_code",
+            "wbs_description",
+            "parent_code",
+            "is_new",
+            "confidence",
         }
 
     def test_wbs_code_id_nullable_for_new_proposals(self):
@@ -87,8 +97,8 @@ class TestGenericExtraction:
 
 
 def test_match_outcome_defaults_and_frozen():
-    out = MatchOutcome(output=[], output_json="[]")
-    assert (out.input_tokens, out.output_tokens, out.cost_usd, out.fell_back, out.residue, out.out_of_criteria) == (0, 0, None, 0, 0, 0)
+    out = MatchOutcome(matcher=MatcherName.jev, output=[], output_json="[]")
+    assert (out.input_tokens, out.output_tokens, out.fell_back, out.residue, out.out_of_criteria) == (0, 0, 0, 0, 0)
     with pytest.raises(ValidationError):
         out.fell_back = 1  # type: ignore[misc]
 
@@ -101,5 +111,36 @@ def test_subcat_and_vps_record_reject_unknown_fields():
 
 
 def test_item_decision_failed_default():
-    d = ItemDecision(item_index=3, failed=True)
+    d = ItemDecision(item_index=3, error=KeyError("item_3"))
+    assert d.failed
     assert d.choice is None and d.confidence == 0.0 and d.input_tokens == 0
+
+
+def test_item_decision_without_error_is_not_failed():
+    assert not ItemDecision(item_index=3, choice="x", confidence=0.5).failed
+
+
+@pytest.mark.parametrize(
+    "answer", [{"selected": "x", "confidence": 0.5}, {"choice": "x"}, {"choice": "x", "confidence": -0.1}]
+)
+def test_jev_answer_requires_choice_and_unit_confidence(answer):
+    with pytest.raises(ValidationError):
+        JevAnswer.model_validate(answer)
+
+
+@pytest.mark.parametrize("bad", [{"confidence": 1.5}, {"confidence": -0.1}, {"item_index": -1}])
+def test_item_decision_range_checks_confidence_and_index(bad):
+    with pytest.raises(ValidationError):
+        ItemDecision(**({"item_index": 0} | bad))
+
+
+def test_parsed_claim_with_a_refless_warning_round_trips_through_exclude_none():
+    claim = ParsedClaim(
+        line_items=[],
+        format_warnings=[ParseWarning(ref=None, field="claimed_this_period", description="malformed money cell")],
+    )
+
+    restored = ParsedClaim.model_validate_json(claim.model_dump_json(exclude_none=True))
+
+    assert restored.format_warnings == claim.format_warnings
+    assert restored.format_warnings[0].ref is None

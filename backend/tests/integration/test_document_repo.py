@@ -16,9 +16,7 @@ async def test_create_and_get_document_roundtrips_bytes(client, db_session):
     project_id = uuid.UUID(proj_resp.json()["id"])
 
     content = b"%PDF-1.4\nhello world\n%%EOF"
-    doc = await document_repo.create_document(
-        db_session, project_id, "claim.pdf", "application/pdf", content,
-    )
+    doc = await document_repo.create_document(db_session, project_id, "claim.pdf", "application/pdf", content)
     await db_session.commit()
 
     fetched = await document_repo.get_document(db_session, doc.id)

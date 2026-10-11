@@ -1,5 +1,5 @@
 import logging
-from contextlib import asynccontextmanager
+import os
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,20 +8,18 @@ from app import error_handlers
 from app.config import settings
 from app.routers import assessments, auth, claim_flags, claims, harness, projects
 
+# Silence pydantic-ai's first-run telemetry banner so test/log output stays pristine.
+os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    yield
-
-
-app = FastAPI(title="Claim Review API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Claim Review API", version="0.1.0")
 error_handlers.register(app)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

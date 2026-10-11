@@ -1,8 +1,13 @@
 """Small value types shared across layers."""
 
+from typing import Annotated
+
 from pydantic import Field
 
 from app.schemas.base import StrictModel
+
+Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
+ItemIndex = Annotated[int, Field(ge=0)]
 
 
 class RetryPolicy(StrictModel):

@@ -12,15 +12,8 @@ from tests.e2e.helpers import get_auth_headers
 
 def _readable_clean_pdf():
     """A pdfplumber stand-in so this persistence test isn't gated on real PDF parsing."""
-    page = type("Page", (), {
-        "extract_text": lambda self: "Progress Claim No. 1",
-        "extract_tables": lambda self: [],
-    })()
-    return type("PDF", (), {
-        "pages": [page],
-        "__enter__": lambda self: self,
-        "__exit__": lambda self, *a: None,
-    })()
+    page = type("Page", (), {"extract_text": lambda self: "Progress Claim No. 1", "extract_tables": lambda self: []})()
+    return type("PDF", (), {"pages": [page], "__enter__": lambda self: self, "__exit__": lambda self, *a: None})()
 
 
 @pytest.mark.asyncio

@@ -23,13 +23,6 @@ async def create(db: AsyncSession, **kwargs) -> AssessmentProvisionalSum:
     return item
 
 
-async def update(db: AsyncSession, item: AssessmentProvisionalSum, **kwargs) -> AssessmentProvisionalSum:
-    for key, value in kwargs.items():
-        setattr(item, key, value)
-    await db.flush()
-    return item
-
-
 async def delete(db: AsyncSession, item: AssessmentProvisionalSum) -> None:
     await db.delete(item)
     await db.flush()

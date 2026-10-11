@@ -95,9 +95,7 @@ PROJECT = {
     "end_client_representative": "Mal Tipton",
     "end_client_address": "Spark Central, Level 7\n42-52 Willis St\nWellington 6011",
     "provisional_sum_total": "112000.00",
-    "retention_tiers": [
-        {"tier_order": 1, "percentage": "0.1000", "up_to_amount": None},
-    ],
+    "retention_tiers": [{"tier_order": 1, "percentage": "0.1000", "up_to_amount": None}],
     "wbs_codes": WBS_CODES,
 }
 

@@ -19,44 +19,27 @@ Requires:
   - LLM_PROVIDER and matching API key set in environment
   - All 8 PDFs in claim/Gilmours/claims/
 """
+
 from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
 
 from tests.e2e.fixtures.gilmours_full_pipeline import GOLDEN_FIXTURES, PROJECT
-from tests.e2e.helpers import (
-    _assert_decimal_eq,
-    _d,
-    auto_approve_assessment,
-    get_auth_headers,
-    upload_claim_deep_mode,
-)
+from tests.e2e.helpers import _assert_decimal_eq, _d, auto_approve_assessment, get_auth_headers, upload_claim_deep_mode
 
-CLAIMS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / "claim"
-    / "Gilmours"
-    / "claims"
-)
+CLAIMS_DIR = Path(__file__).parent.parent.parent.parent / "claim" / "Gilmours" / "claims"
 
 CLAIM_PDFS = sorted(CLAIMS_DIR.glob("Gilmours Central_Progress Claim No. *.pdf"))
 
 
 @pytest.mark.full_pipeline
-@pytest.mark.skipif(
-    len(list(CLAIMS_DIR.glob("*.pdf"))) < 8,
-    reason="Not all 8 claim PDFs available",
-)
+@pytest.mark.skipif(len(list(CLAIMS_DIR.glob("*.pdf"))) < 8, reason="Not all 8 claim PDFs available")
 @pytest.mark.asyncio
 async def test_full_pipeline_8_claims(client: AsyncClient):
     """Process all 8 claims: upload -> verify assessment -> auto-approve -> finalise -> verify totals."""
-    assert len(GOLDEN_FIXTURES) == 8, (
-        f"Expected 8 golden fixtures, got {len(GOLDEN_FIXTURES)}"
-    )
-    assert len(CLAIM_PDFS) == 8, (
-        f"Expected 8 claim PDFs, got {len(CLAIM_PDFS)}"
-    )
+    assert len(GOLDEN_FIXTURES) == 8, f"Expected 8 golden fixtures, got {len(GOLDEN_FIXTURES)}"
+    assert len(CLAIM_PDFS) == 8, f"Expected 8 claim PDFs, got {len(CLAIM_PDFS)}"
 
     headers = await get_auth_headers(client)
 
@@ -69,18 +52,16 @@ async def test_full_pipeline_8_claims(client: AsyncClient):
 
     for claim_idx, (pdf_path, golden) in enumerate(zip(CLAIM_PDFS, GOLDEN_FIXTURES)):
         claim_num = claim_idx + 1
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"  Claim {claim_num}: {pdf_path.name}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # ── 1. Upload and parse ────────────────────────────────────────────
         claim_id = await upload_claim_deep_mode(client, project_id, pdf_path, headers)
         assert claim_id is not None, f"Claim {claim_num}: upload returned no claim_id"
 
         # ── 2. Verify claim number ─────────────────────────────────────────
-        claim_resp = await client.get(
-            f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers,
-        )
+        claim_resp = await client.get(f"/api/v1/projects/{project_id}/claims/{claim_id}", headers=headers)
         assert claim_resp.status_code == 200
         claim = claim_resp.json()
         assert claim["claim_number"] == claim_num, (
@@ -89,7 +70,7 @@ async def test_full_pipeline_8_claims(client: AsyncClient):
 
         # ── 3. Get assessment and verify structure ─────────────────────────
         assessment_resp = await client.get(
-            f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers,
+            f"/api/v1/projects/{project_id}/assessments/by-claim/{claim_id}", headers=headers
         )
         assert assessment_resp.status_code == 200
         assessment = assessment_resp.json()
@@ -104,9 +85,7 @@ async def test_full_pipeline_8_claims(client: AsyncClient):
             )
         else:
             _assert_decimal_eq(
-                assessment["previously_certified"],
-                "0",
-                f"Claim {claim_num}: previously_certified (first claim)",
+                assessment["previously_certified"], "0", f"Claim {claim_num}: previously_certified (first claim)"
             )
 
         # ── 4. Verify assessment line items ─────────────────────────────────
@@ -116,8 +95,7 @@ async def test_full_pipeline_8_claims(client: AsyncClient):
         expected_lis = golden["assessment_line_items"]
         actual_lis = assessment["line_items"]
         assert len(actual_lis) >= len(expected_lis), (
-            f"Claim {claim_num}: expected at least {len(expected_lis)} assessment LIs, "
-            f"got {len(actual_lis)}"
+            f"Claim {claim_num}: expected at least {len(expected_lis)} assessment LIs, got {len(actual_lis)}"
         )
 
         # Verify that the number of items with non-zero claims matches
@@ -141,20 +119,16 @@ async def test_full_pipeline_8_claims(client: AsyncClient):
 
         actual_vars = assessment.get("variation_items", [])
 
-        print(f"  Assessment verified: {len(actual_lis)} LI, "
-              f"{len(actual_ps)} PS, {len(actual_vars)} Var")
+        print(f"  Assessment verified: {len(actual_lis)} LI, {len(actual_ps)} PS, {len(actual_vars)} Var")
 
         # ── 7. Auto-approve all items ──────────────────────────────────────
         await auto_approve_assessment(client, project_id, assessment_id, assessment, headers)
 
         # ── 8. Finalise ────────────────────────────────────────────────────
         finalise_resp = await client.post(
-            f"/api/v1/projects/{project_id}/assessments/{assessment_id}/finalise",
-            headers=headers,
+            f"/api/v1/projects/{project_id}/assessments/{assessment_id}/finalise", headers=headers
         )
-        assert finalise_resp.status_code == 200, (
-            f"Claim {claim_num}: finalise failed: {finalise_resp.text}"
-        )
+        assert finalise_resp.status_code == 200, f"Claim {claim_num}: finalise failed: {finalise_resp.text}"
         finalised = finalise_resp.json()
         assert finalised["status"] == "finalised", (
             f"Claim {claim_num}: expected status=finalised, got {finalised['status']}"
@@ -167,9 +141,7 @@ async def test_full_pipeline_8_claims(client: AsyncClient):
         # internal consistency + carry-forward checks.
         expected_totals = golden["finalised_totals"]
         _assert_decimal_eq(
-            finalised["contract_sum"],
-            expected_totals["contract_sum"],
-            f"Claim {claim_num} finalised.contract_sum",
+            finalised["contract_sum"], expected_totals["contract_sum"], f"Claim {claim_num} finalised.contract_sum"
         )
 
         # ── 10. Verify internal consistency ────────────────────────────────
@@ -191,13 +163,15 @@ async def test_full_pipeline_8_claims(client: AsyncClient):
 
         prev_total_payment_to_date = finalised["total_payment_to_date"]
 
-        print(f"  Finalised: total_recommended={finalised['total_recommended']}, "
-              f"payment_to_date={finalised['total_payment_to_date']}, "
-              f"this_period={finalised['recommended_this_period']}")
+        print(
+            f"  Finalised: total_recommended={finalised['total_recommended']}, "
+            f"payment_to_date={finalised['total_payment_to_date']}, "
+            f"this_period={finalised['recommended_this_period']}"
+        )
         print(f"  Claim {claim_num} PASSED")
 
     # ── Final summary ──────────────────────────────────────────────────────
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  FULL PIPELINE E2E TEST PASSED - All 8 claims processed")
     print(f"  Final total_payment_to_date: {prev_total_payment_to_date}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")

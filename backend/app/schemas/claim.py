@@ -3,14 +3,11 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import Any
 
 from pydantic import BaseModel
 
-from app.models.claim import ClaimItemType
-
-if TYPE_CHECKING:
-    from app.models.claim import Claim
+from app.constants.enums import AssessmentStatus, ClaimItemType
 
 
 class ClaimLineItemResponse(BaseModel):
@@ -51,7 +48,7 @@ class ClaimResponse(BaseModel):
     payment_schedule_due: date | None = None
     parsed_at: datetime | None
     assessment_id: uuid.UUID | None = None
-    assessment_status: str | None = None
+    assessment_status: AssessmentStatus | None = None
     line_items: list[ClaimLineItemResponse] = []
     summary: ClaimSummaryResponse
     validation_warnings: list[str] | None = []
@@ -60,7 +57,7 @@ class ClaimResponse(BaseModel):
 
     @classmethod
     def from_claim(
-        cls, claim: Claim, *, assessment_id: uuid.UUID | None = None, assessment_status: str | None = None
+        cls, claim: Any, *, assessment_id: uuid.UUID | None = None, assessment_status: AssessmentStatus | None = None
     ) -> ClaimResponse:
         return cls(
             id=claim.id,
@@ -93,7 +90,7 @@ class ClaimUploadResponse(BaseModel):
 class ClaimLineItemCreate(BaseModel):
     ref_code: str | None = None
     description: str
-    item_type: str
+    item_type: ClaimItemType
     contract_value: Decimal
     percentage: Decimal
     ptd: Decimal

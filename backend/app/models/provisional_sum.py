@@ -5,8 +5,8 @@ from sqlalchemy import Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants.enums import VariationStatus
 from app.database import AuditMixin, Base
-from app.models.variation import VariationStatus
 
 
 class ProvisionalSum(AuditMixin, Base):

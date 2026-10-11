@@ -6,19 +6,19 @@ Everything that touches the Jev HTTP API lives here so the matcher
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from http import HTTPStatus
+from typing import Any
 
 import httpx
 
-from app.harness.schemas import JevDecisionResponse
+from app.config import Settings
+from app.exceptions import UnprocessableError
+from app.harness.schemas import JevDecisionResponse, ParsedClaimItem
 from app.schemas.common import RetryPolicy
 from app.utils.retry import retry_async
-
-if TYPE_CHECKING:
-    from app.config import Settings
-    from app.harness.schemas import ParsedClaimItem
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +59,11 @@ class JevClient:
             return True
         if isinstance(exc, httpx.HTTPStatusError):
             status = exc.response.status_code
-            return status in FATAL_STATUS or 300 <= status < 400 or status == 405
+            return (
+                status in FATAL_STATUS
+                or HTTPStatus.MULTIPLE_CHOICES <= status < HTTPStatus.BAD_REQUEST
+                or status == HTTPStatus.METHOD_NOT_ALLOWED
+            )
         return False
 
     @staticmethod
@@ -86,7 +90,7 @@ class JevClient:
             {"state": worst, "questions": {"item_0": {"instructions": instructions, "criteria": criteria}}}, default=str
         )
         if len(payload) / 4 > max_tokens:
-            raise ValueError(f"Jev request for '{phase_name}' exceeds 32k context")
+            raise UnprocessableError(f"Jev request for '{phase_name}' exceeds 32k context")
 
     async def post_decisions(self, *, state: dict[str, Any], questions: dict[str, Any]) -> dict[str, Any]:
         """POST one decisions request. Raises httpx.HTTPStatusError on non-2xx."""
@@ -106,9 +110,7 @@ class JevClient:
         statuses raise immediately; any other terminal failure is logged and re-raised."""
         questions = {qid: {"type": "choice", "instructions": instructions, "criteria": criteria}}
 
-        async def attempt() -> dict[str, Any]:
-            return await self.post_decisions(state=state, questions=questions)
-
+        attempt = functools.partial(self.post_decisions, state=state, questions=questions)
         try:
             raw = await retry_async(attempt, policy=self.retry, should_retry=self.is_retryable)
         except httpx.HTTPStatusError as exc:

@@ -12,6 +12,10 @@
 
 set dotenv-load := true
 
+# WeasyPrint (PDF export) dlopens pango/cairo from Homebrew; macOS's linker does not search
+# /opt/homebrew/lib by default. Host recipes only — the Docker image has the libs on the default path.
+export DYLD_FALLBACK_LIBRARY_PATH := env("DYLD_FALLBACK_LIBRARY_PATH", "/opt/homebrew/lib")
+
 _default:
     @just --list --unsorted
 
@@ -119,6 +123,10 @@ pyright:
 
 # Everything a commit must pass: ruff, ty, pyright, unit tests.
 check: ruff ty pyright test-unit
+
+# Ethos gate: packaged checks from the python-code-standards skill (writes nothing into the repo).
+standards:
+    bash ~/.claude/skills/python-code-standards/scripts/check.sh backend
 
 # Back-compat aliases.
 lint *args: (ruff args)

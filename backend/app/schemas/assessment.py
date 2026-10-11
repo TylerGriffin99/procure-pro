@@ -2,20 +2,14 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from app.models.assessment import AssessmentStatus, LineItemStatus
+from app.constants.enums import AdjustmentType, AssessmentItemKind, AssessmentStatus, LineItemStatus
 from app.schemas.assessment_aggregate import AssessmentAggregate
-
-if TYPE_CHECKING:
-    from app.models.assessment_line_item import AssessmentLineItem
-    from app.models.assessment_provisional_sum import AssessmentProvisionalSum
-    from app.models.assessment_variation import AssessmentVariation
-
-    InterimItem = AssessmentLineItem | AssessmentVariation | AssessmentProvisionalSum
 
 
 class AssessmentCreate(BaseModel):
@@ -37,7 +31,7 @@ class AssessmentLineItemResponse(BaseModel):
     comments: str | None
     is_closed_out: bool = False
     sort_order: int
-    adjustment_type: str | None = None
+    adjustment_type: AdjustmentType | None = None
     source_assessment_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
@@ -66,7 +60,7 @@ class AssessmentVariationResponse(BaseModel):
     status: LineItemStatus
     comments: str | None
     is_closed_out: bool = False
-    adjustment_type: str | None = None
+    adjustment_type: AdjustmentType | None = None
     source_assessment_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
@@ -88,7 +82,7 @@ class AssessmentProvisionalSumResponse(BaseModel):
     status: LineItemStatus
     comments: str | None
     is_closed_out: bool = False
-    adjustment_type: str | None = None
+    adjustment_type: AdjustmentType | None = None
     source_assessment_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
@@ -176,12 +170,19 @@ class AggregatedPSGroupResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AggregatedGroupsResponse(BaseModel):
+    wbs_groups: list[AggregatedWBSGroupResponse]
+    variation_groups: list[AggregatedVariationGroupResponse]
+    ps_groups: list[AggregatedPSGroupResponse]
+    model_config = {"from_attributes": True}
+
+
 class AggregatedAssessmentResponse(BaseModel):
     id: uuid.UUID
     claim_id: uuid.UUID
     project_id: uuid.UUID
     version: int
-    status: str
+    status: AssessmentStatus
     previously_certified: Decimal
     contract_sum: Decimal | None
     approved_variation_orders: Decimal | None
@@ -196,44 +197,23 @@ class AggregatedAssessmentResponse(BaseModel):
     gst_amount: Decimal | None
     total_including_gst: Decimal | None
     finalised_at: str | None
-    wbs_groups: list[AggregatedWBSGroupResponse]
-    variation_groups: list[AggregatedVariationGroupResponse]
-    ps_groups: list[AggregatedPSGroupResponse]
+    wbs_groups: list[AggregatedWBSGroupResponse] = []
+    variation_groups: list[AggregatedVariationGroupResponse] = []
+    ps_groups: list[AggregatedPSGroupResponse] = []
     line_items: list[AssessmentLineItemResponse] = []
     variation_items: list[AssessmentVariationResponse] = []
     provisional_sum_items: list[AssessmentProvisionalSumResponse] = []
     model_config = {"from_attributes": True}
 
+    @field_validator("finalised_at", mode="before")
+    @classmethod
+    def isoformat_finalised_at(cls, value: object) -> object:
+        return value.isoformat() if isinstance(value, datetime) else value
+
     @classmethod
     def from_aggregate(cls, agg: AssessmentAggregate) -> AggregatedAssessmentResponse:
-        a = agg.assessment
-        return cls(
-            id=a.id,
-            claim_id=a.claim_id,
-            project_id=a.project_id,
-            version=a.version,
-            status=a.status,
-            previously_certified=a.previously_certified,
-            contract_sum=a.contract_sum,
-            approved_variation_orders=a.approved_variation_orders,
-            adjustment_to_provisional_sums=a.adjustment_to_provisional_sums,
-            adjusted_contract_sum=a.adjusted_contract_sum,
-            value_claimed_to_date=a.value_claimed_to_date,
-            adjustments=a.adjustments,
-            total_recommended=a.total_recommended,
-            total_retention=a.total_retention,
-            total_payment_to_date=a.total_payment_to_date,
-            recommended_this_period=a.recommended_this_period,
-            gst_amount=a.gst_amount,
-            total_including_gst=a.total_including_gst,
-            finalised_at=a.finalised_at.isoformat() if a.finalised_at else None,
-            wbs_groups=agg.wbs_groups,
-            variation_groups=agg.variation_groups,
-            ps_groups=agg.ps_groups,
-            line_items=a.line_items,
-            variation_items=a.variation_items,
-            provisional_sum_items=a.provisional_sum_items,
-        )
+        groups = AggregatedGroupsResponse.model_validate(agg, from_attributes=True)
+        return cls.model_validate(agg.assessment, from_attributes=True).model_copy(update=dict(groups))
 
 
 class PriorInterimResponse(BaseModel):
@@ -242,7 +222,7 @@ class PriorInterimResponse(BaseModel):
     comments: str | None
 
     @classmethod
-    def from_group(cls, parent_id: uuid.UUID, items: Sequence[InterimItem]) -> PriorInterimResponse:
+    def from_group(cls, parent_id: uuid.UUID, items: Sequence[Any]) -> PriorInterimResponse:
         """Sum the group's recommended totals; take the first non-empty comment."""
         return cls(
             parent_id=parent_id,
@@ -261,25 +241,22 @@ class ReclassifyNewRecord(BaseModel):
     description: str
 
 
-_ItemType = Literal["line-item", "variation", "provisional-sum"]
-
-
 class ReclassifyRequest(BaseModel):
     source_item_id: uuid.UUID
-    source_type: _ItemType
-    target_type: _ItemType
+    source_type: AssessmentItemKind
+    target_type: AssessmentItemKind
     target_id: uuid.UUID | None = None
     target_wbs_code_id: uuid.UUID | None = None
     new_record: ReclassifyNewRecord | None = None
 
 
 class InterimAdjustRequest(BaseModel):
-    item_type: Literal["line-item", "variation", "provisional-sum"]
+    item_type: AssessmentItemKind
     parent_id: uuid.UUID  # wbs_code_id, variation_id, or provisional_sum_id
     agreed_total: Decimal
     comments: str | None = None
 
 
 class CloseOutRequest(BaseModel):
-    item_type: Literal["line-item", "variation", "provisional-sum"]
+    item_type: AssessmentItemKind
     parent_id: uuid.UUID  # wbs_code_id, variation_id, or provisional_sum_id
