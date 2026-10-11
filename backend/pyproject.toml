@@ -67,6 +67,10 @@ ignore = [
     "RUF003",   # ambiguous-unicode in comments (prose) is noise
 ]
 
+[tool.ruff.lint.isort]
+# Must agree with `format.skip-magic-trailing-comma = true`, or ruff warns on every run.
+split-on-trailing-comma = false
+
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's dependency-injection markers are call-in-argument-default by design.
 extend-immutable-calls = [

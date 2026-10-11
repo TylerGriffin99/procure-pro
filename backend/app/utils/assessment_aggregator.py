@@ -1,11 +1,5 @@
 """
 Pure aggregation utility for assessment rows.
-
-Groups assessment rows (line items, variations, provisional sums) by their
-parent record and computes totals. Sources contract_sum from master records,
-not from individual rows.
-
-No DB access — takes data in, returns computed results.
 """
 
 from __future__ import annotations
@@ -13,8 +7,13 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import Protocol
 
+from app.models.assessment_line_item import AssessmentLineItem
+from app.models.assessment_provisional_sum import AssessmentProvisionalSum
+from app.models.assessment_variation import AssessmentVariation
+from app.models.provisional_sum import ProvisionalSum
+from app.models.variation import Variation
+from app.models.wbs_code import WBSCode
 from app.schemas.assessment_aggregate import (
     AggregatedPSGroup,
     AggregatedVariationGroup,
@@ -25,127 +24,12 @@ from app.schemas.assessment_aggregate import (
 ZERO = Decimal("0.00")
 
 
-# ── Protocols for duck-typing ORM models and test fakes ──────────────────
-# Members are read-only (properties) so the protocols are covariant: ORM models
-# whose columns are narrower types (e.g. str-enums for `status`/`adjustment_type`)
-# structurally satisfy them, and so do plain-attribute test fakes. The aggregators
-# only ever read these fields.
-
-
-class LineItemLike(Protocol):
-    @property
-    def id(self) -> uuid.UUID: ...
-    @property
-    def wbs_code_id(self) -> uuid.UUID | None: ...
-    @property
-    def claim_line_item_id(self) -> uuid.UUID | None: ...
-    @property
-    def description(self) -> str: ...
-    @property
-    def contract_sum(self) -> Decimal | None: ...
-    @property
-    def contractor_claim_to_date(self) -> Decimal: ...
-    @property
-    def total_recommended(self) -> Decimal: ...
-    @property
-    def previously_paid(self) -> Decimal: ...
-    @property
-    def recommended_this_period(self) -> Decimal: ...
-    @property
-    def variance_to_claim(self) -> Decimal: ...
-    @property
-    def percentage(self) -> Decimal: ...
-    @property
-    def status(self) -> str: ...
-    @property
-    def sort_order(self) -> int: ...
-    @property
-    def comments(self) -> str | None: ...
-    @property
-    def adjustment_type(self) -> str | None: ...
-
-
-class WBSLike(Protocol):
-    @property
-    def id(self) -> uuid.UUID: ...
-    @property
-    def description(self) -> str: ...
-    @property
-    def contract_sum(self) -> Decimal | None: ...
-
-
-class VariationItemLike(Protocol):
-    @property
-    def id(self) -> uuid.UUID: ...
-    @property
-    def variation_id(self) -> uuid.UUID: ...
-    @property
-    def claim_line_item_id(self) -> uuid.UUID | None: ...
-    @property
-    def contractor_claim_to_date(self) -> Decimal: ...
-    @property
-    def total_recommended(self) -> Decimal: ...
-    @property
-    def previously_paid(self) -> Decimal: ...
-    @property
-    def recommended_this_period(self) -> Decimal: ...
-    @property
-    def status(self) -> str: ...
-    @property
-    def adjustment_type(self) -> str | None: ...
-
-
-class VariationLike(Protocol):
-    @property
-    def id(self) -> uuid.UUID: ...
-    @property
-    def ci_number(self) -> int: ...
-    @property
-    def contractor_ref(self) -> str | None: ...
-    @property
-    def description(self) -> str: ...
-    @property
-    def contractor_submission(self) -> Decimal: ...
-
-
-class PSItemLike(Protocol):
-    @property
-    def id(self) -> uuid.UUID: ...
-    @property
-    def provisional_sum_id(self) -> uuid.UUID: ...
-    @property
-    def claim_line_item_id(self) -> uuid.UUID | None: ...
-    @property
-    def contractor_claim_to_date(self) -> Decimal: ...
-    @property
-    def total_recommended(self) -> Decimal: ...
-    @property
-    def previously_paid(self) -> Decimal: ...
-    @property
-    def recommended_this_period(self) -> Decimal: ...
-    @property
-    def status(self) -> str: ...
-    @property
-    def adjustment_type(self) -> str | None: ...
-
-
-class PSLike(Protocol):
-    @property
-    def id(self) -> uuid.UUID: ...
-    @property
-    def ps_number(self) -> int: ...
-    @property
-    def description(self) -> str: ...
-    @property
-    def contract_sum(self) -> Decimal: ...
-
-
 # ── Aggregation functions ────────────────────────────────────────────────
 
 
-def aggregate_line_items(rows: Sequence[LineItemLike], wbs_codes: Sequence[WBSLike]) -> list[AggregatedWBSGroup]:
+def aggregate_line_items(rows: Sequence[AssessmentLineItem], wbs_codes: Sequence[WBSCode]) -> list[AggregatedWBSGroup]:
     """Group line items by wbs_code_id, compute totals, source contract_sum from WBS master."""
-    wbs_map: dict[uuid.UUID, WBSLike] = {w.id: w for w in wbs_codes}
+    wbs_map: dict[uuid.UUID, WBSCode] = {w.id: w for w in wbs_codes}
 
     # Group rows by wbs_code_id, preserving insertion order
     # Use a sentinel for uncategorized items (wbs_code_id=None)
@@ -211,13 +95,13 @@ def aggregate_line_items(rows: Sequence[LineItemLike], wbs_codes: Sequence[WBSLi
 
 
 def aggregate_variations(
-    rows: Sequence[VariationItemLike], variations: Sequence[VariationLike]
+    rows: Sequence[AssessmentVariation], variations: Sequence[Variation]
 ) -> list[AggregatedVariationGroup]:
     """Group variation items by variation_id, compute totals.
 
     Source contractor_submission from master.
     """
-    var_map: dict[uuid.UUID, VariationLike] = {v.id: v for v in variations}
+    var_map: dict[uuid.UUID, Variation] = {v.id: v for v in variations}
 
     groups: dict[uuid.UUID, dict] = {}
     group_order: list[uuid.UUID] = []
@@ -275,10 +159,10 @@ def aggregate_variations(
 
 
 def aggregate_provisional_sums(
-    rows: Sequence[PSItemLike], provisional_sums: Sequence[PSLike]
+    rows: Sequence[AssessmentProvisionalSum], provisional_sums: Sequence[ProvisionalSum]
 ) -> list[AggregatedPSGroup]:
     """Group PS items by provisional_sum_id, compute totals, source contract_sum from master."""
-    ps_map: dict[uuid.UUID, PSLike] = {p.id: p for p in provisional_sums}
+    ps_map: dict[uuid.UUID, ProvisionalSum] = {p.id: p for p in provisional_sums}
 
     groups: dict[uuid.UUID, dict] = {}
     group_order: list[uuid.UUID] = []
