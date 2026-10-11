@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.values import PDF_MEDIA_TYPE
 from app.models.document import Document
 
 
@@ -14,7 +15,7 @@ async def create_document(
     doc = Document(
         project_id=project_id,
         filename=filename or "upload.pdf",
-        content_type=content_type or "application/pdf",
+        content_type=content_type or PDF_MEDIA_TYPE,
         file_size=len(content),
         sha256=hashlib.sha256(content).hexdigest(),
         file_data=content,

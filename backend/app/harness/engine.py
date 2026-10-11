@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.constants.enums import HarnessSessionStatus, MatcherName, PhaseStatus
 from app.harness.agent_runner import build_model, run_structured
 from app.harness.matchers.base import get_matcher
 from app.harness.models import (
@@ -25,12 +26,10 @@ from app.harness.models import (
     HarnessPhaseStartEvent,
     HarnessStartEvent,
     PhaseDefinition,
-    PhaseStatus,
     PhaseType,
     UsageEvent,
 )
 from app.harness.phase_context import build_phase_context, render_system_prompt
-from app.models.harness_session import HarnessSessionStatus
 from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
@@ -143,15 +142,15 @@ class HarnessEngine:
             self.db,
             self.session_id,
             str(phase_index),
-            {"status": "completed", "summary": f"Produced {phase_def.workspace_output}"},
+            {"status": PhaseStatus.COMPLETED, "summary": f"Produced {phase_def.workspace_output}"},
             phase_index + 1,
         )
         await self.db.commit()
 
         # Extract detail string from result for SSE event
         detail = None
-        if isinstance(result, dict) and "format" in result:
-            fmt = result["format"].upper()
+        if isinstance(result, dict) and (fmt := result.get("format")):
+            fmt = fmt.upper()
             confidence = result.get("confidence")
             detail = f"Format: {fmt}" + (f" ({int(confidence * 100)}%)" if confidence else "")
 
@@ -193,7 +192,7 @@ class HarnessEngine:
             self.db,
             self.session_id,
             str(phase_index),
-            {"status": "completed", "summary": f"Produced {phase_def.workspace_output}"},
+            {"status": PhaseStatus.COMPLETED, "summary": f"Produced {phase_def.workspace_output}"},
             phase_index + 1,
         )
         await self.db.commit()
@@ -206,15 +205,15 @@ class HarnessEngine:
         if phase_def.output_schema is None:
             raise ValueError(f"LLM_BATCH_AGENTS phase '{phase_def.name}' has no output_schema.")
 
-        name = phase_def.matcher or settings.matcher_default or "llm"
+        name = phase_def.matcher or settings.matcher_default
         # Unconfigured Jev -> run the whole phase on the LLM path (logged, not silent).
-        if name == "jev" and not settings.open_router_api_key:
+        if name == MatcherName.jev and not settings.open_router_api_key:
             logger.warning(
                 "Phase '%s' requested matcher=jev but open_router_api_key is unset; "
                 "falling back to matcher=llm for the whole phase.",
                 phase_def.name,
             )
-            name = "llm"
+            name = MatcherName.llm
 
         matcher = get_matcher(name)
         outcome = await matcher.match(
@@ -232,7 +231,10 @@ class HarnessEngine:
             self.db,
             self.session_id,
             str(phase_index),
-            {"status": "completed", "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})"},
+            {
+                "status": PhaseStatus.COMPLETED,
+                "summary": f"Produced {phase_def.workspace_output} (matcher={name} {counts})",
+            },
             phase_index + 1,
         )
         await self.db.commit()

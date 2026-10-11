@@ -8,6 +8,7 @@ against obfuscated attacks. Once a document is persisted it is treated as clean.
 import re
 import unicodedata
 
+from app.constants.enums import ViolationCategory
 from app.schemas.guardrails import Violation
 
 # Phrases that attempt to override or hijack an LLM's instructions. Kept specific
@@ -59,9 +60,9 @@ def screen_text(text: str) -> list[Violation]:
     for rx in _INJECTION_RE:
         m = rx.search(text)
         if m:
-            violations.append(Violation(category="prompt_injection", snippet=m.group(0).strip()))
+            violations.append(Violation(category=ViolationCategory.prompt_injection, snippet=m.group(0).strip()))
     for rx in _CODE_RE:
         m = rx.search(text)
         if m:
-            violations.append(Violation(category="code", snippet=m.group(0).strip()))
+            violations.append(Violation(category=ViolationCategory.code, snippet=m.group(0).strip()))
     return violations

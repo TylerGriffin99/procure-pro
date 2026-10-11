@@ -10,10 +10,11 @@ contract is unchanged — only now it is typed and validated at the source.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.constants.enums import ClaimItemType, VpsKind
 from app.schemas.base import StrictModel
 
 _Confidence = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -37,7 +38,7 @@ class ParsedClaimItem(BaseModel):
 
     item_index: _ItemIndex
     description: str = ""
-    item_type: str = "contract_work"
+    item_type: ClaimItemType = ClaimItemType.contract_work
     contract_value: _Numeric = None
 
 
@@ -85,7 +86,7 @@ class VpsMatch(BaseModel):
     """One variation / provisional-sum match. Serialized list -> ``vps_matches.json``."""
 
     item_index: _ItemIndex
-    item_type: Literal["variation", "provisional_sum"]
+    item_type: VpsKind
     matched_id: str | None = None
     confidence: _Confidence
 
@@ -106,7 +107,7 @@ class VpsRecord(StrictModel):
     id: str
     description: str
     value: float | None
-    item_type: Literal["variation", "provisional_sum"]
+    item_type: VpsKind
 
 
 class ItemDecision(StrictModel):
@@ -144,7 +145,7 @@ class GenericLineItem(BaseModel):
     description: str = ""
     # Kept as a plain string (not Literal) so a stray type does not fail the whole
     # extraction — `validate_and_normalise` coerces unknown types to contract_work.
-    item_type: str = "contract_work"
+    item_type: str = ClaimItemType.contract_work
     contract_value: _Numeric = None
     percentage: _Numeric = None
     ptd: _Numeric = None

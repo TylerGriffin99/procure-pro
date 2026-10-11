@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from app.models.claim import ClaimItemType
+from app.constants.enums import ClaimItemType
 
 if TYPE_CHECKING:
     from app.models.claim import Claim
@@ -93,7 +93,7 @@ class ClaimUploadResponse(BaseModel):
 class ClaimLineItemCreate(BaseModel):
     ref_code: str | None = None
     description: str
-    item_type: str
+    item_type: ClaimItemType
     contract_value: Decimal
     percentage: Decimal
     ptd: Decimal

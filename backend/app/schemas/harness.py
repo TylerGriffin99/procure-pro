@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from app.constants.enums import HarnessSessionStatus, PhaseStatus
 from app.harness.models import HarnessDefinition, HarnessType
 
 if TYPE_CHECKING:
@@ -16,25 +17,25 @@ class HarnessPhaseInfo(BaseModel):
     index: int
     name: str
     phase_type: str
-    status: str  # pending, running, completed, failed
+    status: PhaseStatus
     result_summary: str | None = None
 
     @classmethod
     def from_definition(
-        cls, definition: HarnessDefinition, *, current_phase: int, phase_results: dict, status: str
+        cls, definition: HarnessDefinition, *, current_phase: int, phase_results: dict, status: HarnessSessionStatus
     ) -> list[HarnessPhaseInfo]:
         infos: list[HarnessPhaseInfo] = []
         for i, phase_def in enumerate(definition.phases):
-            if status == "completed":
-                phase_status = "completed"
-            elif status == "failed" and i == current_phase:
-                phase_status = "failed"
+            if status == HarnessSessionStatus.completed:
+                phase_status = PhaseStatus.COMPLETED
+            elif status == HarnessSessionStatus.failed and i == current_phase:
+                phase_status = PhaseStatus.FAILED
             elif str(i) in phase_results:
-                phase_status = "completed"
-            elif i == current_phase and status == "running":
-                phase_status = "running"
+                phase_status = PhaseStatus.COMPLETED
+            elif i == current_phase and status == HarnessSessionStatus.running:
+                phase_status = PhaseStatus.RUNNING
             else:
-                phase_status = "pending"
+                phase_status = PhaseStatus.PENDING
             infos.append(
                 cls(
                     index=i,
@@ -52,7 +53,7 @@ class HarnessSessionResponse(BaseModel):
     user_id: uuid.UUID
     project_id: uuid.UUID
     harness_type: HarnessType
-    status: str
+    status: HarnessSessionStatus
     current_phase: int
     phases: list[HarnessPhaseInfo]
     claim_id: uuid.UUID | None = None
@@ -66,7 +67,7 @@ class HarnessSessionResponse(BaseModel):
                 definition,
                 current_phase=session.current_phase,
                 phase_results=session.phase_results,
-                status=session.status.value,
+                status=session.status,
             )
             if definition
             else []
@@ -76,7 +77,7 @@ class HarnessSessionResponse(BaseModel):
             user_id=session.user_id,
             project_id=session.project_id,
             harness_type=session.harness_type,
-            status=session.status.value,
+            status=session.status,
             current_phase=session.current_phase,
             phases=phases,
             claim_id=session.claim_id,
@@ -87,7 +88,7 @@ class HarnessSessionResponse(BaseModel):
 
 class HarnessCancelResponse(BaseModel):
     id: uuid.UUID
-    status: str
+    status: HarnessSessionStatus
 
 
 class HarnessRerunResponse(BaseModel):

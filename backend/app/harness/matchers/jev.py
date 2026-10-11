@@ -10,12 +10,13 @@ from __future__ import annotations
 import functools
 import logging
 import uuid
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, cast
 
 from pydantic import TypeAdapter
 
 from app.clients.jev_client import JevClient
 from app.config import settings
+from app.constants.enums import ClaimItemType, VpsKind
 from app.harness.matchers.data import read_parsed_items, vps_records, wbs_subcategories
 from app.harness.matchers.llm import run_llm_matches
 from app.harness.prompts import load_prompt
@@ -32,7 +33,6 @@ logger = logging.getLogger(__name__)
 NONE_OPTION = "__none__"
 WBS_INSTRUCTIONS = load_prompt("jev_wbs_instructions").strip().format(none_option=NONE_OPTION)
 VPS_INSTRUCTIONS = load_prompt("jev_vps_instructions").strip().format(none_option=NONE_OPTION)
-VpsType = Literal["variation", "provisional_sum"]
 
 
 def build_wbs_criteria(subcats: list[Subcat]) -> tuple[dict[str, str], dict[str, str]]:
@@ -62,7 +62,7 @@ def build_vps_criteria(records: list[VpsRecord]) -> tuple[dict[str, str], set[st
     return criteria, {r.id for r in records}
 
 
-def to_vps_match(decision: ItemDecision, vps_type: VpsType, valid_ids: set[str]) -> tuple[VpsMatch, bool]:
+def to_vps_match(decision: ItemDecision, vps_type: VpsKind, valid_ids: set[str]) -> tuple[VpsMatch, bool]:
     """Build a ``VpsMatch`` from a Jev choice; return ``(match, out_of_criteria)``.
 
     A choice outside the supplied records (and not ``NONE_OPTION``) is a grounding
@@ -187,7 +187,7 @@ class JevMatcher:
     async def match_vps(
         self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
     ) -> MatchOutcome:
-        kinds = {"variation", "provisional_sum"}
+        kinds = {ClaimItemType.variation, ClaimItemType.provisional_sum}
         items = [i for i in await read_parsed_items(db, session_id) if i.item_type in kinds]
         records = await vps_records(db=db, project_id=project_id)
         criteria, valid_ids = build_vps_criteria(records)
@@ -199,7 +199,7 @@ class JevMatcher:
         failed = ooc = 0
         for d in decisions:
             # Safe: items were pre-filtered to these two types above.
-            vps_type = cast(VpsType, by_index[d.item_index].item_type)
+            vps_type = cast(VpsKind, by_index[d.item_index].item_type)
             if d.failed:
                 logger.warning("JevMatcher VPS item %s failed, treating as new record", d.item_index)
                 failed += 1
@@ -225,7 +225,7 @@ class JevMatcher:
     async def match_wbs(
         self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
     ) -> MatchOutcome:
-        items = [i for i in await read_parsed_items(db, session_id) if i.item_type == "contract_work"]
+        items = [i for i in await read_parsed_items(db, session_id) if i.item_type == ClaimItemType.contract_work]
         subcats = await wbs_subcategories(db=db, project_id=project_id)
         criteria, key_to_id = build_wbs_criteria(subcats)
         by_id = {s.id: s for s in subcats}

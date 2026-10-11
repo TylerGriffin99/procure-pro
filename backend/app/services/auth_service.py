@@ -2,9 +2,10 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.values import CURRENCY_BY_COUNTRY
 from app.exceptions import BadRequestError, UnauthorizedError
 from app.repos import user_repo
-from app.schemas.user import COUNTRY_CURRENCY_MAP, Token, UserCreate
+from app.schemas.user import Token, UserCreate
 from app.utils.auth import create_access_token, hash_password, verify_password
 
 
@@ -19,7 +20,7 @@ async def register_user(db: AsyncSession, data: UserCreate):
         first_name=data.first_name,
         last_name=data.last_name,
         country=data.country,
-        currency=COUNTRY_CURRENCY_MAP[data.country],
+        currency=CURRENCY_BY_COUNTRY[data.country],
         created_by=uuid.uuid4(),
     )
     user.created_by = user.id

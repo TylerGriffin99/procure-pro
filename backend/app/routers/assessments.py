@@ -1,10 +1,10 @@
 import uuid
-from typing import Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.enums import ExportFormat
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
@@ -133,7 +133,7 @@ async def get_assessment(
 async def download_pr_export(
     project_id: uuid.UUID,
     assessment_id: uuid.UUID,
-    format: Literal["pdf", "excel"] = "pdf",
+    format: ExportFormat = ExportFormat.pdf,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):

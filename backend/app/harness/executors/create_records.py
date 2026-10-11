@@ -11,15 +11,17 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.assessment import Assessment, LineItemStatus
+from app.constants.enums import ClaimItemType, LineItemStatus, VariationStatus, WBSLevel, WorkspaceFile
+from app.constants.values import DMY_DATE_PARTS, TWO_DIGIT_YEAR_CEILING, TWO_DIGIT_YEAR_CENTURY
+from app.models.assessment import Assessment
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.assessment_variation import AssessmentVariation
-from app.models.claim import Claim, ClaimItemType
+from app.models.claim import Claim
 from app.models.claim_line_item import ClaimLineItem
 from app.models.provisional_sum import ProvisionalSum
-from app.models.variation import Variation, VariationStatus
-from app.models.wbs_code import WBSCode, WBSLevel
+from app.models.variation import Variation
+from app.models.wbs_code import WBSCode
 from app.repos import assessment_repo, harness_repo, project_repo, provisional_sum_repo, variation_repo, wbs_code_repo
 from app.utils.assessment_aggregator import aggregate_line_items, aggregate_provisional_sums, aggregate_variations
 from app.utils.assessment_engine import calculate_assessment_totals
@@ -44,10 +46,10 @@ def _parse_date(date_str: str | None) -> dt_date | None:
         return None
     try:
         parts = date_str.split("/")
-        if len(parts) == 3:
+        if len(parts) == DMY_DATE_PARTS:
             day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
-            if year < 100:
-                year += 2000
+            if year < TWO_DIGIT_YEAR_CEILING:
+                year += TWO_DIGIT_YEAR_CENTURY
             return dt_date(year, month, day)
     except (ValueError, IndexError):
         pass
@@ -59,9 +61,9 @@ async def execute_create_records(
 ) -> dict:
     """Create Claim, Assessment, and all line item records from workspace data."""
     # Load workspace files
-    parsed_raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
-    wbs_raw = await harness_repo.read_workspace_file(db, session_id, "wbs_matches.json")
-    vps_raw = await harness_repo.read_workspace_file(db, session_id, "vps_matches.json")
+    parsed_raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.parsed_claim)
+    wbs_raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.wbs_matches)
+    vps_raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.vps_matches)
 
     if not parsed_raw:
         raise ValueError("parsed_claim.json not found")
@@ -76,8 +78,12 @@ async def execute_create_records(
 
     # -- Item count validation --
     max_index = len(line_items) - 1
-    cw_indices = {i for i, it in enumerate(line_items) if it.get("item_type") == "contract_work"}
-    vps_indices = {i for i, it in enumerate(line_items) if it.get("item_type") in ("variation", "provisional_sum")}
+    cw_indices = {i for i, it in enumerate(line_items) if it.get("item_type") == ClaimItemType.contract_work}
+    vps_indices = {
+        i
+        for i, it in enumerate(line_items)
+        if it.get("item_type") in (ClaimItemType.variation, ClaimItemType.provisional_sum)
+    }
 
     # Index range check (before filtering)
     for match in wbs_matches or []:
@@ -176,11 +182,11 @@ async def execute_create_records(
     # Catch this deterministically using the description prefix.
     reclassified = 0
     for item in line_items:
-        if item.get("item_type") != "contract_work":
+        if item.get("item_type") != ClaimItemType.contract_work:
             continue
         desc = (item.get("description") or "").lower()
         if desc.startswith("provisional sum"):
-            item["item_type"] = "provisional_sum"
+            item["item_type"] = ClaimItemType.provisional_sum
             reclassified += 1
             logger.info(
                 "Reclassified ref=%s as provisional_sum (was contract_work): %s",
@@ -205,7 +211,7 @@ async def execute_create_records(
         if match.get("matched_id"):
             mid = uuid.UUID(match["matched_id"])
             # Validate the ID actually exists — LLMs can corrupt UUIDs
-            if match["item_type"] == "variation":
+            if match["item_type"] == ClaimItemType.variation:
                 if mid in valid_var_ids:
                     var_id_by_index[item_idx] = mid
                     # Update contractor_submission from latest claim (contractor
@@ -248,7 +254,7 @@ async def execute_create_records(
 
         if not match.get("matched_id"):
             # Create new master record
-            if match["item_type"] == "variation":
+            if match["item_type"] == ClaimItemType.variation:
                 desc = _U_PREFIX.sub("", item.get("description", ""))
                 new_var = Variation(
                     project_id=project_id,
@@ -295,7 +301,7 @@ async def execute_create_records(
         item_type = item.get("item_type", "")
         desc = item.get("description", "")
 
-        if item_type == "variation" and item_idx not in matched_var_indices:
+        if item_type == ClaimItemType.variation and item_idx not in matched_var_indices:
             clean_desc = _U_PREFIX.sub("", desc).lower().strip()
             # Try to match an existing unclaimed variation by description
             matched_existing = next((v for v in unclaimed_vars if v.description.lower().strip() == clean_desc), None)
@@ -323,7 +329,7 @@ async def execute_create_records(
                 next_ci += 1
                 logger.info("Created fallback variation for unmatched item_index %s: %s", item_idx, desc)
 
-        elif item_type == "provisional_sum" and item_idx not in matched_ps_indices:
+        elif item_type == ClaimItemType.provisional_sum and item_idx not in matched_ps_indices:
             desc_lower = desc.lower().strip()
             # Try to match an existing unclaimed PS by description
             matched_existing = next((ps for ps in unclaimed_ps if ps.description.lower().strip() == desc_lower), None)
@@ -369,7 +375,7 @@ async def execute_create_records(
     for i, item in enumerate(line_items):
         claim.line_items.append(
             ClaimLineItem(
-                item_type=ClaimItemType(item.get("item_type", "contract_work")),
+                item_type=ClaimItemType(item.get("item_type", ClaimItemType.contract_work)),
                 ref_code=item.get("ref_code", ""),
                 description=item.get("description", ""),
                 contract_value=_dec(item.get("contract_value")),

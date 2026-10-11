@@ -1,16 +1,11 @@
-import enum
 import uuid
 
 from sqlalchemy import Enum, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants.enums import UserRole
 from app.database import AuditMixin, Base
-
-
-class UserRole(str, enum.Enum):
-    user = "user"
-    admin = "admin"
 
 
 class User(AuditMixin, Base):

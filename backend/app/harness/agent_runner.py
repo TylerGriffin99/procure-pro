@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 # Silence the first-run telemetry banner so test/log output stays pristine.
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
@@ -24,27 +24,25 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.config import settings
+from app.constants.enums import LlmProvider
 
 logger = logging.getLogger(__name__)
 
 
-def build_model(provider: str | None = None, model_name: str | None = None) -> OpenAIChatModel:
+# (base_url, or None for the OpenAI SDK default; name of the settings field holding the API key)
+PROVIDER_TABLE: Final[dict[LlmProvider, tuple[str | None, str]]] = {
+    LlmProvider.anthropic: ("https://api.anthropic.com/v1/", "anthropic_api_key"),
+    LlmProvider.openai: (None, "openai_api_key"),
+    LlmProvider.openrouter: ("https://openrouter.ai/api/v1", "open_router_api_key"),
+    LlmProvider.deepseek: ("https://api.deepseek.com", "deepseek_api_key"),
+}
+
+
+def build_model(provider: LlmProvider | None = None, model_name: str | None = None) -> OpenAIChatModel:
     """Build an OpenAI-compatible model for the configured (or given) provider."""
-    provider = (provider or settings.llm_provider).lower()
-    model_name = model_name or settings.llm_model
-
-    if provider == "anthropic":
-        openai_provider = OpenAIProvider(base_url="https://api.anthropic.com/v1/", api_key=settings.anthropic_api_key)
-    elif provider == "openai":
-        openai_provider = OpenAIProvider(api_key=settings.openai_api_key)
-    elif provider == "openrouter":
-        openai_provider = OpenAIProvider(base_url="https://openrouter.ai/api/v1", api_key=settings.open_router_api_key)
-    elif provider == "deepseek":
-        openai_provider = OpenAIProvider(base_url="https://api.deepseek.com", api_key=settings.deepseek_api_key)
-    else:
-        raise ValueError(f"Unknown LLM_PROVIDER: {provider!r}. Use 'anthropic', 'openai', 'openrouter', or 'deepseek'.")
-
-    return OpenAIChatModel(model_name, provider=openai_provider)
+    base_url, key_field = PROVIDER_TABLE[provider or settings.llm_provider]
+    openai_provider = OpenAIProvider(base_url=base_url, api_key=getattr(settings, key_field))
+    return OpenAIChatModel(model_name or settings.llm_model, provider=openai_provider)
 
 
 @dataclass

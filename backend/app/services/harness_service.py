@@ -9,12 +9,13 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.harness.definitions  # noqa: F401 — triggers registration
+from app.constants.enums import HarnessSessionStatus
 from app.database import async_session
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.harness.engine import HarnessEngine, describe_error
 from app.harness.models import HarnessDefinition, HarnessErrorEvent, HarnessEvent, HarnessType
 from app.harness.registry import harness_registry
-from app.models.harness_session import HarnessSession, HarnessSessionStatus
+from app.models.harness_session import HarnessSession
 from app.models.user import User
 from app.repos import harness_repo
 from app.schemas.harness import (
@@ -94,7 +95,7 @@ async def cancel_session(db: AsyncSession, session_id: uuid.UUID, user: User) ->
     await get_owned_session(db, session_id, user.id)
     await harness_repo.set_status(db, session_id, HarnessSessionStatus.failed, error_message="Cancelled by user")
     await db.commit()
-    return HarnessCancelResponse(id=session_id, status="failed")
+    return HarnessCancelResponse(id=session_id, status=HarnessSessionStatus.failed)
 
 
 async def rerun_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> HarnessRerunResponse:

@@ -1,5 +1,6 @@
 """CLAIM_PARSE harness definition — 7-phase claim parsing pipeline."""
 
+from app.constants.enums import MatcherName, WorkspaceFile
 from app.harness.context_loaders import load_format_playbook, load_variations_context, load_wbs_context
 from app.harness.executors.create_records import execute_create_records
 from app.harness.executors.detect_format import execute_detect_format
@@ -21,7 +22,7 @@ claim_parse_definition = HarnessDefinition(
             name="Raw Extraction",
             description="Extract raw text and tables from PDF",
             phase_type=PhaseType.PROGRAMMATIC,
-            workspace_output="raw_extraction.json",
+            workspace_output=WorkspaceFile.raw_extraction,
             executor=execute_raw_extraction,
         ),
         # Phase 1: Format Detection
@@ -29,7 +30,7 @@ claim_parse_definition = HarnessDefinition(
             name="Detect Format",
             description="Identify document format from text markers",
             phase_type=PhaseType.PROGRAMMATIC,
-            workspace_output="format_detection.json",
+            workspace_output=WorkspaceFile.format_detection,
             executor=execute_detect_format,
         ),
         # Phase 2: Extract Line Items (format-routed)
@@ -37,7 +38,7 @@ claim_parse_definition = HarnessDefinition(
             name="Extract Line Items",
             description="Extract structured line items — deterministic for WBPRO, LLM for others",
             phase_type=PhaseType.PROGRAMMATIC,
-            workspace_output="parsed_claim.json",
+            workspace_output=WorkspaceFile.parsed_claim,
             executor=execute_extract_line_items,
         ),
         # Phase 3: Validate Contractor Math
@@ -45,7 +46,7 @@ claim_parse_definition = HarnessDefinition(
             name="Validate Claim",
             description="Run deterministic validation checks on extracted data",
             phase_type=PhaseType.PROGRAMMATIC,
-            workspace_output="validation_summary.json",
+            workspace_output=WorkspaceFile.validation_summary,
             executor=execute_validate_claim,
         ),
         # Phase 4: WBS Categorisation (with WBS context + format playbook)
@@ -53,9 +54,9 @@ claim_parse_definition = HarnessDefinition(
             name="WBS Categorisation",
             description="Match line items to WBS subcategories (Jev decision model, LLM fallback)",
             phase_type=PhaseType.LLM_BATCH_AGENTS,
-            matcher="jev",
-            workspace_output="wbs_matches.json",
-            workspace_inputs=["parsed_claim.json"],
+            matcher=MatcherName.jev,
+            workspace_output=WorkspaceFile.wbs_matches,
+            workspace_inputs=[WorkspaceFile.parsed_claim],
             system_prompt_template=load_prompt("categorise_wbs"),
             context_loaders=[load_wbs_context, load_format_playbook],
             output_schema=list[WbsMatch],
@@ -67,9 +68,9 @@ claim_parse_definition = HarnessDefinition(
                 "Match variations and provisional sums to existing records (Jev decision model, LLM fallback)"
             ),
             phase_type=PhaseType.LLM_BATCH_AGENTS,
-            matcher="jev",
-            workspace_output="vps_matches.json",
-            workspace_inputs=["parsed_claim.json"],
+            matcher=MatcherName.jev,
+            workspace_output=WorkspaceFile.vps_matches,
+            workspace_inputs=[WorkspaceFile.parsed_claim],
             system_prompt_template=load_prompt("match_variations"),
             context_loaders=[load_variations_context],
             output_schema=list[VpsMatch],
@@ -79,7 +80,7 @@ claim_parse_definition = HarnessDefinition(
             name="Create Records",
             description="Create Claim, Assessment, and all line item records",
             phase_type=PhaseType.PROGRAMMATIC,
-            workspace_output="creation_summary.json",
+            workspace_output=WorkspaceFile.creation_summary,
             executor=execute_create_records,
         ),
     ],

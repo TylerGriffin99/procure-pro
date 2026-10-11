@@ -2,16 +2,33 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import assert_never
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.enums import (
+    AdjustmentType,
+    AssessmentItemKind,
+    AssessmentStatus,
+    ExportFormat,
+    LineItemStatus,
+    VariationStatus,
+)
+from app.constants.values import (
+    CENTS,
+    COMMENT_PREFIX_CLOSED_OUT,
+    COMMENT_PREFIX_INTERIM,
+    COMMENT_SEPARATOR,
+    EXPORT_STRIPPED_COMMENT_PREFIXES,
+    PDF_MEDIA_TYPE,
+    XLSX_MEDIA_TYPE,
+)
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
-from app.models.assessment import AdjustmentType, Assessment, AssessmentStatus, LineItemStatus
+from app.models.assessment import Assessment
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.assessment_variation import AssessmentVariation
 from app.models.user import User
-from app.models.variation import VariationStatus
 from app.repos import (
     assessment_line_item_repo,
     assessment_provisional_sum_repo,
@@ -29,6 +46,8 @@ from app.schemas.assessment import (
     AssessmentLineItemUpdate,
     AssessmentProvisionalSumUpdate,
     AssessmentVariationUpdate,
+    CloseOutRequest,
+    InterimAdjustRequest,
     PriorInterimResponse,
     PriorInterimsResponse,
     ReclassifyRequest,
@@ -166,7 +185,7 @@ async def update_line_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.contract_sum and item.contract_sum > 0:
-            item.percentage = (data.total_recommended / item.contract_sum * 100).quantize(Decimal("0.01"))
+            item.percentage = (data.total_recommended / item.contract_sum * 100).quantize(CENTS)
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -243,7 +262,7 @@ def _interim_groups(groups: Mapping[uuid.UUID, Sequence[InterimItem]]) -> list[P
 
 
 async def create_interim_adjustment(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data, user: User
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: InterimAdjustRequest, user: User
 ) -> AssessmentAggregate:
     """Create an interim adjustment child row under the specified parent."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
@@ -255,110 +274,113 @@ async def create_interim_adjustment(
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
     source_id = prev_assessment.id if prev_assessment and prev_assessment.id != assessment_id else None
 
-    comment_prefix = "Interim"
-    comment_text = f"{comment_prefix} - {data.comments}" if data.comments else comment_prefix
+    comment_prefix = COMMENT_PREFIX_INTERIM
+    comment_text = f"{comment_prefix}{COMMENT_SEPARATOR}{data.comments}" if data.comments else comment_prefix
 
-    if data.item_type == "line-item":
-        history = next(
-            (
-                li
-                for li in assessment.line_items
-                if li.wbs_code_id == data.parent_id and li.claim_line_item_id is None and not li.adjustment_type
-            ),
-            None,
-        )
-        group_prev_paid = history.previously_paid if history else Decimal("0")
-        difference = data.agreed_total - group_prev_paid
+    match data.item_type:
+        case AssessmentItemKind.line_item:
+            history = next(
+                (
+                    li
+                    for li in assessment.line_items
+                    if li.wbs_code_id == data.parent_id and li.claim_line_item_id is None and not li.adjustment_type
+                ),
+                None,
+            )
+            group_prev_paid = history.previously_paid if history else Decimal("0")
+            difference = data.agreed_total - group_prev_paid
 
-        max_sort = max((li.sort_order for li in assessment.line_items), default=-1)
-        new_item = AssessmentLineItem(
-            assessment_id=assessment_id,
-            claim_line_item_id=None,
-            wbs_code_id=data.parent_id,
-            description=history.description if history else "Interim adjustment",
-            contractor_claim_to_date=Decimal("0"),
-            total_recommended=difference,
-            percentage=Decimal("0"),
-            variance_to_claim=difference,
-            previously_paid=Decimal("0"),
-            recommended_this_period=difference,
-            status=LineItemStatus.interim,
-            comments=comment_text,
-            sort_order=max_sort + 1,
-            adjustment_type=AdjustmentType.interim_adjustment,
-            source_assessment_id=source_id,
-            created_by=user.id,
-        )
-        db.add(new_item)
+            max_sort = max((li.sort_order for li in assessment.line_items), default=-1)
+            new_item = AssessmentLineItem(
+                assessment_id=assessment_id,
+                claim_line_item_id=None,
+                wbs_code_id=data.parent_id,
+                description=history.description if history else "Interim adjustment",
+                contractor_claim_to_date=Decimal("0"),
+                total_recommended=difference,
+                percentage=Decimal("0"),
+                variance_to_claim=difference,
+                previously_paid=Decimal("0"),
+                recommended_this_period=difference,
+                status=LineItemStatus.interim,
+                comments=comment_text,
+                sort_order=max_sort + 1,
+                adjustment_type=AdjustmentType.interim_adjustment,
+                source_assessment_id=source_id,
+                created_by=user.id,
+            )
+            db.add(new_item)
 
-    elif data.item_type == "variation":
-        history = next(
-            (
-                av
-                for av in assessment.variation_items
-                if av.variation_id == data.parent_id and av.claim_line_item_id is None and not av.adjustment_type
-            ),
-            None,
-        )
-        group_prev_paid = history.previously_paid if history else Decimal("0")
-        difference = data.agreed_total - group_prev_paid
+        case AssessmentItemKind.variation:
+            history = next(
+                (
+                    av
+                    for av in assessment.variation_items
+                    if av.variation_id == data.parent_id and av.claim_line_item_id is None and not av.adjustment_type
+                ),
+                None,
+            )
+            group_prev_paid = history.previously_paid if history else Decimal("0")
+            difference = data.agreed_total - group_prev_paid
 
-        new_item = AssessmentVariation(
-            assessment_id=assessment_id,
-            variation_id=data.parent_id,
-            claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("0"),
-            total_recommended=difference,
-            percentage=Decimal("0"),
-            variance_to_claim=difference,
-            previously_paid=Decimal("0"),
-            recommended_this_period=difference,
-            status=LineItemStatus.interim,
-            comments=comment_text,
-            adjustment_type=AdjustmentType.interim_adjustment,
-            source_assessment_id=source_id,
-            created_by=user.id,
-        )
-        db.add(new_item)
+            new_item = AssessmentVariation(
+                assessment_id=assessment_id,
+                variation_id=data.parent_id,
+                claim_line_item_id=None,
+                contractor_claim_to_date=Decimal("0"),
+                total_recommended=difference,
+                percentage=Decimal("0"),
+                variance_to_claim=difference,
+                previously_paid=Decimal("0"),
+                recommended_this_period=difference,
+                status=LineItemStatus.interim,
+                comments=comment_text,
+                adjustment_type=AdjustmentType.interim_adjustment,
+                source_assessment_id=source_id,
+                created_by=user.id,
+            )
+            db.add(new_item)
 
-    elif data.item_type == "provisional-sum":
-        history = next(
-            (
-                ps
-                for ps in assessment.provisional_sum_items
-                if ps.provisional_sum_id == data.parent_id and ps.claim_line_item_id is None and not ps.adjustment_type
-            ),
-            None,
-        )
-        group_prev_paid = history.previously_paid if history else Decimal("0")
-        difference = data.agreed_total - group_prev_paid
+        case AssessmentItemKind.provisional_sum:
+            history = next(
+                (
+                    ps
+                    for ps in assessment.provisional_sum_items
+                    if ps.provisional_sum_id == data.parent_id
+                    and ps.claim_line_item_id is None
+                    and not ps.adjustment_type
+                ),
+                None,
+            )
+            group_prev_paid = history.previously_paid if history else Decimal("0")
+            difference = data.agreed_total - group_prev_paid
 
-        new_item = AssessmentProvisionalSum(
-            assessment_id=assessment_id,
-            provisional_sum_id=data.parent_id,
-            claim_line_item_id=None,
-            contractor_claim_to_date=Decimal("0"),
-            total_recommended=difference,
-            percentage=Decimal("0"),
-            variance_to_claim=difference,
-            previously_paid=Decimal("0"),
-            recommended_this_period=difference,
-            status=LineItemStatus.interim,
-            comments=comment_text,
-            adjustment_type=AdjustmentType.interim_adjustment,
-            source_assessment_id=source_id,
-            created_by=user.id,
-        )
-        db.add(new_item)
-    else:
-        raise BadRequestError(f"Invalid item_type: {data.item_type}")
+            new_item = AssessmentProvisionalSum(
+                assessment_id=assessment_id,
+                provisional_sum_id=data.parent_id,
+                claim_line_item_id=None,
+                contractor_claim_to_date=Decimal("0"),
+                total_recommended=difference,
+                percentage=Decimal("0"),
+                variance_to_claim=difference,
+                previously_paid=Decimal("0"),
+                recommended_this_period=difference,
+                status=LineItemStatus.interim,
+                comments=comment_text,
+                adjustment_type=AdjustmentType.interim_adjustment,
+                source_assessment_id=source_id,
+                created_by=user.id,
+            )
+            db.add(new_item)
+        case _:
+            assert_never(data.item_type)
 
     await db.commit()
     return await get_aggregated_assessment(db, project_id, assessment_id)
 
 
 async def close_out_item(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data, user: User
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, data: CloseOutRequest, user: User
 ) -> AssessmentAggregate:
     """Close out an interim item — sets all rows for this parent to 'approved' status."""
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
@@ -371,47 +393,48 @@ async def close_out_item(
         """Update comment prefix from Interim to Closed Out (idempotent)."""
         if item.claim_line_item_id is None:
             if item.comments:
-                if item.comments.startswith("Closed Out"):
+                if item.comments.startswith(COMMENT_PREFIX_CLOSED_OUT):
                     return  # already closed out, don't double-prefix
-                if item.comments.startswith("Interim"):
-                    item.comments = "Closed Out" + item.comments[len("Interim") :]
+                if item.comments.startswith(COMMENT_PREFIX_INTERIM):
+                    item.comments = COMMENT_PREFIX_CLOSED_OUT + item.comments[len(COMMENT_PREFIX_INTERIM) :]
                 else:
-                    item.comments = f"Closed Out - {item.comments}"
+                    item.comments = f"{COMMENT_PREFIX_CLOSED_OUT}{COMMENT_SEPARATOR}{item.comments}"
             else:
-                item.comments = "Closed Out"
+                item.comments = COMMENT_PREFIX_CLOSED_OUT
 
-    if data.item_type == "line-item":
-        matching = [li for li in assessment.line_items if li.wbs_code_id == data.parent_id]
-        for item in matching:
-            item.status = LineItemStatus.approved
-            item.is_closed_out = True
-            _update_comment(item)
-            item.updated_by = user.id
+    match data.item_type:
+        case AssessmentItemKind.line_item:
+            matching = [li for li in assessment.line_items if li.wbs_code_id == data.parent_id]
+            for item in matching:
+                item.status = LineItemStatus.approved
+                item.is_closed_out = True
+                _update_comment(item)
+                item.updated_by = user.id
 
-    elif data.item_type == "variation":
-        matching = [av for av in assessment.variation_items if av.variation_id == data.parent_id]
-        for item in matching:
-            item.status = LineItemStatus.approved
-            item.is_closed_out = True
-            _update_comment(item)
-            item.updated_by = user.id
+        case AssessmentItemKind.variation:
+            matching = [av for av in assessment.variation_items if av.variation_id == data.parent_id]
+            for item in matching:
+                item.status = LineItemStatus.approved
+                item.is_closed_out = True
+                _update_comment(item)
+                item.updated_by = user.id
 
-    elif data.item_type == "provisional-sum":
-        matching = [ps for ps in assessment.provisional_sum_items if ps.provisional_sum_id == data.parent_id]
-        for item in matching:
-            item.status = LineItemStatus.approved
-            item.is_closed_out = True
-            _update_comment(item)
-            item.updated_by = user.id
-    else:
-        raise BadRequestError(f"Invalid item_type: {data.item_type}")
+        case AssessmentItemKind.provisional_sum:
+            matching = [ps for ps in assessment.provisional_sum_items if ps.provisional_sum_id == data.parent_id]
+            for item in matching:
+                item.status = LineItemStatus.approved
+                item.is_closed_out = True
+                _update_comment(item)
+                item.updated_by = user.id
+        case _:
+            assert_never(data.item_type)
 
     await db.commit()
     return await get_aggregated_assessment(db, project_id, assessment_id)
 
 
 async def generate_assessment_export(
-    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, format: str = "pdf"
+    db: AsyncSession, project_id: uuid.UUID, assessment_id: uuid.UUID, format: ExportFormat = ExportFormat.pdf
 ) -> tuple[bytes, str]:
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
@@ -458,7 +481,7 @@ async def generate_assessment_export(
         comments = "; ".join(r.comments for r in all_rows if r.comments)
         # Strip "Closed Out - " / "Interim - " prefixes from PDF comments
         display_comments = comments
-        for prefix in ("Closed Out - ", "Interim - ", "Closed Out", "Interim"):
+        for prefix in EXPORT_STRIPPED_COMMENT_PREFIXES:
             if display_comments.startswith(prefix):
                 display_comments = display_comments[len(prefix) :]
                 break
@@ -496,7 +519,7 @@ async def generate_assessment_export(
         all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
         comments = "; ".join(r.comments for r in all_rows if r.comments)
         display_comments = comments
-        for prefix in ("Closed Out - ", "Interim - ", "Closed Out", "Interim"):
+        for prefix in EXPORT_STRIPPED_COMMENT_PREFIXES:
             if display_comments.startswith(prefix):
                 display_comments = display_comments[len(prefix) :]
                 break
@@ -541,7 +564,7 @@ async def generate_assessment_export(
     previously_certified = assessment.previously_certified or Decimal("0")
     payment_to_date = total_recommended - total_retention
     recommended_this_period = payment_to_date - previously_certified
-    gst = (recommended_this_period * project.gst_rate).quantize(Decimal("0.01"))
+    gst = (recommended_this_period * project.gst_rate).quantize(CENTS)
 
     pdf_data = {
         "project_name": project.name,
@@ -559,10 +582,10 @@ async def generate_assessment_export(
         else "",
         "landlord_split_pct": project.landlord_split_pct,
         "operator_split_pct": project.operator_split_pct,
-        "landlord_amount": (recommended_this_period * project.landlord_split_pct).quantize(Decimal("0.01"))
+        "landlord_amount": (recommended_this_period * project.landlord_split_pct).quantize(CENTS)
         if project.landlord_split_pct
         else Decimal("0"),
-        "operator_amount": (recommended_this_period * project.operator_split_pct).quantize(Decimal("0.01"))
+        "operator_amount": (recommended_this_period * project.operator_split_pct).quantize(CENTS)
         if project.operator_split_pct
         else Decimal("0"),
         "engineer": project.end_client_representative or "",
@@ -592,11 +615,9 @@ async def generate_assessment_export(
         "is_draft": assessment.status != AssessmentStatus.finalised,
     }
 
-    if format == "excel":
-        return generate_payment_recommendation_excel(
-            pdf_data
-        ), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    return generate_payment_recommendation_pdf(pdf_data), "application/pdf"
+    if format == ExportFormat.excel:
+        return generate_payment_recommendation_excel(pdf_data), XLSX_MEDIA_TYPE
+    return generate_payment_recommendation_pdf(pdf_data), PDF_MEDIA_TYPE
 
 
 async def update_variation_item(
@@ -610,9 +631,7 @@ async def update_variation_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.variation and item.variation.contractor_submission > 0:
-            item.percentage = (data.total_recommended / item.variation.contractor_submission * 100).quantize(
-                Decimal("0.01")
-            )
+            item.percentage = (data.total_recommended / item.variation.contractor_submission * 100).quantize(CENTS)
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -640,9 +659,7 @@ async def update_provisional_sum_item(
         item.total_recommended = data.total_recommended
         item.variance_to_claim = data.total_recommended - item.contractor_claim_to_date
         if item.provisional_sum and item.provisional_sum.contract_sum > 0:
-            item.percentage = (data.total_recommended / item.provisional_sum.contract_sum * 100).quantize(
-                Decimal("0.01")
-            )
+            item.percentage = (data.total_recommended / item.provisional_sum.contract_sum * 100).quantize(CENTS)
         item.recommended_this_period = data.total_recommended - item.previously_paid
 
     if data.status is not None:
@@ -668,12 +685,15 @@ async def reclassify_item(
 
     # Find source row in the appropriate list
     source_row = None
-    if data.source_type == "line-item":
-        source_row = next((li for li in assessment.line_items if li.id == data.source_item_id), None)
-    elif data.source_type == "variation":
-        source_row = next((av for av in assessment.variation_items if av.id == data.source_item_id), None)
-    elif data.source_type == "provisional-sum":
-        source_row = next((ps for ps in assessment.provisional_sum_items if ps.id == data.source_item_id), None)
+    match data.source_type:
+        case AssessmentItemKind.line_item:
+            source_row = next((li for li in assessment.line_items if li.id == data.source_item_id), None)
+        case AssessmentItemKind.variation:
+            source_row = next((av for av in assessment.variation_items if av.id == data.source_item_id), None)
+        case AssessmentItemKind.provisional_sum:
+            source_row = next((ps for ps in assessment.provisional_sum_items if ps.id == data.source_item_id), None)
+        case _:
+            assert_never(data.source_type)
 
     if not source_row:
         raise NotFoundError("Source item not found")
@@ -691,7 +711,7 @@ async def reclassify_item(
     contract_value = cli.contract_value if cli else Decimal("0")
 
     # WBS-to-WBS: same type, just update the wbs_code_id
-    if data.source_type == "line-item" and data.target_type == "line-item":
+    if data.source_type == AssessmentItemKind.line_item and data.target_type == AssessmentItemKind.line_item:
         if not data.target_wbs_code_id:
             raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
         assert isinstance(source_row, AssessmentLineItem)
@@ -703,115 +723,121 @@ async def reclassify_item(
         return refreshed
 
     # Cross-type: delete source, create new target row
-    if data.source_type == "line-item":
-        assert isinstance(source_row, AssessmentLineItem)
-        await assessment_line_item_repo.delete(db, source_row)
-    elif data.source_type == "variation":
-        assert isinstance(source_row, AssessmentVariation)
-        await assessment_variation_repo.delete(db, source_row)
-    elif data.source_type == "provisional-sum":
-        assert isinstance(source_row, AssessmentProvisionalSum)
-        await assessment_provisional_sum_repo.delete(db, source_row)
+    match data.source_type:
+        case AssessmentItemKind.line_item:
+            assert isinstance(source_row, AssessmentLineItem)
+            await assessment_line_item_repo.delete(db, source_row)
+        case AssessmentItemKind.variation:
+            assert isinstance(source_row, AssessmentVariation)
+            await assessment_variation_repo.delete(db, source_row)
+        case AssessmentItemKind.provisional_sum:
+            assert isinstance(source_row, AssessmentProvisionalSum)
+            await assessment_provisional_sum_repo.delete(db, source_row)
+        case _:
+            assert_never(data.source_type)
     # Expire the assessment so collections are reloaded fresh
     db.expire(assessment)
 
-    if data.target_type == "variation":
-        # Find or create variation master record
-        if data.target_id:
-            # Use existing variation — query project variations directly
-            existing_variations = await variation_repo.get_by_project(db, project_id)
-            variation = next((v for v in existing_variations if v.id == data.target_id), None)
-            if not variation:
-                raise NotFoundError("Target variation not found")
-        else:
-            max_ci = await variation_repo.get_max_ci_number(db, project_id)
-            new_desc = data.new_record.description if data.new_record else description
-            variation = await variation_repo.create(
+    match data.target_type:
+        case AssessmentItemKind.variation:
+            # Find or create variation master record
+            if data.target_id:
+                # Use existing variation — query project variations directly
+                existing_variations = await variation_repo.get_by_project(db, project_id)
+                variation = next((v for v in existing_variations if v.id == data.target_id), None)
+                if not variation:
+                    raise NotFoundError("Target variation not found")
+            else:
+                max_ci = await variation_repo.get_max_ci_number(db, project_id)
+                new_desc = data.new_record.description if data.new_record else description
+                variation = await variation_repo.create(
+                    db,
+                    project_id=project_id,
+                    ci_number=max_ci + 1,
+                    contractor_ref=f"CI-{max_ci + 1:03d}",
+                    description=new_desc,
+                    contractor_submission=contract_value,
+                    status=VariationStatus.unapproved,
+                    wbs_code_id=data.target_wbs_code_id,
+                    created_by=user.id,
+                )
+
+            await assessment_variation_repo.create(
                 db,
-                project_id=project_id,
-                ci_number=max_ci + 1,
-                contractor_ref=f"CI-{max_ci + 1:03d}",
-                description=new_desc,
-                contractor_submission=contract_value,
-                status=VariationStatus.unapproved,
-                wbs_code_id=data.target_wbs_code_id,
+                assessment_id=assessment_id,
+                variation_id=variation.id,
+                claim_line_item_id=claim_line_item_id,
+                contractor_claim_to_date=contractor_claim_to_date,
+                total_recommended=recommended_this_period,
+                percentage=Decimal("0"),
+                variance_to_claim=recommended_this_period - contractor_claim_to_date,
+                previously_paid=Decimal("0"),
+                recommended_this_period=recommended_this_period,
+                status=LineItemStatus.unapproved,
                 created_by=user.id,
             )
 
-        await assessment_variation_repo.create(
-            db,
-            assessment_id=assessment_id,
-            variation_id=variation.id,
-            claim_line_item_id=claim_line_item_id,
-            contractor_claim_to_date=contractor_claim_to_date,
-            total_recommended=recommended_this_period,
-            percentage=Decimal("0"),
-            variance_to_claim=recommended_this_period - contractor_claim_to_date,
-            previously_paid=Decimal("0"),
-            recommended_this_period=recommended_this_period,
-            status=LineItemStatus.unapproved,
-            created_by=user.id,
-        )
+        case AssessmentItemKind.provisional_sum:
+            if data.target_id:
+                existing_ps = await provisional_sum_repo.get_by_project(db, project_id)
+                ps = next((p for p in existing_ps if p.id == data.target_id), None)
+                if not ps:
+                    raise NotFoundError("Target provisional sum not found")
+            else:
+                max_ps = await provisional_sum_repo.get_max_ps_number(db, project_id)
+                new_desc = data.new_record.description if data.new_record else description
+                ps = await provisional_sum_repo.create(
+                    db,
+                    project_id=project_id,
+                    ps_number=max_ps + 1,
+                    description=new_desc,
+                    contract_sum=contract_value,
+                    status=VariationStatus.unapproved,
+                    wbs_code_id=data.target_wbs_code_id,
+                    created_by=user.id,
+                )
 
-    elif data.target_type == "provisional-sum":
-        if data.target_id:
-            existing_ps = await provisional_sum_repo.get_by_project(db, project_id)
-            ps = next((p for p in existing_ps if p.id == data.target_id), None)
-            if not ps:
-                raise NotFoundError("Target provisional sum not found")
-        else:
-            max_ps = await provisional_sum_repo.get_max_ps_number(db, project_id)
-            new_desc = data.new_record.description if data.new_record else description
-            ps = await provisional_sum_repo.create(
+            await assessment_provisional_sum_repo.create(
                 db,
-                project_id=project_id,
-                ps_number=max_ps + 1,
-                description=new_desc,
-                contract_sum=contract_value,
-                status=VariationStatus.unapproved,
-                wbs_code_id=data.target_wbs_code_id,
+                assessment_id=assessment_id,
+                provisional_sum_id=ps.id,
+                claim_line_item_id=claim_line_item_id,
+                contractor_claim_to_date=contractor_claim_to_date,
+                total_recommended=recommended_this_period,
+                percentage=Decimal("0"),
+                variance_to_claim=recommended_this_period - contractor_claim_to_date,
+                previously_paid=Decimal("0"),
+                recommended_this_period=recommended_this_period,
+                status=LineItemStatus.unapproved,
                 created_by=user.id,
             )
 
-        await assessment_provisional_sum_repo.create(
-            db,
-            assessment_id=assessment_id,
-            provisional_sum_id=ps.id,
-            claim_line_item_id=claim_line_item_id,
-            contractor_claim_to_date=contractor_claim_to_date,
-            total_recommended=recommended_this_period,
-            percentage=Decimal("0"),
-            variance_to_claim=recommended_this_period - contractor_claim_to_date,
-            previously_paid=Decimal("0"),
-            recommended_this_period=recommended_this_period,
-            status=LineItemStatus.unapproved,
-            created_by=user.id,
-        )
-
-    elif data.target_type == "line-item":
-        if not data.target_wbs_code_id:
-            raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
-        # From variation/PS back to line-item
-        # Use explicit query instead of assessment.line_items to avoid MissingGreenlet
-        # (db.expire above invalidates cached collections; lazy reload fails in async)
-        await db.refresh(assessment, ["line_items"])
-        max_sort = max((li.sort_order for li in assessment.line_items), default=-1)
-        await assessment_line_item_repo.create(
-            db,
-            assessment_id=assessment_id,
-            claim_line_item_id=claim_line_item_id,
-            wbs_code_id=data.target_wbs_code_id,
-            description=description,
-            contractor_claim_to_date=contractor_claim_to_date,
-            total_recommended=recommended_this_period,
-            percentage=Decimal("0"),
-            variance_to_claim=recommended_this_period - contractor_claim_to_date,
-            previously_paid=Decimal("0"),
-            recommended_this_period=recommended_this_period,
-            status=LineItemStatus.unapproved,
-            sort_order=max_sort + 1,
-            created_by=user.id,
-        )
+        case AssessmentItemKind.line_item:
+            if not data.target_wbs_code_id:
+                raise BadRequestError("target_wbs_code_id is required when target_type is 'line-item'")
+            # From variation/PS back to line-item
+            # Use explicit query instead of assessment.line_items to avoid MissingGreenlet
+            # (db.expire above invalidates cached collections; lazy reload fails in async)
+            await db.refresh(assessment, ["line_items"])
+            max_sort = max((li.sort_order for li in assessment.line_items), default=-1)
+            await assessment_line_item_repo.create(
+                db,
+                assessment_id=assessment_id,
+                claim_line_item_id=claim_line_item_id,
+                wbs_code_id=data.target_wbs_code_id,
+                description=description,
+                contractor_claim_to_date=contractor_claim_to_date,
+                total_recommended=recommended_this_period,
+                percentage=Decimal("0"),
+                variance_to_claim=recommended_this_period - contractor_claim_to_date,
+                previously_paid=Decimal("0"),
+                recommended_this_period=recommended_this_period,
+                status=LineItemStatus.unapproved,
+                sort_order=max_sort + 1,
+                created_by=user.id,
+            )
+        case _:
+            assert_never(data.target_type)
 
     await db.commit()
     # Expire the assessment so the identity map doesn't return stale collections
@@ -848,9 +874,9 @@ async def finalise_assessment(
             master.contractor_submission = g.contractor_claim_to_date
             # Aggregate status: all approved → approved, any interim → in_review, else unapproved
             all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
-            if all(r.status == LineItemStatus.approved or r.status == "approved" for r in all_rows):
+            if all(r.status == LineItemStatus.approved for r in all_rows):
                 master.status = VariationStatus.approved
-            elif any(r.status == LineItemStatus.interim or r.status == "interim" for r in all_rows):
+            elif any(r.status == LineItemStatus.interim for r in all_rows):
                 master.status = VariationStatus.in_review
             else:
                 master.status = VariationStatus.unapproved
@@ -863,9 +889,9 @@ async def finalise_assessment(
         if master:
             master.approved_amount = g.total_recommended
             all_rows = ([g.history_row] if g.history_row else []) + g.child_rows
-            if all(r.status == LineItemStatus.approved or r.status == "approved" for r in all_rows):
+            if all(r.status == LineItemStatus.approved for r in all_rows):
                 master.status = VariationStatus.approved
-            elif any(r.status == LineItemStatus.interim or r.status == "interim" for r in all_rows):
+            elif any(r.status == LineItemStatus.interim for r in all_rows):
                 master.status = VariationStatus.in_review
             else:
                 master.status = VariationStatus.unapproved

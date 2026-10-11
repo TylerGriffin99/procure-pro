@@ -1,14 +1,8 @@
 """Generate payment recommendation PDF using WeasyPrint."""
 
-import os
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
-
-# WeasyPrint needs pango/cairo libs from Homebrew. On macOS with Anaconda Python,
-# the dynamic linker doesn't search /opt/homebrew/lib by default.
-if "DYLD_FALLBACK_LIBRARY_PATH" not in os.environ:
-    os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = "/opt/homebrew/lib"
 
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
 

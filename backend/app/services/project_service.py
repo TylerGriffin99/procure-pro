@@ -2,10 +2,11 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.enums import WBSLevel
 from app.exceptions import NotFoundError, UnprocessableError
 from app.models.project import Project
 from app.models.user import User
-from app.models.wbs_code import WBSCode, WBSLevel
+from app.models.wbs_code import WBSCode
 from app.repos import (
     assessment_repo,
     claim_repo,
@@ -50,7 +51,7 @@ async def create_project(db: AsyncSession, data: ProjectCreate, user: User, proj
 
     # Pass 1: categories
     for wbs in data.wbs_codes:
-        if wbs.level == "category":
+        if wbs.level == WBSLevel.category:
             wbs_obj = await wbs_code_repo.create(
                 db,
                 project_id=project.id,
@@ -65,7 +66,7 @@ async def create_project(db: AsyncSession, data: ProjectCreate, user: User, proj
 
     # Pass 2: subcategories
     for wbs in data.wbs_codes:
-        if wbs.level == "subcategory":
+        if wbs.level == WBSLevel.subcategory:
             parent = code_to_wbs.get(wbs.parent_code) if wbs.parent_code else None
             await wbs_code_repo.create(
                 db,
@@ -142,7 +143,7 @@ async def create_wbs_code(db: AsyncSession, project_id: uuid.UUID, data: WBSCode
     if any(w.code == data.code for w in existing):
         raise UnprocessableError(f"WBS code '{data.code}' already exists in this project")
 
-    if data.level == "subcategory":
+    if data.level == WBSLevel.subcategory:
         parent_id = data.parent_id
         if not parent_id:
             raise UnprocessableError("Subcategory requires a parent_id")
@@ -157,7 +158,7 @@ async def create_wbs_code(db: AsyncSession, project_id: uuid.UUID, data: WBSCode
         project_id=project_id,
         code=data.code,
         description=data.description,
-        level=WBSLevel(data.level),
+        level=data.level,
         sort_order=data.sort_order,
         parent_id=parent_id,
         contract_sum=data.contract_sum,
@@ -185,19 +186,16 @@ async def update_wbs_code(
     in_use = await wbs_code_repo.is_in_use(db, wbs_code_id)
     if in_use:
         restricted_fields = {"code", "level", "parent_id"}
-        attempted = set(update_data.keys()) & restricted_fields
+        attempted = data.model_fields_set & restricted_fields
         if attempted:
             raise UnprocessableError(
                 f"Cannot update {', '.join(attempted)} on a WBS code that is in use by claim/assessment data"
             )
 
-    if "code" in update_data and update_data["code"] != wbs.code:
+    if data.code is not None and data.code != wbs.code:
         existing = await wbs_code_repo.get_by_project(db, project_id)
-        if any(w.code == update_data["code"] and w.id != wbs_code_id for w in existing):
-            raise UnprocessableError(f"WBS code '{update_data['code']}' already exists in this project")
-
-    if "level" in update_data and update_data["level"] is not None:
-        update_data["level"] = WBSLevel(update_data["level"])
+        if any(w.code == data.code and w.id != wbs_code_id for w in existing):
+            raise UnprocessableError(f"WBS code '{data.code}' already exists in this project")
 
     update_data["updated_by"] = user.id
     wbs = await wbs_code_repo.update(db, wbs, **update_data)

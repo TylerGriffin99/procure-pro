@@ -1,4 +1,3 @@
-import enum
 import uuid
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
@@ -7,15 +6,11 @@ from sqlalchemy import Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants.enums import WBSLevel
 from app.database import AuditMixin, Base
 
 if TYPE_CHECKING:
     from app.models.project import Project
-
-
-class WBSLevel(str, enum.Enum):
-    category = "category"
-    subcategory = "subcategory"
 
 
 class WBSCode(AuditMixin, Base):

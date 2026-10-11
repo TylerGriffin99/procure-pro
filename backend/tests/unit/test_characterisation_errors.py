@@ -9,6 +9,7 @@ from io import BytesIO
 import pytest
 from fastapi import Depends, FastAPI, UploadFile
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
 from starlette.datastructures import Headers
 
@@ -36,15 +37,18 @@ def _pdf_upload() -> UploadFile:
     )
 
 
-def _bogus_claim() -> ClaimCreate:
-    item = ClaimLineItemCreate(
-        description="x", item_type="bogus", contract_value=0, percentage=0, ptd=0, previous=0, current=0, balance=0
-    )
-    return ClaimCreate(claim_number=1, line_items=[item])
-
-
-def _bogus_wbs() -> WBSCodeCreate:
-    return WBSCodeCreate(code="X", description="x", level="bogus")
+BOGUS_CLAIM_LINE_ITEM = {
+    "description": "x",
+    "item_type": "bogus",
+    "contract_value": 0,
+    "percentage": 0,
+    "ptd": 0,
+    "previous": 0,
+    "current": 0,
+    "balance": 0,
+}
+BOGUS_CLAIM = {"claim_number": 1, "line_items": [BOGUS_CLAIM_LINE_ITEM]}
+BOGUS_WBS = {"code": "X", "description": "x", "level": "bogus"}
 
 
 async def _no_existing_wbs(db, project_id):
@@ -76,13 +80,13 @@ def build_app() -> FastAPI:
     async def me(user: User = Depends(get_current_user)):
         return {"id": str(user.id)}
 
-    @app.get("/wbs")
-    async def wbs():
-        await project_service.create_wbs_code(None, PROJECT_ID, _bogus_wbs(), _user())  # type: ignore[arg-type]
+    @app.post("/wbs")
+    async def wbs(body: WBSCodeCreate):
+        await project_service.create_wbs_code(None, PROJECT_ID, body, _user())  # type: ignore[arg-type]
 
-    @app.get("/claim")
-    async def claim():
-        await claim_service.create_claim(None, PROJECT_ID, _bogus_claim(), _user())  # type: ignore[arg-type]
+    @app.post("/claim")
+    async def claim(body: ClaimCreate):
+        await claim_service.create_claim(None, PROJECT_ID, body, _user())  # type: ignore[arg-type]
 
     return app
 
@@ -143,42 +147,30 @@ async def test_malformed_sub_today_returns_500(client, caplog):
     assert _unhandled_cause(caplog) is ValueError
 
 
-# --- invalid WBS level (D: 500 -> 422) ---
+# --- invalid WBS level (D12 applied: 500 -> 422) ---
 
 
-def test_wbs_schema_today_accepts_any_level():
-    assert _bogus_wbs().level == "bogus"
+def test_wbs_schema_rejects_unknown_level():
+    with pytest.raises(ValidationError, match="level"):
+        WBSCodeCreate.model_validate(BOGUS_WBS)
 
 
-async def test_wbs_invalid_level_today_raises_value_error(empty_wbs_repo):
-    with pytest.raises(ValueError, match="'bogus' is not a valid WBSLevel"):
-        await project_service.create_wbs_code(None, PROJECT_ID, _bogus_wbs(), _user())  # type: ignore[arg-type]
+async def test_wbs_invalid_level_returns_422(client, empty_wbs_repo):
+    resp = await client.post("/wbs", json=BOGUS_WBS)
+    assert resp.status_code == 422
 
 
-async def test_wbs_invalid_level_today_returns_500(client, caplog, empty_wbs_repo):
-    resp = await client.get("/wbs")
-    assert resp.status_code == 500
-    assert resp.json() == {"detail": "Internal server error"}
-    assert _unhandled_cause(caplog) is ValueError
+# --- invalid claim line item type (D12 applied: 500 -> 422) ---
 
 
-# --- invalid claim line item type (D: 500 -> 422) ---
+def test_claim_line_item_schema_rejects_unknown_item_type():
+    with pytest.raises(ValidationError, match="item_type"):
+        ClaimLineItemCreate.model_validate(BOGUS_CLAIM_LINE_ITEM)
 
 
-def test_claim_line_item_schema_today_accepts_any_item_type():
-    assert _bogus_claim().line_items[0].item_type == "bogus"
-
-
-async def test_claim_invalid_item_type_today_raises_value_error():
-    with pytest.raises(ValueError, match="'bogus' is not a valid ClaimItemType"):
-        await claim_service.create_claim(None, PROJECT_ID, _bogus_claim(), _user())  # type: ignore[arg-type]
-
-
-async def test_claim_invalid_item_type_today_returns_500(client, caplog):
-    resp = await client.get("/claim")
-    assert resp.status_code == 500
-    assert resp.json() == {"detail": "Internal server error"}
-    assert _unhandled_cause(caplog) is ValueError
+async def test_claim_invalid_item_type_returns_422(client):
+    resp = await client.post("/claim", json=BOGUS_CLAIM)
+    assert resp.status_code == 422
 
 
 # --- describe_error echoes the SQL statement (D2 flips to absent) ---

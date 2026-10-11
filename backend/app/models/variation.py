@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -7,13 +6,8 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, Tex
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.constants.enums import VariationStatus
 from app.database import AuditMixin, Base
-
-
-class VariationStatus(str, enum.Enum):
-    unapproved = "unapproved"
-    in_review = "in_review"
-    approved = "approved"
 
 
 class Variation(AuditMixin, Base):

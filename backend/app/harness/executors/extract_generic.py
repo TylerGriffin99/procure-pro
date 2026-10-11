@@ -12,13 +12,13 @@ from decimal import Decimal, InvalidOperation
 
 from pydantic_ai.models import Model
 
+from app.constants.enums import ClaimFormat, ClaimItemType
+from app.constants.values import BLANK_CELL, CENTS
 from app.harness.agent_runner import run_structured
 from app.harness.prompts import load_playbook, load_prompt
-from app.harness.schemas import GenericExtraction
+from app.harness.schemas import GenericExtraction, GenericSummary
 
 logger = logging.getLogger(__name__)
-
-_VALID_ITEM_TYPES = {"contract_work", "variation", "provisional_sum"}
 
 _DECIMAL_FIELDS = ("contract_value", "percentage", "ptd", "previous", "current", "balance")
 
@@ -33,10 +33,10 @@ def _normalise_decimal(value) -> str:
         return "0.00"
 
     if isinstance(value, (int, float)):
-        return str(Decimal(str(value)).quantize(Decimal("0.01")))
+        return str(Decimal(str(value)).quantize(CENTS))
 
     s = str(value).strip()
-    if not s or s == "-":
+    if not s or s == BLANK_CELL:
         return "0.00"
 
     # Strip dollar signs and spaces
@@ -61,7 +61,7 @@ def _normalise_decimal(value) -> str:
     if neg:
         d = -d
 
-    return str(d.quantize(Decimal("0.01")))
+    return str(d.quantize(CENTS))
 
 
 def validate_and_normalise(raw_response: dict) -> dict:
@@ -85,10 +85,10 @@ def validate_and_normalise(raw_response: dict) -> dict:
 
     line_items: list[dict] = []
     for idx, raw_item in enumerate(raw_items):
-        item_type = str(raw_item.get("item_type", "contract_work") or "contract_work")
-        if item_type not in _VALID_ITEM_TYPES:
+        item_type = str(raw_item.get("item_type", ClaimItemType.contract_work) or ClaimItemType.contract_work)
+        if item_type not in ClaimItemType:
             logger.warning("Unknown item_type %r on item %d; coercing to contract_work", item_type, idx)
-            item_type = "contract_work"
+            item_type = ClaimItemType.contract_work
 
         item = {
             "item_index": idx,
@@ -104,9 +104,7 @@ def validate_and_normalise(raw_response: dict) -> dict:
     # --- summary ---
     raw_summary = raw_response.get("summary") or {}
     # Recompute from items if summary is missing or incomplete
-    needs_recompute = not raw_summary or not all(
-        raw_summary.get(k) for k in ("original_contract_total", "revised_contract_total", "claimed_amount")
-    )
+    needs_recompute = not raw_summary or not all(raw_summary.get(k) for k in GenericSummary.model_fields)
 
     if needs_recompute:
         contract_total = Decimal("0")
@@ -115,13 +113,13 @@ def validate_and_normalise(raw_response: dict) -> dict:
         for item in line_items:
             val = Decimal(item["contract_value"])
             revised_total += val
-            if item["item_type"] == "contract_work":
+            if item["item_type"] == ClaimItemType.contract_work:
                 contract_total += val
             claimed_total += Decimal(item["ptd"])
         summary = {
-            "original_contract_total": str(contract_total.quantize(Decimal("0.01"))),
-            "revised_contract_total": str(revised_total.quantize(Decimal("0.01"))),
-            "claimed_amount": str(claimed_total.quantize(Decimal("0.01"))),
+            "original_contract_total": str(contract_total.quantize(CENTS)),
+            "revised_contract_total": str(revised_total.quantize(CENTS)),
+            "claimed_amount": str(claimed_total.quantize(CENTS)),
         }
     else:
         summary = {
@@ -141,7 +139,7 @@ async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dic
     the typed result. ``model`` is for tests; production uses the configured one.
     """
     template_text = load_prompt("extract_line_items")
-    playbook_text = load_playbook("generic")
+    playbook_text = load_playbook(ClaimFormat.generic)
 
     # Render prompt
     prompt = string.Template(template_text).safe_substitute(
@@ -163,9 +161,9 @@ async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dic
     logger.info(
         "Generic parse: %d line items (%d contract, %d variation, %d PS)",
         len(result["line_items"]),
-        sum(1 for i in result["line_items"] if i["item_type"] == "contract_work"),
-        sum(1 for i in result["line_items"] if i["item_type"] == "variation"),
-        sum(1 for i in result["line_items"] if i["item_type"] == "provisional_sum"),
+        sum(1 for i in result["line_items"] if i["item_type"] == ClaimItemType.contract_work),
+        sum(1 for i in result["line_items"] if i["item_type"] == ClaimItemType.variation),
+        sum(1 for i in result["line_items"] if i["item_type"] == ClaimItemType.provisional_sum),
     )
 
     return result

@@ -9,7 +9,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.claim_parse_flag import FlagSeverity, FlagType
+from app.constants.enums import ClaimItemType, FlagSeverity, FlagType, WorkspaceFile
 from app.repos import harness_repo, project_repo
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ async def execute_validate_claim(
     db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
 ) -> dict:
     """Run deterministic validation checks on parsed claim data."""
-    raw = await harness_repo.read_workspace_file(db, session_id, "parsed_claim.json")
+    raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.parsed_claim)
     if raw is None:
         raise ValueError("parsed_claim.json not found in workspace")
 
@@ -106,9 +106,9 @@ async def execute_validate_claim(
             )
 
     # -- Section total checks --
-    cw_items = [i for i in line_items if i.get("item_type") == "contract_work"]
-    var_items = [i for i in line_items if i.get("item_type") == "variation"]
-    ps_items = [i for i in line_items if i.get("item_type") == "provisional_sum"]
+    cw_items = [i for i in line_items if i.get("item_type") == ClaimItemType.contract_work]
+    var_items = [i for i in line_items if i.get("item_type") == ClaimItemType.variation]
+    ps_items = [i for i in line_items if i.get("item_type") == ClaimItemType.provisional_sum]
 
     sum_cw = sum((_dec(i.get("contract_value")) for i in cw_items), ZERO)
     sum_var = sum((_dec(i.get("contract_value")) for i in var_items), ZERO)

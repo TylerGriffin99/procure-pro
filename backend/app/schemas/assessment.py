@@ -3,11 +3,11 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from app.models.assessment import AssessmentStatus, LineItemStatus
+from app.constants.enums import AssessmentItemKind, AssessmentStatus, LineItemStatus
 from app.schemas.assessment_aggregate import AssessmentAggregate
 
 if TYPE_CHECKING:
@@ -261,25 +261,22 @@ class ReclassifyNewRecord(BaseModel):
     description: str
 
 
-_ItemType = Literal["line-item", "variation", "provisional-sum"]
-
-
 class ReclassifyRequest(BaseModel):
     source_item_id: uuid.UUID
-    source_type: _ItemType
-    target_type: _ItemType
+    source_type: AssessmentItemKind
+    target_type: AssessmentItemKind
     target_id: uuid.UUID | None = None
     target_wbs_code_id: uuid.UUID | None = None
     new_record: ReclassifyNewRecord | None = None
 
 
 class InterimAdjustRequest(BaseModel):
-    item_type: Literal["line-item", "variation", "provisional-sum"]
+    item_type: AssessmentItemKind
     parent_id: uuid.UUID  # wbs_code_id, variation_id, or provisional_sum_id
     agreed_total: Decimal
     comments: str | None = None
 
 
 class CloseOutRequest(BaseModel):
-    item_type: Literal["line-item", "variation", "provisional-sum"]
+    item_type: AssessmentItemKind
     parent_id: uuid.UUID  # wbs_code_id, variation_id, or provisional_sum_id

@@ -10,8 +10,8 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.enums import ClaimFormat, WBSLevel, WorkspaceFile
 from app.harness.prompts import load_playbook
-from app.models.wbs_code import WBSLevel
 from app.repos import harness_repo, provisional_sum_repo, variation_repo, wbs_code_repo
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,7 @@ async def load_variations_context(db: AsyncSession, project_id: uuid.UUID, sessi
 
 async def load_format_playbook(db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, str]:
     """Load format-specific playbook based on format_detection.json."""
-    raw = await harness_repo.read_workspace_file(db, session_id, "format_detection.json")
+    raw = await harness_repo.read_workspace_file(db, session_id, WorkspaceFile.format_detection)
     if not raw:
         logger.warning("format_detection.json not found — using fallback playbook")
         return {"playbook_content": FALLBACK_PLAYBOOK}
@@ -84,7 +84,7 @@ async def load_format_playbook(db: AsyncSession, project_id: uuid.UUID, session_
         logger.warning("format_detection.json is invalid JSON — using fallback playbook")
         return {"playbook_content": FALLBACK_PLAYBOOK}
 
-    fmt = detection.get("format", "generic")
+    fmt = detection.get("format", ClaimFormat.generic)
     try:
         playbook_text = load_playbook(fmt)
     except FileNotFoundError:

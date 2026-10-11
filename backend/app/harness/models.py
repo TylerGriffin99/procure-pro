@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from app.constants.enums import MatcherName, PhaseStatus
+
 
 class PhaseType(StrEnum):
     PROGRAMMATIC = "programmatic"
@@ -27,7 +29,7 @@ class PhaseDefinition:
     workspace_output: str
     system_prompt_template: str = ""
     model: str | None = None
-    matcher: Literal["llm", "jev"] | None = None
+    matcher: MatcherName | None = None
     # pydantic-ai output spec for LLM phases: a BaseModel subclass or list[Model].
     output_schema: Any = None
     workspace_inputs: list[str] = field(default_factory=list)
@@ -45,13 +47,6 @@ class HarnessDefinition:
 
 
 # --- SSE event models ---
-
-
-class PhaseStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 class HarnessErrorEvent(BaseModel):

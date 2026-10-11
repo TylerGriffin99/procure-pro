@@ -1,4 +1,5 @@
 import asyncio
+import calendar
 import logging
 import uuid
 from datetime import date, timedelta
@@ -9,14 +10,15 @@ from fastapi import UploadFile
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.enums import WBSLevel
+from app.constants.values import PDF_MEDIA_TYPE
 from app.exceptions import BadRequestError, NotFoundError
 from app.harness.models import HarnessType
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
 from app.models.assessment_variation import AssessmentVariation
-from app.models.claim import Claim, ClaimItemType
+from app.models.claim import Claim
 from app.models.claim_line_item import ClaimLineItem
 from app.models.user import User
-from app.models.wbs_code import WBSLevel
 from app.repos import (
     assessment_repo,
     claim_repo,
@@ -40,14 +42,14 @@ def _add_working_days(start: date, days: int) -> date:
     added = 0
     while added < days:
         current += timedelta(days=1)
-        if current.weekday() < 5:  # Mon=0 .. Fri=4
+        if current.weekday() < calendar.SATURDAY:
             added += 1
     return current
 
 
 def _payment_due_20th(reference: date) -> date:
     """Return the 20th of the next month after the reference date."""
-    if reference.month == 12:
+    if reference.month == calendar.DECEMBER:
         return date(reference.year + 1, 1, 20)
     return reference.replace(month=reference.month + 1, day=20)
 
@@ -116,7 +118,7 @@ def _screen_pdf_content(content: bytes) -> None:
 
 async def create_document_from_upload(db: AsyncSession, project_id: uuid.UUID, file: UploadFile):
     """Validate an uploaded PDF and persist it as a Document. Returns the Document."""
-    if file.content_type != "application/pdf":
+    if file.content_type != PDF_MEDIA_TYPE:
         raise BadRequestError("Only PDF uploads are supported")
     content = await file.read()
     if not content:
@@ -162,7 +164,7 @@ async def create_claim(db: AsyncSession, project_id: uuid.UUID, data: ClaimCreat
     for i, item in enumerate(data.line_items):
         claim.line_items.append(
             ClaimLineItem(
-                item_type=ClaimItemType(item.item_type),
+                item_type=item.item_type,
                 ref_code=item.ref_code,
                 description=item.description,
                 contract_value=item.contract_value,

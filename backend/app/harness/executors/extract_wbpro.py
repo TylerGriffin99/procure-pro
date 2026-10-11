@@ -8,6 +8,10 @@ so no LLM is needed.
 import logging
 import re
 from decimal import Decimal, InvalidOperation
+from typing import Final
+
+from app.constants.enums import ClaimItemType
+from app.constants.values import BLANK_CELL, CENTS, STANDARD_COLUMNS, VARIATION_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,7 @@ def parse_decimal(value: str | None) -> str:
     Handles: commas, parenthesised negatives, blanks, dashes.
     Returns a string like "1234.56" or "0.00".
     """
-    if not value or not value.strip() or value.strip() == "-":
+    if not value or not value.strip() or value.strip() == BLANK_CELL:
         return "0.00"
     s = value.strip()
     # Parenthesised negative: (1,234.56) -> -1234.56
@@ -34,13 +38,12 @@ def parse_decimal(value: str | None) -> str:
     if neg:
         d = -d
     # Normalise to 2dp string
-    return str(d.quantize(Decimal("0.01")))
+    return str(d.quantize(CENTS))
 
 
-# Section type constants
-SECTION_CONTRACT = "contract_work"
-SECTION_VARIATION = "variation"
-SECTION_PS = "provisional_sum"
+SECTION_CONTRACT: Final = ClaimItemType.contract_work
+SECTION_VARIATION: Final = ClaimItemType.variation
+SECTION_PS: Final = ClaimItemType.provisional_sum
 
 # Section header patterns — checked in order, last match on a page wins
 _SECTION_HEADERS = [
@@ -92,14 +95,14 @@ def map_row_to_item(row: list[str | None], section: str, item_index: int) -> dic
     ncols = len(row)
 
     if section == SECTION_VARIATION:
-        if ncols != 9:
-            logger.warning("Variation row has %d cols (expected 9), skipping", ncols)
+        if ncols != VARIATION_COLUMNS:
+            logger.warning("Variation row has %d cols (expected %d), skipping", ncols, VARIATION_COLUMNS)
             return None
         return {
             "item_index": item_index,
             "ref_code": str(row[0] or "").strip(),
             "description": str(row[1] or "").strip(),
-            "item_type": "variation",
+            "item_type": ClaimItemType.variation,
             "contract_value": parse_decimal(row[3]),
             "percentage": parse_decimal(row[4]),
             "ptd": parse_decimal(row[5]),
@@ -109,10 +112,10 @@ def map_row_to_item(row: list[str | None], section: str, item_index: int) -> dic
         }
     else:
         # Contract Works or Provisional Sums — both 8 cols
-        if ncols != 8:
-            logger.warning("%s row has %d cols (expected 8), skipping", section, ncols)
+        if ncols != STANDARD_COLUMNS:
+            logger.warning("%s row has %d cols (expected %d), skipping", section, ncols, STANDARD_COLUMNS)
             return None
-        item_type = "provisional_sum" if section == SECTION_PS else "contract_work"
+        item_type = ClaimItemType.provisional_sum if section == SECTION_PS else ClaimItemType.contract_work
         return {
             "item_index": item_index,
             "ref_code": str(row[0] or "").strip(),
@@ -193,9 +196,9 @@ def parse_wbpro(raw_extraction: dict) -> dict:
             first_data_row = next((r for r in table if not is_skip_row(r)), None)
             if first_data_row is not None:
                 ncols = len(first_data_row)
-                if ncols == 9:
+                if ncols == VARIATION_COLUMNS:
                     table_section = SECTION_VARIATION
-                elif ncols == 8 and page_section == SECTION_VARIATION:
+                elif ncols == STANDARD_COLUMNS and page_section == SECTION_VARIATION:
                     # 8-col table on a variation page = contract works overflow
                     table_section = SECTION_CONTRACT
                 else:
@@ -219,22 +222,22 @@ def parse_wbpro(raw_extraction: dict) -> dict:
     for item in line_items:
         val = Decimal(item["contract_value"])
         revised_total += val
-        if item["item_type"] == "contract_work":
+        if item["item_type"] == ClaimItemType.contract_work:
             contract_total += val
         claimed_total += Decimal(item["ptd"])
 
     summary = {
-        "original_contract_total": str(contract_total.quantize(Decimal("0.01"))),
-        "revised_contract_total": str(revised_total.quantize(Decimal("0.01"))),
-        "claimed_amount": str(claimed_total.quantize(Decimal("0.01"))),
+        "original_contract_total": str(contract_total.quantize(CENTS)),
+        "revised_contract_total": str(revised_total.quantize(CENTS)),
+        "claimed_amount": str(claimed_total.quantize(CENTS)),
     }
 
     logger.info(
         "WBPRO parse: %d line items (%d contract, %d variation, %d PS)",
         len(line_items),
-        sum(1 for i in line_items if i["item_type"] == "contract_work"),
-        sum(1 for i in line_items if i["item_type"] == "variation"),
-        sum(1 for i in line_items if i["item_type"] == "provisional_sum"),
+        sum(1 for i in line_items if i["item_type"] == ClaimItemType.contract_work),
+        sum(1 for i in line_items if i["item_type"] == ClaimItemType.variation),
+        sum(1 for i in line_items if i["item_type"] == ClaimItemType.provisional_sum),
     )
 
     return {"metadata": metadata, "line_items": line_items, "summary": summary}

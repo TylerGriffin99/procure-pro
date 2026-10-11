@@ -1,12 +1,14 @@
 """Unit tests for the pydantic-ai agent runner (no network)."""
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic_ai import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
+from app.config import Settings
+from app.constants import LlmProvider
 from app.harness import agent_runner
 from app.harness.agent_runner import build_model, run_structured
 
@@ -18,10 +20,12 @@ class _Item(BaseModel):
 
 
 class TestBuildModel:
-    def test_unknown_provider_raises(self, monkeypatch):
-        monkeypatch.setattr(agent_runner.settings, "llm_provider", "bogus")
-        with pytest.raises(ValueError, match="bogus"):
-            build_model()
+    def test_unknown_provider_is_rejected_at_settings_load(self):
+        with pytest.raises(ValidationError, match="llm_provider"):
+            Settings(secret_key="k", llm_provider="bogus", llm_model="m")
+
+    def test_provider_is_case_insensitive_at_settings_load(self):
+        assert Settings(secret_key="k", llm_provider="OpenRouter", llm_model="m").llm_provider is LlmProvider.openrouter
 
     @pytest.mark.parametrize(
         "provider,host",

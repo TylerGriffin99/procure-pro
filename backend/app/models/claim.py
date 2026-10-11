@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -8,16 +7,11 @@ from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.constants.enums import ClaimItemType  # noqa: F401 — re-export for alembic/metadata
 from app.database import AuditMixin, Base
 
 if TYPE_CHECKING:
     from app.models.claim_line_item import ClaimLineItem
-
-
-class ClaimItemType(str, enum.Enum):
-    contract_work = "contract_work"
-    variation = "variation"
-    provisional_sum = "provisional_sum"
 
 
 class Claim(AuditMixin, Base):

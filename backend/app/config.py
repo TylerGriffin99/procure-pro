@@ -1,6 +1,8 @@
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
+from app.constants.enums import LlmProvider, MatcherName
+
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://claimreview:claimreview_dev@localhost:6000/claimreview"
@@ -14,9 +16,13 @@ class Settings(BaseSettings):
     secret_key: str
     access_token_expire_minutes: int = 60 * 24
 
-    # LLM provider: "anthropic", "openai", "openrouter", or "deepseek"
-    llm_provider: str
+    llm_provider: LlmProvider
     llm_model: str
+
+    @field_validator("llm_provider", mode="before")
+    @classmethod
+    def lowercase_provider(cls, v: object) -> object:
+        return v.lower() if isinstance(v, str) else v
 
     # API keys — only the key for the configured provider is required
     anthropic_api_key: str = ""
@@ -25,7 +31,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
 
     # Matcher selection + Jev (via OpenRouter decisions API)
-    matcher_default: str = "llm"
+    matcher_default: MatcherName = MatcherName.llm
     jev_model: str = "typesafe/jev-1.13"
     jev_decisions_url: str = "https://openrouter.ai/api/alpha/decisions"
     jev_max_concurrency: int = 8

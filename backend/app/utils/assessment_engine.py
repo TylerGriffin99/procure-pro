@@ -2,6 +2,8 @@
 
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.constants.values import CENTS
+
 
 def calculate_retention(total_recommended: Decimal, tiers: list[dict]) -> Decimal:
     """Calculate tiered retention.
@@ -25,12 +27,12 @@ def calculate_retention(total_recommended: Decimal, tiers: list[dict]) -> Decima
 
         if up_to is None:
             # Remainder tier
-            retention = (remaining * pct).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            retention = (remaining * pct).quantize(CENTS, rounding=ROUND_HALF_UP)
             total_retention += retention
             remaining = Decimal("0")
         else:
             applicable = min(remaining, up_to)
-            retention = (applicable * pct).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            retention = (applicable * pct).quantize(CENTS, rounding=ROUND_HALF_UP)
             total_retention += retention
             remaining -= applicable
 
@@ -61,7 +63,7 @@ def calculate_retention_per_tier(total_recommended: Decimal, tiers: list[dict]) 
             applicable = min(remaining, up_to)
             remaining -= applicable
 
-        retention = (applicable * pct).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        retention = (applicable * pct).quantize(CENTS, rounding=ROUND_HALF_UP)
         details.append({"percentage": f"{float(pct) * 100:.1f}%", "base": applicable, "amount": retention})
 
     return details
@@ -104,7 +106,7 @@ def calculate_assessment_totals(
     recommended_this_period = total_payment_to_date - previously_certified
 
     # GST
-    gst_amount = (recommended_this_period * gst_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    gst_amount = (recommended_this_period * gst_rate).quantize(CENTS, rounding=ROUND_HALF_UP)
     total_including_gst = recommended_this_period + gst_amount
 
     return {

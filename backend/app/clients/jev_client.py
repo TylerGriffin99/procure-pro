@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -59,7 +60,11 @@ class JevClient:
             return True
         if isinstance(exc, httpx.HTTPStatusError):
             status = exc.response.status_code
-            return status in FATAL_STATUS or 300 <= status < 400 or status == 405
+            return (
+                status in FATAL_STATUS
+                or HTTPStatus.MULTIPLE_CHOICES <= status < HTTPStatus.BAD_REQUEST
+                or status == HTTPStatus.METHOD_NOT_ALLOWED
+            )
         return False
 
     @staticmethod
