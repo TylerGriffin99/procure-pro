@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, cast
 from pydantic import TypeAdapter
 
 from app.clients.jev_client import JevClient
+from app.clients.llm_client import LlmClient
 from app.config import settings
 from app.constants.enums import ClaimItemType, VpsKind
 from app.harness.matchers.data import read_parsed_items, vps_records, wbs_subcategories
@@ -110,8 +111,9 @@ def to_wbs_match(decision: ItemDecision, key_to_id: dict[str, str], by_id: dict[
 
 
 class JevMatcher:
-    def __init__(self, client: JevClient | None = None) -> None:
+    def __init__(self, client: JevClient | None = None, llm: LlmClient | None = None) -> None:
         self.client = client or JevClient.from_settings(settings)
+        self.llm = llm or LlmClient.from_settings(settings)
 
     async def match(
         self, *, phase_def: PhaseDefinition, db: AsyncSession, project_id: uuid.UUID, session_id: uuid.UUID
@@ -176,7 +178,9 @@ class JevMatcher:
             len(results),
             sorted(residue),
         )
-        outcome = await run_llm_matches(phase_def=phase_def, db=db, project_id=project_id, session_id=session_id)
+        outcome = await run_llm_matches(
+            phase_def=phase_def, db=db, project_id=project_id, session_id=session_id, llm=self.llm
+        )
         resolved = {m.item_index: m for m in outcome.output if m.item_index in residue}
         missing = residue - set(resolved)
         if missing:

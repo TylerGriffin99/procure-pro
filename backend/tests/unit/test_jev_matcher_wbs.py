@@ -78,7 +78,7 @@ async def test_wbs_unknown_choice_becomes_residue_none(monkeypatch, caplog):
     }
     calls = []
 
-    async def fake_llm(*, phase_def, db, project_id, session_id):
+    async def fake_llm(*, phase_def, db, project_id, session_id, llm):
         calls.append(1)
         res = [
             WbsMatch(item_index=0, wbs_code="NEW-00", is_new=True, confidence=0.7),

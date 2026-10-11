@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import error_handlers
 from app.config import settings
 from app.routers import assessments, auth, claim_flags, claims, harness, projects
+
+# Silence pydantic-ai's first-run telemetry banner so test/log output stays pristine.
+os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
 

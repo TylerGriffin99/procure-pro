@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.llm_client import LlmClient
 from app.config import settings
 from app.constants.enums import HarnessSessionStatus, MatcherName, PhaseStatus
-from app.harness.agent_runner import build_model, run_structured
 from app.harness.matchers.base import get_matcher
 from app.harness.models import (
     HarnessCompleteEvent,
@@ -34,6 +35,8 @@ from app.repos import harness_repo
 
 logger = logging.getLogger(__name__)
 
+EXECUTOR_LLM_KWARG: Final = "llm"
+
 
 def describe_error(exc: BaseException) -> str:
     """``"<ExceptionType>: <message>"``, or just the type name when the message is empty."""
@@ -50,6 +53,7 @@ class HarnessEngine:
     user_id: uuid.UUID
     project_id: uuid.UUID
     db: AsyncSession
+    llm: LlmClient = field(kw_only=True)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     async def run(self) -> AsyncGenerator[HarnessEvent, None]:
@@ -125,12 +129,18 @@ class HarnessEngine:
         if not phase_def.executor:
             raise ValueError(f"Programmatic phase '{phase_def.name}' has no executor")
 
+        extra = (
+            {EXECUTOR_LLM_KWARG: self.llm}
+            if EXECUTOR_LLM_KWARG in inspect.signature(phase_def.executor).parameters
+            else {}
+        )
         result = await phase_def.executor(
             db=self.db,
             session_id=self.session_id,
             user_id=self.user_id,
             project_id=self.project_id,
             config=session_config,
+            **extra,
         )
 
         result_str = json.dumps(result) if isinstance(result, dict) else str(result)
@@ -171,13 +181,11 @@ class HarnessEngine:
         )
         system_prompt = render_system_prompt(phase_def, context)
 
-        model = build_model(model_name=phase_def.model) if phase_def.model else None
-
-        response = await run_structured(
+        response = await self.llm.run_structured(
             output_type=phase_def.output_schema,
             system_prompt=system_prompt,
             user_prompt=f"Process the input for phase: {phase_def.name}",
-            model=model,
+            model_name=phase_def.model,
             phase_name=phase_def.name,
         )
 
@@ -215,7 +223,7 @@ class HarnessEngine:
             )
             name = MatcherName.llm
 
-        matcher = get_matcher(name)
+        matcher = get_matcher(name, llm=self.llm)
         outcome = await matcher.match(
             phase_def=phase_def, db=self.db, project_id=self.project_id, session_id=self.session_id
         )

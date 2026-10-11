@@ -48,7 +48,7 @@ def _setup(monkeypatch, n_items=1, item_type="contract_work"):
 def _fake_llm(n):
     res = [WbsMatch(item_index=i, wbs_code="DM-01", wbs_code_id="u1", confidence=0.8) for i in range(n)]
 
-    async def fake_llm(*, phase_def, db, project_id, session_id):
+    async def fake_llm(*, phase_def, db, project_id, session_id, llm):
         return MatchOutcome(output=res, output_json=TypeAdapter(list[WbsMatch]).dump_json(res).decode())
 
     return fake_llm

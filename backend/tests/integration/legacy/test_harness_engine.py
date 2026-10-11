@@ -1,6 +1,9 @@
 import pytest
+from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.llm_client import LlmClient
+from app.constants import LlmProvider
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, PhaseDefinition, PhaseType
 from app.harness.registry import HarnessRegistry
@@ -44,7 +47,12 @@ async def test_engine_runs_programmatic_phase(db_session: AsyncSession, test_use
     )
 
     engine = HarnessEngine(
-        definition=harness_def, session_id=session.id, user_id=test_user.id, project_id=test_project.id, db=db_session
+        definition=harness_def,
+        session_id=session.id,
+        user_id=test_user.id,
+        project_id=test_project.id,
+        db=db_session,
+        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=TestModel()),
     )
 
     events = []
@@ -93,7 +101,12 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
     )
 
     engine = HarnessEngine(
-        definition=harness_def, session_id=session.id, user_id=test_user.id, project_id=test_project.id, db=db_session
+        definition=harness_def,
+        session_id=session.id,
+        user_id=test_user.id,
+        project_id=test_project.id,
+        db=db_session,
+        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=TestModel()),
     )
 
     events = []

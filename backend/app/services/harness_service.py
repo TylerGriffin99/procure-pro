@@ -9,6 +9,8 @@ from collections.abc import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.harness.definitions  # noqa: F401 — triggers registration
+from app.clients.llm_client import LlmClient
+from app.config import settings
 from app.constants.enums import HarnessSessionStatus
 from app.database import async_session
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
@@ -74,7 +76,12 @@ async def stream_events(
     """Run the engine on a DB session that outlives the HTTP request and yield SSE frames."""
     async with async_session() as engine_db:
         engine = HarnessEngine(
-            definition=definition, session_id=session_id, user_id=user_id, project_id=project_id, db=engine_db
+            definition=definition,
+            session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            db=engine_db,
+            llm=LlmClient.from_settings(settings),
         )
         try:
             async for event in engine.run():

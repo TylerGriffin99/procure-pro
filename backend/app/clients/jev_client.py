@@ -6,6 +6,7 @@ Everything that touches the Jev HTTP API lives here so the matcher
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 from http import HTTPStatus
@@ -111,9 +112,7 @@ class JevClient:
         statuses raise immediately; any other terminal failure is logged and re-raised."""
         questions = {qid: {"type": "choice", "instructions": instructions, "criteria": criteria}}
 
-        async def attempt() -> dict[str, Any]:
-            return await self.post_decisions(state=state, questions=questions)
-
+        attempt = functools.partial(self.post_decisions, state=state, questions=questions)
         try:
             raw = await retry_async(attempt, policy=self.retry, should_retry=self.is_retryable)
         except httpx.HTTPStatusError as exc:

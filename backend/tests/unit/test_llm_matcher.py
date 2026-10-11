@@ -1,5 +1,8 @@
 import pytest
+from pydantic_ai.models.test import TestModel
 
+from app.clients.llm_client import LlmClient
+from app.config import settings
 from app.harness.matchers.llm import LlmMatcher
 from app.harness.schemas import WbsMatch
 
@@ -14,25 +17,13 @@ class _Phase:
 
 
 @pytest.mark.asyncio
-async def test_llm_matcher_returns_match_outcome(monkeypatch):
-    sample = [WbsMatch(item_index=0, wbs_code="DM-01", confidence=0.9)]
+async def test_llm_matcher_returns_match_outcome():
+    model = TestModel(custom_output_args=[{"item_index": 0, "wbs_code": "DM-01", "confidence": 0.9}])
+    llm = LlmClient(provider=settings.llm_provider, model_name="m", api_key="k", model=model)
 
-    async def fake_run_structured(*, output_type, system_prompt, user_prompt, model=None, phase_name=None):
-        from pydantic import TypeAdapter
+    out = await LlmMatcher(llm=llm).match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
 
-        from app.harness.agent_runner import StructuredResult
-
-        return StructuredResult(
-            output=sample,
-            output_json=TypeAdapter(output_type).dump_json(sample).decode(),
-            input_tokens=10,
-            output_tokens=5,
-        )
-
-    monkeypatch.setattr("app.harness.matchers.llm.run_structured", fake_run_structured)
-
-    out = await LlmMatcher().match(phase_def=_Phase(), db=None, project_id="p", session_id="s")
-    assert out.output == sample
-    assert out.input_tokens == 10
-    assert out.output_tokens == 5
+    assert out.output == [WbsMatch(item_index=0, wbs_code="DM-01", confidence=0.9)]
+    assert out.input_tokens > 0
+    assert out.output_tokens > 0
     assert out.output_json.startswith("[")

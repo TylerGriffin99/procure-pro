@@ -9,10 +9,8 @@ import json
 import logging
 import string
 
-from pydantic_ai.models import Model
-
+from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimFormat, ClaimItemType
-from app.harness.agent_runner import run_structured
 from app.harness.extract_shared import summary_totals
 from app.harness.prompts import load_playbook, load_prompt
 from app.harness.schemas import GenericExtraction, GenericSummary
@@ -85,12 +83,12 @@ def validate_and_normalise(raw_response: dict) -> dict:
     return {"metadata": metadata, "line_items": line_items, "summary": summary}
 
 
-async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dict:
+async def parse_generic(raw_extraction: dict, *, llm: LlmClient) -> dict:
     """Parse a generic-format claim using a structured LLM agent.
 
     Loads the prompt template and generic playbook, runs the extraction through
     a pydantic-ai agent (validated against ``GenericExtraction``), and normalises
-    the typed result. ``model`` is for tests; production uses the configured one.
+    the typed result.
     """
     template_text = load_prompt("extract_line_items")
     playbook_text = load_playbook(ClaimFormat.generic)
@@ -101,11 +99,10 @@ async def parse_generic(raw_extraction: dict, model: Model | None = None) -> dic
     )
 
     # Run the structured agent — output is a validated GenericExtraction.
-    response = await run_structured(
+    response = await llm.run_structured(
         output_type=GenericExtraction,
         system_prompt=prompt,
         user_prompt="Extract all line items from this contractor payment claim.",
-        model=model,
         phase_name="extract_line_items_generic",
     )
 

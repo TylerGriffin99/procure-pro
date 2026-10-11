@@ -49,7 +49,7 @@ async def test_none_and_lowconf_items_routed_to_llm(monkeypatch):
         WbsMatch(item_index=1, wbs_code="DM-01", wbs_code_id="u1", confidence=0.85),
     ]
 
-    async def fake_llm(*, phase_def, db, project_id, session_id):
+    async def fake_llm(*, phase_def, db, project_id, session_id, llm):
         return MatchOutcome(output=llm_result, output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode())
 
     monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", fake_llm)
@@ -83,7 +83,7 @@ async def test_unresolved_residue_warns_and_keeps_placeholder(monkeypatch, caplo
         qid = next(iter(questions))
         return {"answers": {qid: {"choice": NONE_OPTION, "confidence": 0.9, "probabilities": {}}}, "usage": {}}
 
-    async def fake_llm(*, phase_def, db, project_id, session_id):
+    async def fake_llm(*, phase_def, db, project_id, session_id, llm):
         res = [WbsMatch(item_index=0, wbs_code="NEW-01", is_new=True, confidence=0.7)]
         return MatchOutcome(output=res, output_json="[]")
 
@@ -120,7 +120,7 @@ async def test_residue_tokens_and_counts_accumulate(monkeypatch):
 
     llm_result = [WbsMatch(item_index=0, wbs_code="NEW-01", parent_code="DM", is_new=True, confidence=0.7)]
 
-    async def fake_llm(*, phase_def, db, project_id, session_id):
+    async def fake_llm(*, phase_def, db, project_id, session_id, llm):
         return MatchOutcome(
             output=llm_result,
             output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode(),

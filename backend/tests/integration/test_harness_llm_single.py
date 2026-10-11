@@ -6,7 +6,8 @@ import uuid
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.harness import agent_runner
+from app.clients.llm_client import LlmClient
+from app.constants import LlmProvider
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
 from app.harness.schemas import WbsMatch
@@ -65,7 +66,7 @@ async def _make_session(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_llm_single_writes_validated_json_array(client, db_session, monkeypatch):
+async def test_llm_single_writes_validated_json_array(client, db_session):
     session = await _make_session(client, db_session)
 
     fake_model = TestModel(
@@ -81,14 +82,13 @@ async def test_llm_single_writes_validated_json_array(client, db_session, monkey
             }
         ]
     )
-    monkeypatch.setattr(agent_runner, "build_model", lambda *a, **k: fake_model)
-
     engine = HarnessEngine(
         definition=_llm_single_harness(),
         session_id=session.id,
         user_id=session.user_id,
         project_id=session.project_id,
         db=db_session,
+        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=fake_model),
     )
 
     events = [event async for event in engine.run()]
@@ -116,18 +116,16 @@ async def test_llm_single_writes_validated_json_array(client, db_session, monkey
 
 
 @pytest.mark.asyncio
-async def test_llm_single_without_output_schema_errors(client, db_session, monkeypatch):
+async def test_llm_single_without_output_schema_errors(client, db_session):
     """An LLM_SINGLE phase missing an output_schema must fail loudly, not silently."""
     session = await _make_session(client, db_session)
 
     definition = _llm_single_harness()
     definition.phases[1].output_schema = None  # strip the schema
 
-    # build_model must never be reached — guard fires first.
-    def _boom(*a, **k):
-        raise AssertionError("build_model should not be called without an output_schema")
-
-    monkeypatch.setattr(agent_runner, "build_model", _boom)
+    class _ExplodingModel(TestModel):
+        async def request(self, *args, **kwargs):
+            raise AssertionError("the model must not be called without an output_schema")
 
     engine = HarnessEngine(
         definition=definition,
@@ -135,6 +133,7 @@ async def test_llm_single_without_output_schema_errors(client, db_session, monke
         user_id=session.user_id,
         project_id=session.project_id,
         db=db_session,
+        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=_ExplodingModel()),
     )
 
     events = [event async for event in engine.run()]

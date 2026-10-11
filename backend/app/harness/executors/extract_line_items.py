@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.llm_client import LlmClient
 from app.constants.enums import ClaimFormat, WorkspaceFile
 from app.harness.executors.extract_generic import parse_generic
 from app.harness.executors.extract_wbpro import parse_wbpro
@@ -16,7 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_extract_line_items(
-    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID, config: dict[str, Any]
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    config: dict[str, Any],
+    llm: LlmClient,
 ) -> dict:
     """Route extraction based on detected format.
 
@@ -41,4 +47,4 @@ async def execute_extract_line_items(
         return parse_wbpro(raw_extraction)
     else:
         logger.info("Phase 2: Using generic LLM extractor for format '%s'", detected_format)
-        return await parse_generic(raw_extraction)
+        return await parse_generic(raw_extraction, llm=llm)

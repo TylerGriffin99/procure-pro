@@ -5,9 +5,12 @@ import logging
 
 import pytest
 from pydantic import TypeAdapter
+from pydantic_ai.models.test import TestModel
 
 from app.clients.jev_client import JevClient
+from app.clients.llm_client import LlmClient
 from app.config import settings
+from app.constants import LlmProvider
 from app.harness.engine import HarnessEngine
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
 from app.harness.schemas import MatchOutcome, WbsMatch
@@ -67,6 +70,7 @@ async def _run(client, db_session, matcher):
         user_id=session.user_id,
         project_id=session.project_id,
         db=db_session,
+        llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=TestModel()),
     )
     events = [event async for event in engine.run()]
     raw = await harness_repo.read_workspace_file(db_session, session.id, "wbs_matches.json")

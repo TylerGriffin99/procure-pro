@@ -183,7 +183,7 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     return session_id
 
 
-async def _no_residue(*, phase_def, db, project_id, session_id) -> MatchOutcome:
+async def _no_residue(*, phase_def, db, project_id, session_id, llm) -> MatchOutcome:
     """Stub residue resolver: leave Jev's own decisions untouched (Jev-alone pass)."""
     return MatchOutcome(output=[], output_json="[]")
 

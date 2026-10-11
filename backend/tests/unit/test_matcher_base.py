@@ -1,8 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
+from app.clients.llm_client import LlmClient
 from app.config import Settings
-from app.constants import MatcherName
+from app.constants import LlmProvider, MatcherName
 from app.harness.matchers.base import get_matcher
 from app.harness.matchers.jev import JevMatcher
 from app.harness.matchers.llm import LlmMatcher
@@ -17,7 +18,8 @@ def test_match_outcome_defaults():
 
 @pytest.mark.parametrize(("name", "cls"), [(MatcherName.llm, LlmMatcher), (MatcherName.jev, JevMatcher)])
 def test_get_matcher_resolves_each_name(name, cls):
-    assert isinstance(get_matcher(name), cls)
+    llm = LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k")
+    assert isinstance(get_matcher(name, llm=llm), cls)
 
 
 def test_unknown_matcher_name_is_rejected_at_settings_load():
