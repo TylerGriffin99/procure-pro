@@ -86,14 +86,7 @@ class TestGenericExtraction:
 
 def test_match_outcome_defaults_and_frozen():
     out = MatchOutcome(output=[], output_json="[]")
-    assert (out.input_tokens, out.output_tokens, out.cost_usd, out.fell_back, out.residue, out.out_of_criteria) == (
-        0,
-        0,
-        None,
-        0,
-        0,
-        0,
-    )
+    assert (out.input_tokens, out.output_tokens, out.fell_back, out.residue, out.out_of_criteria) == (0, 0, 0, 0, 0)
     with pytest.raises(ValidationError):
         out.fell_back = 1  # type: ignore[misc]
 

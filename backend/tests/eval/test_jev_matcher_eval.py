@@ -233,7 +233,6 @@ async def _run_once(
         fell_back=wbs_post.fell_back + vps.fell_back,
         input_tokens=wbs_post.input_tokens + vps.input_tokens,
         output_tokens=wbs_post.output_tokens + vps.output_tokens,
-        cost_usd=(wbs_post.cost_usd or 0.0) + (vps.cost_usd or 0.0),
     )
     return result, cal_pairs
 

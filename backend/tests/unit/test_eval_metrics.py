@@ -24,7 +24,6 @@ def _run(wbs_alone=0.9, wbs_post=1.0, vps=1.0, **kw):
         fell_back=0,
         input_tokens=1000,
         output_tokens=50,
-        cost_usd=0.01,
     )
     base.update(kw)
     return RunResult(**base)
@@ -125,7 +124,7 @@ def test_gate_fails_closed_on_no_runs():
 def test_format_report_renders_headings_and_gate():
     clean = ClaimEval("Claim 1", [_run(wbs_post=1.0, vps=1.0)], [(0.95, True)])
     report = format_report([clean], model="jev-1.13", n_runs=1, wbs_floor=0.85, vps_floor=0.95)
-    for heading in ("MATCH ACCURACY", "GROUNDING", "CALIBRATION", "ROUTING & COST", "PER-CLAIM", "GATE"):
+    for heading in ("MATCH ACCURACY", "GROUNDING", "CALIBRATION", "ROUTING", "PER-CLAIM", "GATE"):
         assert heading in report
     assert "PASS" in report
     assert "invariant held" in report  # ooc totals are zero

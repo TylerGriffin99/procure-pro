@@ -126,7 +126,6 @@ async def test_residue_tokens_and_counts_accumulate(monkeypatch):
             output_json=TypeAdapter(list[WbsMatch]).dump_json(llm_result).decode(),
             input_tokens=100,
             output_tokens=40,
-            cost_usd=0.5,
         )
 
     monkeypatch.setattr("app.harness.matchers.jev.run_llm_matches", fake_llm)
@@ -135,5 +134,4 @@ async def test_residue_tokens_and_counts_accumulate(monkeypatch):
         phase_def=_Phase(), db=None, project_id="p", session_id="s"
     )
     assert out.input_tokens == 107 and out.output_tokens == 40
-    assert out.cost_usd == 0.5
     assert out.residue == 1 and out.fell_back == 0

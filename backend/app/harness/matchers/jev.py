@@ -168,7 +168,7 @@ class JevMatcher:
     ) -> MatchOutcome:
         """Resolve none / low-confidence WBS items via the LLM and merge them into ``results``.
 
-        Returns the LLM ``MatchOutcome`` so the caller can fold in its token/cost usage.
+        Returns the LLM ``MatchOutcome`` so the caller can fold in its token usage.
         """
         logger.info(
             "JevMatcher routing %d/%d WBS item(s) to LLM (none/low-confidence): %s",
@@ -251,21 +251,18 @@ class JevMatcher:
         residue = {idx for idx, m in results.items() if m.is_new or m.wbs_code_id is None or m.confidence < floor}
         in_tok = sum(d.input_tokens for d in decisions)
         out_tok = 0
-        cost: float | None = None
         if residue:
             llm = await self.resolve_residue(
                 residue, results, phase_def=phase_def, db=db, project_id=project_id, session_id=session_id
             )
             in_tok += llm.input_tokens
             out_tok += llm.output_tokens
-            cost = llm.cost_usd
         output = [results[k] for k in sorted(results)]
         return MatchOutcome(
             output=output,
             output_json=TypeAdapter(list[WbsMatch]).dump_json(output).decode(),
             input_tokens=in_tok,
             output_tokens=out_tok,
-            cost_usd=cost,
             fell_back=failed,
             residue=len(residue),
             out_of_criteria=ooc,

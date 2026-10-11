@@ -127,7 +127,6 @@ class MatchOutcome(StrictModel):
     output_json: str  # bare JSON array matching the phase output_schema
     input_tokens: int = 0
     output_tokens: int = 0
-    cost_usd: float | None = None
     fell_back: int = 0  # items that fell back after a Jev failure
     residue: int = 0  # items routed to the LLM (none / low confidence)
     out_of_criteria: int = 0  # the model named an option that was never offered

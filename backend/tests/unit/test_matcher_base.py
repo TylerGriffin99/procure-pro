@@ -8,7 +8,6 @@ def test_match_outcome_defaults():
     out = MatchOutcome(output=[], output_json="[]")
     assert out.input_tokens == 0
     assert out.output_tokens == 0
-    assert out.cost_usd is None
 
 
 def test_get_matcher_unknown_raises():

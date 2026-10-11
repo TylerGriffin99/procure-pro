@@ -29,7 +29,6 @@ class RunResult:
     fell_back: int  # items that fell back after a Jev error
     input_tokens: int
     output_tokens: int
-    cost_usd: float
 
 
 @dataclass
@@ -170,7 +169,6 @@ def format_report(
     mean_fell = sum(r.fell_back for r in runs) / n
     mean_in = sum(r.input_tokens for r in runs) / n
     mean_out = sum(r.output_tokens for r in runs) / n
-    mean_cost = sum(r.cost_usd for r in runs) / n
 
     passed, g = gate(claims, wbs_floor=wbs_floor, vps_floor=vps_floor)
 
@@ -195,9 +193,8 @@ def format_report(
         f" mean conf · incorrect   {cal.mean_conf_incorrect:.2f}   (n={cal.n_incorrect})",
         f" overconfident errors (wrong & conf>={overconfidence_threshold:g})    {cal.overconfident_errors}",
         "",
-        "ROUTING & COST  (mean per run)",
-        f" residue {mean_residue:.1f}   fell_back {mean_fell:.1f}   "
-        f"in/out tok {mean_in:.0f}/{mean_out:.0f}   ${mean_cost:.3f}",
+        "ROUTING  (mean per run)",
+        f" residue {mean_residue:.1f}   fell_back {mean_fell:.1f}   in/out tok {mean_in:.0f}/{mean_out:.0f}",
         "",
         "PER-CLAIM  (WBS post-residue accuracy: mean [min-max], n scored)",
     ]
