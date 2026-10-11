@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.llm_client import LlmClient
 from app.constants import LlmProvider
 from app.harness.executors.extract_line_items import execute_extract_line_items
+from app.harness.models import HarnessType
 from app.repos import harness_repo
 
 _LLM = LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k")
@@ -21,7 +22,7 @@ async def test_wbpro_routes_to_deterministic(db_session: AsyncSession, test_user
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
 
     # Write format detection result
@@ -64,7 +65,7 @@ async def test_generic_routes_to_llm_placeholder(db_session: AsyncSession, test_
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
 
     await harness_repo.write_workspace_file(

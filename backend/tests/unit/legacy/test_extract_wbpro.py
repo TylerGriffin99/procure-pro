@@ -273,7 +273,16 @@ class TestColumnMapping:
     """Verify column counts are validated per section type."""
 
     def test_contract_works_8_cols(self):
-        row = ["1.0", "Excavation", "100000.00", "50.00", "50000.00", "30000.00", "20000.00", "50000.00"]
+        row: list[str | None] = [
+            "1.0",
+            "Excavation",
+            "100000.00",
+            "50.00",
+            "50000.00",
+            "30000.00",
+            "20000.00",
+            "50000.00",
+        ]
         item = map_row_to_item(row, SECTION_CONTRACT, item_index=0)
         assert item is not None
         assert item.ref_code == "1.0"
@@ -283,7 +292,17 @@ class TestColumnMapping:
         assert item.item_index == 0
 
     def test_variation_9_cols(self):
-        row = ["CI-01", "Variation desc", "ClientRef", "5000.00", "0.00", "0.00", "0.00", "0.00", "5000.00"]
+        row: list[str | None] = [
+            "CI-01",
+            "Variation desc",
+            "ClientRef",
+            "5000.00",
+            "0.00",
+            "0.00",
+            "0.00",
+            "0.00",
+            "5000.00",
+        ]
         item = map_row_to_item(row, SECTION_VARIATION, item_index=5)
         assert item is not None
         assert item.ref_code == "CI-01"
@@ -293,13 +312,22 @@ class TestColumnMapping:
         assert item.item_index == 5
 
     def test_provisional_sum_8_cols(self):
-        row = ["PS-01", "Provisional Sum Item", "25000.00", "0.00", "0.00", "0.00", "0.00", "25000.00"]
+        row: list[str | None] = [
+            "PS-01",
+            "Provisional Sum Item",
+            "25000.00",
+            "0.00",
+            "0.00",
+            "0.00",
+            "0.00",
+            "25000.00",
+        ]
         item = map_row_to_item(row, SECTION_PS, item_index=10)
         assert item is not None
         assert item.item_type == "provisional_sum"
 
     def test_wrong_col_count_returns_none(self):
-        row = ["1.0", "Too few cols", "100000.00"]
+        row: list[str | None] = ["1.0", "Too few cols", "100000.00"]
         item = map_row_to_item(row, SECTION_CONTRACT, item_index=0)
         assert item is None
 

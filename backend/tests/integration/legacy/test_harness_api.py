@@ -2,6 +2,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.harness.models import HarnessType
 from app.repos import harness_repo
 
 
@@ -23,7 +24,7 @@ async def test_get_session(
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await db_session.commit()
     resp = await client.get(f"/api/v1/harness/sessions/{session.id}", headers=auth_headers)
@@ -42,7 +43,7 @@ async def test_cancel_session(
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await db_session.commit()
     resp = await client.post(f"/api/v1/harness/sessions/{session.id}/cancel", headers=auth_headers)
@@ -59,7 +60,7 @@ async def test_read_missing_workspace_file_is_404_naming_the_file(
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await db_session.commit()
     resp = await client.get(f"/api/v1/harness/sessions/{session.id}/workspace/missing.json", headers=auth_headers)

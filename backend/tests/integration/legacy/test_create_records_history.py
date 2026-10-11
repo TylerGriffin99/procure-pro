@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.constants.enums import FlagSeverity, FlagType
 from app.harness.executors.create_records import execute_create_records
+from app.harness.models import HarnessType
 from app.models.assessment import Assessment
 from app.models.claim_line_item import ClaimLineItem
 from app.models.variation import Variation, VariationStatus
@@ -67,7 +68,7 @@ async def test_zero_activity_variation_gets_history_row(
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     items = [_variation_item(0, ref="CI-01", desc="Zero activity var")]
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
@@ -132,7 +133,7 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     items = [_variation_item(0, ref="CI-01", desc="In current claim")]
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
@@ -174,7 +175,7 @@ async def test_malformed_amount_persists_zero_and_records_a_format_warning_flag(
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     items = [_variation_item(0, ref="CI-09", desc="Malformed var", value="1,2OO.00")]
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))
@@ -207,7 +208,7 @@ async def test_draft_totals_come_from_the_aggregator(db_session: AsyncSession, t
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     items = [{**_variation_item(0, ref="CI-01", desc="New var"), "ptd": "400.00", "current": "400.00"}]
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _parsed_claim(items))

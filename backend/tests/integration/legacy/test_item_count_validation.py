@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import ExternalServiceError
 from app.harness.executors.create_records import execute_create_records
+from app.harness.models import HarnessType
 from app.repos import harness_repo
 
 
@@ -58,7 +59,7 @@ async def test_wbs_count_mismatch_raises(db_session: AsyncSession, test_user, te
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
 
     items = [contract_item(0, desc="Excavation"), contract_item(1, desc="Concrete")]
@@ -102,7 +103,7 @@ async def test_out_of_range_item_index_raises(db_session: AsyncSession, test_use
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
 
     items = [contract_item(0)]

@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.harness.executors.validate_claim import execute_validate_claim
+from app.harness.models import HarnessType
 from app.models.claim_parse_flag import FlagType
 from app.repos import harness_repo
 from tests.integration.legacy.conftest import list_flags_by_session
@@ -45,7 +46,7 @@ async def test_valid_claim_no_flags(db_session: AsyncSession, test_user, test_pr
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(db_session, session.id, "parsed_claim.json", _make_parsed_claim_json())
 
@@ -78,7 +79,7 @@ async def test_over_claim_flagged(db_session: AsyncSession, test_user, test_proj
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db_session, session.id, "parsed_claim.json", _make_parsed_claim_json(line_items=items)
@@ -132,7 +133,7 @@ async def test_project_over_budget_flagged(db_session: AsyncSession, test_user, 
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db_session, session.id, "parsed_claim.json", _make_parsed_claim_json(line_items=items, summary=summary)
@@ -184,7 +185,7 @@ async def test_duplicate_refs_flagged(db_session: AsyncSession, test_user, test_
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db_session, session.id, "parsed_claim.json", _make_parsed_claim_json(line_items=items, summary=summary)

@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.harness.models import HarnessType
 from app.harness.schemas import FlagSpec
 from app.models.claim_parse_flag import FlagSeverity, FlagType
 from app.models.harness_session import HarnessSessionStatus
@@ -17,7 +18,7 @@ async def test_create_session(db_session: AsyncSession, test_user, test_project,
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
         config={"file_path": "/tmp/test.pdf"},
     )
     assert session.id is not None
@@ -32,7 +33,7 @@ async def test_get_session(db_session: AsyncSession, test_user, test_project, te
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     fetched = await harness_repo.get_session(db_session, session.id)
     assert fetched is not None
@@ -46,7 +47,7 @@ async def test_try_claim_running(db_session: AsyncSession, test_user, test_proje
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     assert await harness_repo.try_claim_running(db_session, session.id) is True
     # Second claim should fail
@@ -60,7 +61,7 @@ async def test_update_phase(db_session: AsyncSession, test_user, test_project, t
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.try_claim_running(db_session, session.id)
     await harness_repo.update_phase(
@@ -82,7 +83,7 @@ async def test_write_and_read_workspace_file(db_session: AsyncSession, test_user
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(
         db=db_session, session_id=session.id, file_path="raw_extraction.json", content='{"pages": []}'
@@ -98,7 +99,7 @@ async def test_write_workspace_file_upsert(db_session: AsyncSession, test_user, 
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.write_workspace_file(db_session, session.id, "test.json", "v1")
     await harness_repo.write_workspace_file(db_session, session.id, "test.json", "v2")
@@ -113,7 +114,7 @@ async def test_create_and_list_flags(db_session: AsyncSession, test_user, test_p
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.create_flag(
         db_session,
@@ -143,7 +144,7 @@ async def test_set_status(db_session: AsyncSession, test_user, test_project, tes
         db=db_session,
         user_id=test_user.id,
         project_id=test_project.id,
-        harness_type="claim_parse",
+        harness_type=HarnessType.CLAIM_PARSE,
     )
     await harness_repo.set_status(db_session, session.id, HarnessSessionStatus.failed, error_message="Phase 1 failed")
     await db_session.refresh(session)
