@@ -1,6 +1,10 @@
 import functools
 import logging
-from collections.abc import Callable, Mapping
+import uuid
+from collections.abc import Mapping
+from typing import Protocol
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.jev_client import JevClient
 from app.clients.llm_client import LlmClient
@@ -9,12 +13,22 @@ from app.constants.enums import MatcherName
 from app.harness.engine import HarnessEngine
 from app.harness.matchers.jev import match_with_jev
 from app.harness.matchers.llm import match_with_llm
-from app.harness.models import Matcher
+from app.harness.models import HarnessDefinition, Matcher
 from app.harness.schemas import JevTuning
 
 logger = logging.getLogger(__name__)
 
-EngineBuilder = Callable[..., HarnessEngine]
+
+class EngineBuilder(Protocol):
+    def __call__(
+        self,
+        *,
+        definition: HarnessDefinition,
+        session_id: uuid.UUID,
+        user_id: uuid.UUID,
+        project_id: uuid.UUID,
+        db: AsyncSession,
+    ) -> HarnessEngine: ...
 
 
 def build_matchers(settings: Settings, *, llm: LlmClient) -> dict[MatcherName, Matcher]:

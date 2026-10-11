@@ -54,9 +54,7 @@ async def test_engine_runs_programmatic_phase(db_session: AsyncSession, test_use
         llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=TestModel()),
     )
 
-    events = []
-    async for event in engine.run():
-        events.append(event)
+    events = [event async for event in engine.run()]
 
     event_types = [e["type"] for e in events]
     assert "harness_start" in event_types
@@ -108,9 +106,7 @@ async def test_engine_sets_failed_on_error(db_session: AsyncSession, test_user, 
         llm=LlmClient(provider=LlmProvider.openai, model_name="m", api_key="k", model=TestModel()),
     )
 
-    events = []
-    async for event in engine.run():
-        events.append(event)
+    events = [event async for event in engine.run()]
 
     assert any(e["type"] == "harness_error" for e in events)
     await db_session.refresh(session)

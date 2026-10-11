@@ -423,9 +423,6 @@ async def test_second_claim_e2e(client: AsyncClient):
         assert "total_recommended" in wg, "WBS group missing total_recommended"
         assert "history_row" in wg or "child_rows" in wg, "WBS group missing row data"
 
-    var_groups = assessment_2.get("variation_groups", [])
-    ps_groups_resp = assessment_2.get("ps_groups", [])
-
     # ── 8. Approve assessment 2 items (QS adjustments for PR2) ─────────────
     # Contract work and PS items: accept at auto values (approve unapproved ones)
     for li in assessment_2["line_items"]:

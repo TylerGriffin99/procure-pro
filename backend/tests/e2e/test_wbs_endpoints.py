@@ -55,8 +55,7 @@ async def project_with_wbs(db_session: AsyncSession, user: User):
             WBSCodeCreate(code="FR", description="Frame", level="category", sort_order=10),
         ],
     )
-    project = await project_service.create_project(db_session, data, user)
-    return project
+    return await project_service.create_project(db_session, data, user)
 
 
 @pytest.mark.asyncio

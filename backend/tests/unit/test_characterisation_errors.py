@@ -70,6 +70,10 @@ def _raise_memory_error_in_interpreter(self, page) -> None:
     raise MemoryError
 
 
+def _raise_index_error_in_interpreter(self, page) -> None:
+    raise IndexError("list index out of range")
+
+
 def _raise_syntax_error_in_interpreter(self, page) -> None:
     raise PDFSyntaxError("bad content stream")
 
@@ -167,6 +171,12 @@ async def test_memory_error_inside_pdfminer_page_interpreter_returns_500(client,
     assert resp.status_code == 500
     assert resp.json() == {"detail": "Internal server error"}
     assert _unhandled_cause(caplog) is MemoryError
+
+
+async def test_wrapped_index_error_inside_page_interpreter_returns_400(client, monkeypatch):
+    monkeypatch.setattr(PDFPageInterpreter, "process_page", _raise_index_error_in_interpreter)
+    resp = await client.get("/upload-blank-page")
+    assert resp.status_code == 400
 
 
 async def test_pdfminer_syntax_error_inside_page_interpreter_returns_400(client, monkeypatch):

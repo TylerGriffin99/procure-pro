@@ -9,15 +9,7 @@ from app.schemas.retention import RetentionTier
 
 
 def calculate_retention(total_recommended: Decimal, tiers: Sequence[RetentionTier]) -> Decimal:
-    """Calculate tiered retention.
-
-    Args:
-        total_recommended: Total value of works recommended for payment
-        tiers: Retention tiers; an up_to_amount of None is the remainder tier
-
-    Returns:
-        Total retention amount (positive number)
-    """
+    """An ``up_to_amount`` of None is the remainder tier."""
     remaining = total_recommended
     total_retention = Decimal("0")
 

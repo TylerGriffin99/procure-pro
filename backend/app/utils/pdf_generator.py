@@ -1,5 +1,3 @@
-"""Generate payment recommendation PDF using WeasyPrint."""
-
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader

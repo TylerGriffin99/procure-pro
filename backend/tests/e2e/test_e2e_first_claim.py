@@ -10,6 +10,7 @@ Requires:
   - claim/Gilmours/claims/Gilmours Central_Progress Claim No. 1.pdf present
 """
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -60,13 +61,13 @@ async def test_deep_mode_e2e(client: AsyncClient):
     assert total_subcats >= 28
 
     # ── 2. Upload claim PDF in deep_mode ────────────────────────────────────
-    with open(CLAIM_1_PATH, "rb") as f:
-        upload_resp = await client.post(
-            f"/api/v1/projects/{project_id}/claims/upload",
-            params={"mode": "deep_mode"},
-            files={"file": ("Gilmours Central_Progress Claim No. 1.pdf", f, "application/pdf")},
-            headers=headers,
-        )
+    pdf_bytes = await asyncio.to_thread(CLAIM_1_PATH.read_bytes)
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/claims/upload",
+        params={"mode": "deep_mode"},
+        files={"file": ("Gilmours Central_Progress Claim No. 1.pdf", pdf_bytes, "application/pdf")},
+        headers=headers,
+    )
     assert upload_resp.status_code == 201, upload_resp.text
     harness_session_id = upload_resp.json()["harness_session_id"]
 

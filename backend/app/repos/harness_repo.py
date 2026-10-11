@@ -114,9 +114,6 @@ async def set_claim_id(db: AsyncSession, session_id: uuid.UUID, claim_id: uuid.U
     await db.flush()
 
 
-# -- Workspace files --
-
-
 async def write_workspace_file(
     db: AsyncSession, session_id: uuid.UUID, file_path: str, content: str, *, internal: bool = False
 ) -> None:
@@ -149,9 +146,6 @@ async def list_workspace_files(
         stmt = stmt.where(HarnessWorkspaceFile.internal == False)  # noqa: E712
     result = await db.execute(stmt)
     return list(result.scalars().all())
-
-
-# -- Flags --
 
 
 async def create_flag(db: AsyncSession, session_id: uuid.UUID, spec: FlagSpec) -> ClaimParseFlag:

@@ -1,5 +1,3 @@
-"""Claim parse flags: list and resolve/unresolve."""
-
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession

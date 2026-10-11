@@ -1,5 +1,3 @@
-"""Harness SSE streaming + lifecycle endpoints."""
-
 import uuid
 
 from fastapi import APIRouter

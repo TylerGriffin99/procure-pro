@@ -21,7 +21,7 @@ from app.constants.values import (
     PDF_MEDIA_TYPE,
     XLSX_MEDIA_TYPE,
 )
-from app.exceptions import BadRequestError, ConflictError, NotFoundError, reloaded, require
+from app.exceptions import BadRequestError, ConflictError, InternalError, NotFoundError, reloaded, require
 from app.models.assessment import Assessment
 from app.models.assessment_line_item import AssessmentLineItem
 from app.models.assessment_provisional_sum import AssessmentProvisionalSum
@@ -94,10 +94,8 @@ async def draft_assessment(
 
 
 async def create_assessment(db: AsyncSession, project_id: uuid.UUID, data: AssessmentCreate, user: User) -> Assessment:
-    # Load claim with line items
     claim = require(await claim_repo.get_by_id(db, data.claim_id), "Claim")
 
-    # Get previously certified amount from latest finalised assessment
     prev_assessment = await assessment_repo.get_latest_finalised(db, project_id)
     previously_certified = prev_assessment.total_payment_to_date if prev_assessment else Decimal("0")
 
@@ -571,9 +569,10 @@ async def revert_to_draft(db: AsyncSession, project_id: uuid.UUID, assessment_id
     if assessment.status != AssessmentStatus.finalised:
         raise BadRequestError("Assessment is not finalised")
 
-    # Block revert if a subsequent claim exists
     claims = await claim_repo.get_by_project(db, project_id)
-    current_claim = reloaded(next((c for c in claims if c.id == assessment.claim_id), None), "Associated claim")
+    current_claim = next((c for c in claims if c.id == assessment.claim_id), None)
+    if current_claim is None:
+        raise InternalError("Associated claim missing")
     if any(c.claim_number > current_claim.claim_number for c in claims):
         raise ConflictError("Cannot revert: a subsequent claim exists for this project")
 

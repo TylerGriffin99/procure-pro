@@ -48,10 +48,8 @@ async def create_project(
     for tier in data.retention_tiers:
         await retention_tier_repo.create(db, project_id=project.id, **tier.model_dump(), created_by=user.id)
 
-    # Two-pass WBS code creation
     code_to_wbs: dict[str, WBSCode] = {}
 
-    # Pass 1: categories
     for wbs in data.wbs_codes:
         if wbs.level == WBSLevel.category:
             wbs_obj = await wbs_code_repo.create(
@@ -66,7 +64,6 @@ async def create_project(
             )
             code_to_wbs[wbs.code] = wbs_obj
 
-    # Pass 2: subcategories
     for wbs in data.wbs_codes:
         if wbs.level == WBSLevel.subcategory:
             parent = code_to_wbs.get(wbs.parent_code) if wbs.parent_code else None
@@ -84,7 +81,6 @@ async def create_project(
 
     await db.commit()
 
-    # Reload with eager loading
     return reloaded(await project_repo.get_by_id(db, project.id), "Project")
 
 

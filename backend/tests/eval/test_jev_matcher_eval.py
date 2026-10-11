@@ -31,6 +31,7 @@ the Gilmours claim PDFs. Skips cleanly when the key or PDFs are absent.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import os
@@ -161,13 +162,13 @@ async def _upload_and_freeze(client: AsyncClient, project_id: str, pdf_path: Pat
     Asserts the harness actually completed: a mid-stream harness error must fail the
     eval loudly, not leave it scoring against a stale or empty parsed_claim.json.
     """
-    with open(pdf_path, "rb") as f:
-        resp = await client.post(
-            f"/api/v1/projects/{project_id}/claims/upload",
-            params={"mode": "deep_mode"},
-            files={"file": (pdf_path.name, f, "application/pdf")},
-            headers=headers,
-        )
+    pdf_bytes = await asyncio.to_thread(pdf_path.read_bytes)
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/claims/upload",
+        params={"mode": "deep_mode"},
+        files={"file": (pdf_path.name, pdf_bytes, "application/pdf")},
+        headers=headers,
+    )
     assert resp.status_code == 201, resp.text
     session_id = resp.json()["harness_session_id"]
     event_types: list[str] = []

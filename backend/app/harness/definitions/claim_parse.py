@@ -16,7 +16,6 @@ claim_parse_definition = HarnessDefinition(
     display_name="Claim Parse & Assessment",
     description="Parse contractor claim PDF, validate, categorise, and create assessment",
     phases=[
-        # Phase 0: Raw Extraction
         PhaseDefinition(
             name="Raw Extraction",
             description="Extract raw text and tables from PDF",
@@ -24,7 +23,6 @@ claim_parse_definition = HarnessDefinition(
             workspace_output=WorkspaceFile.raw_extraction,
             executor=execute_raw_extraction,
         ),
-        # Phase 1: Format Detection
         PhaseDefinition(
             name="Detect Format",
             description="Identify document format from text markers",
@@ -32,7 +30,6 @@ claim_parse_definition = HarnessDefinition(
             workspace_output=WorkspaceFile.format_detection,
             executor=execute_detect_format,
         ),
-        # Phase 2: Extract Line Items (format-routed)
         PhaseDefinition(
             name="Extract Line Items",
             description="Extract structured line items — deterministic for WBPRO, LLM for others",
@@ -40,7 +37,6 @@ claim_parse_definition = HarnessDefinition(
             workspace_output=WorkspaceFile.parsed_claim,
             executor=execute_extract_line_items,
         ),
-        # Phase 3: Validate Contractor Math
         PhaseDefinition(
             name="Validate Claim",
             description="Run deterministic validation checks on extracted data",
@@ -48,7 +44,6 @@ claim_parse_definition = HarnessDefinition(
             workspace_output=WorkspaceFile.validation_summary,
             executor=execute_validate_claim,
         ),
-        # Phase 4: WBS Categorisation (with WBS context + format playbook)
         PhaseDefinition(
             name="WBS Categorisation",
             description="Match line items to WBS subcategories (Jev decision model, LLM fallback)",
@@ -60,7 +55,6 @@ claim_parse_definition = HarnessDefinition(
             context_loaders=[load_wbs_context, load_format_playbook],
             output_schema=list[WbsMatch],
         ),
-        # Phase 5: Variation & PS Matching
         PhaseDefinition(
             name="Variation Matching",
             description=(
@@ -74,7 +68,6 @@ claim_parse_definition = HarnessDefinition(
             context_loaders=[load_variations_context],
             output_schema=list[VpsMatch],
         ),
-        # Phase 6: Create Domain Records
         PhaseDefinition(
             name="Create Records",
             description="Create Claim, Assessment, and all line item records",

@@ -22,7 +22,16 @@ from app.schemas.guardrails import Violation
 logger = logging.getLogger(__name__)
 
 # Deterministic "this is not a readable PDF" faults; anything else is a server fault (500).
-PARSER_FAULTS: Final = (PSException, MalformedPDFException, PdfminerException, ValueError)
+PARSER_FAULTS: Final = (
+    PSException,
+    MalformedPDFException,
+    PdfminerException,
+    ValueError,
+    TypeError,
+    KeyError,
+    IndexError,
+    AttributeError,
+)
 
 # Phrases that attempt to override or hijack an LLM's instructions. Kept specific
 # enough that ordinary construction-claim prose does not trip them.

@@ -1,5 +1,3 @@
-"""Claim parse flags API."""
-
 import uuid
 
 from fastapi import APIRouter

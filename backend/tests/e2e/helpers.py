@@ -1,5 +1,6 @@
 """Shared helpers for e2e tests."""
 
+import asyncio
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -35,13 +36,13 @@ def _assert_decimal_eq(actual: str, expected: str, label: str):
 
 async def upload_claim_deep_mode(client: AsyncClient, project_id: str, pdf_path: Path, headers: dict) -> str:
     """Upload a claim via deep_mode and stream to completion. Returns claim_id."""
-    with open(pdf_path, "rb") as f:
-        upload_resp = await client.post(
-            f"/api/v1/projects/{project_id}/claims/upload",
-            params={"mode": "deep_mode"},
-            files={"file": (pdf_path.name, f, "application/pdf")},
-            headers=headers,
-        )
+    pdf_bytes = await asyncio.to_thread(pdf_path.read_bytes)
+    upload_resp = await client.post(
+        f"/api/v1/projects/{project_id}/claims/upload",
+        params={"mode": "deep_mode"},
+        files={"file": (pdf_path.name, pdf_bytes, "application/pdf")},
+        headers=headers,
+    )
     assert upload_resp.status_code == 201, upload_resp.text
     harness_session_id = upload_resp.json()["harness_session_id"]
 

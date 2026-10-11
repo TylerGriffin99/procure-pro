@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     open_router_api_key: str = ""
     deepseek_api_key: str = ""
 
-    # Matcher selection + Jev (via OpenRouter decisions API)
     matcher_default: MatcherName = MatcherName.llm
     jev_model: str = "typesafe/jev-1.13"
     jev_decisions_url: str = "https://openrouter.ai/api/alpha/decisions"

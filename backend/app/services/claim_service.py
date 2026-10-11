@@ -121,7 +121,6 @@ async def update_claim(
 
     updates = data.model_dump(exclude_unset=True)
 
-    # If claim_received changed, auto-fill derived dates unless explicitly provided
     if updates.get("claim_received"):
         auto = auto_fill_dates(updates["claim_received"])
         for key, val in auto.items():
@@ -143,13 +142,10 @@ async def delete_claim(db: AsyncSession, project_id: uuid.UUID, claim_id: uuid.U
     claim_session = await harness_repo.get_session_by_claim(db, claim_id)
     document_id = claim_session.document_id if claim_session else None
 
-    # Collect WBS code IDs referenced by this claim's line items
     claim_wbs_ids = {cli.suggested_wbs_code_id for cli in claim.line_items if cli.suggested_wbs_code_id}
 
-    # Delete harness sessions linked to this claim (cascades to workspace_files & flags)
     await harness_repo.delete_sessions_by_claim(db, claim_id)
 
-    # Delete assessments linked to this claim
     await assessment_repo.delete_by_claim(db, claim_id)
 
     await claim_repo.delete(db, claim)

@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -27,12 +28,12 @@ async def test_upload_and_parse_claim(client: AsyncClient):
     project_id = project_resp.json()["id"]
 
     # Upload claim PDF
-    with open(CLAIM_1_PATH, "rb") as f:  # noqa: ASYNC230  # Task 13 replaces with asyncio.to_thread
-        resp = await client.post(
-            f"/api/v1/projects/{project_id}/claims/upload",
-            files={"file": ("claim1.pdf", f, "application/pdf")},
-            headers=headers,
-        )
+    pdf_bytes = await asyncio.to_thread(CLAIM_1_PATH.read_bytes)
+    resp = await client.post(
+        f"/api/v1/projects/{project_id}/claims/upload",
+        files={"file": ("claim1.pdf", pdf_bytes, "application/pdf")},
+        headers=headers,
+    )
     assert resp.status_code == 201
     data = resp.json()
     assert "harness_session_id" in data

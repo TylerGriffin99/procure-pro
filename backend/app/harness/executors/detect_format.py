@@ -13,7 +13,6 @@ from app.harness.schemas import FormatDetection, RawExtraction
 
 logger = logging.getLogger(__name__)
 
-# Markers and their labels for each known format.
 # Checked against ALL pages (not just the first) because section headers
 # like VARIATION WORKS / PROVISIONAL SUMS often appear on page 2+.
 _WBPRO_MARKERS = [

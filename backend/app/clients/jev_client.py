@@ -10,18 +10,15 @@ import functools
 import json
 import logging
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx
 
+from app.config import Settings
 from app.exceptions import UnprocessableError
-from app.harness.schemas import JevDecisionResponse
+from app.harness.schemas import JevDecisionResponse, ParsedClaimItem
 from app.schemas.common import RetryPolicy
 from app.utils.retry import retry_async
-
-if TYPE_CHECKING:
-    from app.config import Settings
-    from app.harness.schemas import ParsedClaimItem
 
 logger = logging.getLogger(__name__)
 

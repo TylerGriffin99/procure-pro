@@ -121,6 +121,35 @@ async def test_stream_events_wraps_engine_level_error(db_session, stream_deps, m
     assert stored.error_message == "RuntimeError"
 
 
+def _builder_raises(**_):
+    raise RuntimeError("builder boom")
+
+
+async def test_stream_events_wraps_engine_builder_error(db_session, stream_deps):
+    user_id, project_id, session_id = await _pending_session(db_session)
+
+    frames = [
+        frame
+        async for frame in harness_service.stream_events(
+            definition=_failing_definition(),
+            session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            **{**stream_deps, "build": _builder_raises},
+        )
+    ]
+
+    assert frames[-1] == "data: [DONE]\n\n"
+    [event] = [json.loads(f.removeprefix("data: ")) for f in frames[:-1]]
+    assert event == {"type": "harness_error", "session_id": str(session_id), "error": "RuntimeError"}
+
+    db_session.expire_all()
+    stored = await harness_repo.get_session(db_session, session_id)
+    assert stored is not None
+    assert stored.status == HarnessSessionStatus.failed
+    assert stored.error_message == "RuntimeError"
+
+
 # --- a cancelled stream does not leave the session running (hunter M6) ---
 
 

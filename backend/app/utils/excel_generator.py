@@ -1,5 +1,3 @@
-"""Generate payment recommendation Excel workbook using openpyxl."""
-
 import io
 from collections.abc import Sequence
 from decimal import Decimal

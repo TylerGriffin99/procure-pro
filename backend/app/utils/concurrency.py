@@ -1,5 +1,3 @@
-"""Bounded fan-out for async work."""
-
 from __future__ import annotations
 
 import asyncio

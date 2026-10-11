@@ -75,12 +75,16 @@ def stream_client():
     async def fake_get_db():
         yield db
 
-    app.dependency_overrides[get_db] = fake_get_db
-    app.dependency_overrides[get_current_user] = lambda: USER
-    app.dependency_overrides[get_session_factory] = lambda: lambda: db
-    app.dependency_overrides[get_engine_builder] = lambda: fake_builder
+    overrides = {
+        get_db: fake_get_db,
+        get_current_user: lambda: USER,
+        get_session_factory: lambda: lambda: db,
+        get_engine_builder: lambda: fake_builder,
+    }
+    app.dependency_overrides.update(overrides)
     yield TestClient(app), session, built, db
-    app.dependency_overrides.clear()
+    for key in overrides:
+        app.dependency_overrides.pop(key, None)
 
 
 def test_stream_endpoint_runs_the_injected_engine_builder(stream_client):

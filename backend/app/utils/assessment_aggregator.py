@@ -1,7 +1,3 @@
-"""
-Pure aggregation utility for assessment rows.
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -24,14 +20,10 @@ from app.schemas.assessment_aggregate import (
 ZERO = Decimal("0.00")
 
 
-# ── Aggregation functions ────────────────────────────────────────────────
-
-
 def aggregate_line_items(rows: Sequence[AssessmentLineItem], wbs_codes: Sequence[WBSCode]) -> list[AggregatedWBSGroup]:
     """Group line items by wbs_code_id, compute totals, source contract_sum from WBS master."""
     wbs_map: dict[uuid.UUID, WBSCode] = {w.id: w for w in wbs_codes}
 
-    # Group rows by wbs_code_id, preserving insertion order
     # Use a sentinel for uncategorized items (wbs_code_id=None)
     _UNCATEGORIZED = uuid.UUID(int=0)
     groups: dict[uuid.UUID, dict] = {}

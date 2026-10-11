@@ -63,9 +63,6 @@ class HarnessDefinition:
     phases: list[PhaseDefinition]
 
 
-# --- SSE event models ---
-
-
 class HarnessErrorEvent(BaseModel):
     type: Literal["harness_error"] = "harness_error"
     session_id: uuid.UUID
