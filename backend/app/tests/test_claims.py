@@ -33,7 +33,7 @@ async def test_upload_and_parse_claim(client: AsyncClient):
     project_id = project_resp.json()["id"]
 
     # Upload claim PDF
-    with open(CLAIM_1_PATH, "rb") as f:  # noqa: ASYNC230
+    with open(CLAIM_1_PATH, "rb") as f:  # noqa: ASYNC230  # Task 13 replaces with asyncio.to_thread
         resp = await client.post(
             f"/api/v1/projects/{project_id}/claims/upload",
             files={"file": ("claim1.pdf", f, "application/pdf")},

@@ -67,7 +67,7 @@ class MemoJevClient(JevClient):
         if qid not in self.cache:
             try:
                 self.cache[qid] = (True, await super().post_decisions(state=state, questions=questions))
-            except Exception as e:
+            except Exception as e:  # cached and re-raised immediately below
                 self.cache[qid] = (False, e)
         ok, value = self.cache[qid]
         if not ok:
