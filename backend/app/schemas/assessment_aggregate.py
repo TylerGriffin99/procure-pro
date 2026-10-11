@@ -74,3 +74,12 @@ class AssessmentAggregate(BaseModel):
     wbs_groups: list[AggregatedWBSGroup]
     variation_groups: list[AggregatedVariationGroup]
     ps_groups: list[AggregatedPSGroup]
+
+
+class AggregatedAssessment(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    aggregate: AssessmentAggregate
+    # The master rows the groups were built from, so callers that update masters need not re-fetch them.
+    variations: list[Any]  # app.models.variation.Variation (ORM)
+    provisional_sums: list[Any]  # app.models.provisional_sum.ProvisionalSum (ORM)

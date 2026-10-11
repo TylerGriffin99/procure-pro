@@ -4,8 +4,7 @@ from datetime import date, timedelta
 from app.constants.values import DMY_DATE_PARTS, TWO_DIGIT_YEAR_CEILING, TWO_DIGIT_YEAR_CENTURY, WORKING_DAYS_OFFSET
 
 
-def parse_ddmmyy(raw: str) -> date | None:
-    """Returns None for anything that is not a real DD/MM/YY(YY) date."""
+def parse_ddmmyy(raw: str | None) -> date | None:
     if not raw:
         return None
     parts = raw.split("/")
@@ -21,7 +20,7 @@ def parse_ddmmyy(raw: str) -> date | None:
 
 
 def add_working_days(start: date, days: int) -> date:
-    """Working days are Mon-Fri; public holidays are not excluded."""
+    # Mon-Fri only; public holidays are not excluded.
     current = start
     added = 0
     while added < days:

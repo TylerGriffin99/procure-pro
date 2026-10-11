@@ -54,7 +54,6 @@ _SUMMARY_MONEY_FIELDS: Final = (
 def money_format_warnings(
     line_items: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]
 ) -> list[MoneyFormatWarning]:
-    """D6: one warning per persisted money cell parse_money could not read (it persists as 0)."""
     cells = [(item.get("ref_code"), field, item.get(field)) for item in line_items for field in _ITEM_MONEY_FIELDS]
     cells += [(None, field, summary.get(field)) for field in _SUMMARY_MONEY_FIELDS]
     return [
@@ -432,7 +431,7 @@ async def execute_create_records(
     prev_ps_recommended: dict[uuid.UUID, Decimal] = {}
     prev_ps_contractor_claim: dict[uuid.UUID, Decimal] = {}
     if latest_assessment:
-        prev = await aggregate_assessment(db, project_id, latest_assessment)
+        prev = (await aggregate_assessment(db, project_id, latest_assessment)).aggregate
         for g in prev.wbs_groups:
             prev_recommended_by_wbs[g.wbs_code_id] = g.total_recommended
             prev_contractor_claim_by_wbs[g.wbs_code_id] = g.contractor_claim_to_date

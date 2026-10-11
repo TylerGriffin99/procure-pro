@@ -6,10 +6,14 @@ import uuid
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.constants.enums import FlagSeverity, FlagType
 from app.harness.executors.create_records import execute_create_records
+from app.models.assessment import Assessment
+from app.models.claim_line_item import ClaimLineItem
 from app.models.variation import Variation, VariationStatus
 from app.repos import harness_repo
 from tests.integration.legacy.conftest import list_flags_by_session
@@ -80,11 +84,6 @@ async def test_zero_activity_variation_gets_history_row(
     await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
 
     # The assessment should have variation items — a Phase 1 history row + a Phase 2 current row
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.models.assessment import Assessment
-
     # Eager-load: the identity map holds the executor's Assessment only weakly, so once GC collects it
     # a lazy collection load here would raise MissingGreenlet.
     stmt = (
@@ -147,11 +146,6 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
 
     await execute_create_records(db_session, session.id, test_user.id, test_project.id, {})
 
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.models.assessment import Assessment
-
     stmt = (
         select(Assessment)
         .where(Assessment.project_id == test_project.id)
@@ -170,7 +164,6 @@ async def test_prior_variation_carried_forward_when_not_in_current_claim(
 async def test_malformed_amount_persists_zero_and_records_a_format_warning_flag(
     db_session: AsyncSession, test_user, test_project, test_document
 ):
-    """D6: a malformed money cell becomes 0 on the claim and a format_warning flag linked to it."""
     session = await harness_repo.create_session(
         document_id=test_document.id,
         db=db_session,
@@ -193,10 +186,6 @@ async def test_malformed_amount_persists_zero_and_records_a_format_warning_flag(
     assert all(str(f.claim_id) == result["claim_id"] for f in flags)
     assert flags[0].description.startswith("balance:")
     assert flags[1].description.startswith("contract_value:")
-
-    from sqlalchemy import select
-
-    from app.models.claim_line_item import ClaimLineItem
 
     stmt = select(ClaimLineItem).where(ClaimLineItem.claim_id == uuid.UUID(result["claim_id"]))
     line = (await db_session.execute(stmt)).scalars().one()

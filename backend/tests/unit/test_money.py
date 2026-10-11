@@ -54,3 +54,10 @@ def test_parse_money_keeps_full_precision():
 )
 def test_format_money_rounds_to_cents(value, expected):
     assert format_money(value) == expected
+
+
+@pytest.mark.parametrize("raw", [Decimal("NaN"), Decimal("Infinity"), float("nan")])
+def test_parse_money_non_finite_numbers_are_zero_with_warning(raw):
+    parsed = parse_money(raw)
+    assert parsed.value == Decimal("0")
+    assert parsed.warning is not None

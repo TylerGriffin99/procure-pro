@@ -46,3 +46,7 @@ def test_auto_fill_dates_chains_two_offsets_then_the_20th():
 
 def test_auto_fill_dates_without_a_received_date_is_empty():
     assert auto_fill_dates(None) == {}
+
+
+def test_parse_ddmmyy_accepts_none():
+    assert parse_ddmmyy(None) is None

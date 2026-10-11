@@ -201,7 +201,7 @@ async def get_aggregated_assessment(
     assessment = await assessment_repo.get_by_id(db, assessment_id, project_id=project_id)
     if not assessment:
         raise NotFoundError("Assessment not found")
-    return await aggregate_assessment(db, project_id, assessment)
+    return (await aggregate_assessment(db, project_id, assessment)).aggregate
 
 
 async def get_prior_interims(
@@ -426,7 +426,7 @@ async def generate_assessment_export(
         raise NotFoundError("Project not found")
     claim = await claim_repo.get_by_id(db, assessment.claim_id)
 
-    aggregate = await aggregate_assessment(db, project_id, assessment)
+    aggregate = (await aggregate_assessment(db, project_id, assessment)).aggregate
     wbs_groups, var_groups, ps_groups = aggregate.wbs_groups, aggregate.variation_groups, aggregate.ps_groups
 
     # Build contract_works list for PDF
@@ -787,13 +787,12 @@ async def finalise_assessment(
     if not assessment:
         raise NotFoundError("Assessment not found")
 
-    aggregate = await aggregate_assessment(db, project_id, assessment)
-    var_groups, ps_groups = aggregate.variation_groups, aggregate.ps_groups
-    totals = compute_assessment_totals(aggregate.wbs_groups, var_groups, ps_groups)
+    aggregated = await aggregate_assessment(db, project_id, assessment)
+    var_groups, ps_groups = aggregated.aggregate.variation_groups, aggregated.aggregate.ps_groups
+    totals = compute_assessment_totals(aggregated.aggregate.wbs_groups, var_groups, ps_groups)
 
-    # Sync variation master records from aggregated groups (not individual items).
-    # The re-fetch returns the identity-mapped rows aggregate_assessment already loaded.
-    var_map = {v.id: v for v in await variation_repo.get_by_project(db, project_id)}
+    # Sync variation master records from aggregated groups (not individual items)
+    var_map = {v.id: v for v in aggregated.variations}
     for g in var_groups:
         master = var_map.get(g.variation_id)
         if master:
@@ -803,7 +802,7 @@ async def finalise_assessment(
             master.updated_by = user.id
 
     # Sync provisional sum master records from aggregated groups
-    ps_map = {p.id: p for p in await provisional_sum_repo.get_by_project(db, project_id)}
+    ps_map = {p.id: p for p in aggregated.provisional_sums}
     for g in ps_groups:
         master = ps_map.get(g.provisional_sum_id)
         if master:

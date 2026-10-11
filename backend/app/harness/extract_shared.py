@@ -22,7 +22,7 @@ def extract_metadata(text: str) -> ClaimMetadata:
 
 
 def summary_totals(items: Sequence[Mapping[str, Any]]) -> ClaimSummary:
-    """Items must already carry normalised decimal strings in contract_value and ptd."""
+    # Items must already carry normalised decimal strings in contract_value and ptd.
     contract_total = Decimal("0")
     revised_total = Decimal("0")
     claimed_total = Decimal("0")
