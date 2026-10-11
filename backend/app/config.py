@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
 @functools.cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings()  # pyright: ignore[reportCallIssue]  # required fields come from env/.env
 
 
 # Import-time alias (database engine, oauth2 tokenUrl, router prefix); the same instance get_settings() provides.

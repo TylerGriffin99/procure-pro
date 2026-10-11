@@ -14,4 +14,7 @@ def generate_payment_recommendation_pdf(rec: PaymentRecommendation) -> bytes:
     env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)))
     template = env.get_template("payment_recommendation.html")
     html_content = template.render(**rec.model_dump())
-    return HTML(string=html_content).write_pdf()
+    pdf_bytes = HTML(string=html_content).write_pdf()
+    if pdf_bytes is None:
+        raise RuntimeError("weasyprint returned no PDF bytes for payment recommendation")
+    return pdf_bytes

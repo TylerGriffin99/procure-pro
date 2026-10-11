@@ -43,6 +43,8 @@ def write_table(ws: Worksheet, headers: list[str], rows: Sequence[Sequence[Cell]
 
 def write_summary_sheet(wb: Workbook, rec: PaymentRecommendation) -> None:
     ws = wb.active
+    if not isinstance(ws, Worksheet):
+        raise TypeError("new Workbook has no active worksheet")
     ws.title = "Summary"
 
     title_font = Font(bold=True, size=14, color="1A2744")
