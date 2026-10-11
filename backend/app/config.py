@@ -1,3 +1,5 @@
+import functools
+
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
@@ -49,7 +51,15 @@ class Settings(BaseSettings):
     def api_prefix(self) -> str:
         return f"/api/v{self.api_version}"
 
+    cors_origins: list[str] = ["http://localhost:5173"]
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
-settings = Settings()
+@functools.cache
+def get_settings() -> Settings:
+    return Settings()
+
+
+# Import-time alias (database engine, oauth2 tokenUrl, router prefix); the same instance get_settings() provides.
+settings = get_settings()

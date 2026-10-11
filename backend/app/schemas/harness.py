@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Any
 
 from pydantic import BaseModel
 
 from app.constants.enums import HarnessSessionStatus, PhaseStatus
 from app.harness.models import HarnessDefinition, HarnessType
-
-if TYPE_CHECKING:
-    from app.models.harness_session import HarnessSession
 
 
 class HarnessPhaseInfo(BaseModel):
@@ -55,35 +52,20 @@ class HarnessSessionResponse(BaseModel):
     harness_type: HarnessType
     status: HarnessSessionStatus
     current_phase: int
-    phases: list[HarnessPhaseInfo]
+    phases: list[HarnessPhaseInfo] = []
     claim_id: uuid.UUID | None = None
     error_message: str | None = None
     created_at: datetime
 
     @classmethod
-    def from_session(cls, session: HarnessSession, definition: HarnessDefinition | None) -> HarnessSessionResponse:
-        phases = (
-            HarnessPhaseInfo.from_definition(
-                definition,
-                current_phase=session.current_phase,
-                phase_results=session.phase_results,
-                status=session.status,
-            )
-            if definition
-            else []
+    def from_session(cls, session: Any, definition: HarnessDefinition | None) -> HarnessSessionResponse:
+        dto = cls.model_validate(session, from_attributes=True)
+        if definition is None:
+            return dto
+        phases = HarnessPhaseInfo.from_definition(
+            definition, current_phase=dto.current_phase, phase_results=session.phase_results, status=dto.status
         )
-        return cls(
-            id=session.id,
-            user_id=session.user_id,
-            project_id=session.project_id,
-            harness_type=session.harness_type,
-            status=session.status,
-            current_phase=session.current_phase,
-            phases=phases,
-            claim_id=session.claim_id,
-            error_message=session.error_message,
-            created_at=session.created_at,
-        )
+        return dto.model_copy(update={"phases": phases})
 
 
 class HarnessCancelResponse(BaseModel):

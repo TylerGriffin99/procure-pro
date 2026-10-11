@@ -17,10 +17,12 @@ from app.repos import (
     variation_repo,
     wbs_code_repo,
 )
-from app.schemas.project import ProjectCreate, ProjectUpdate, WBSCodeCreate, WBSCodeUpdate
+from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate, WBSCodeCreate, WBSCodeUpdate
 
 
-async def create_project(db: AsyncSession, data: ProjectCreate, user: User, project_id: uuid.UUID | None = None):
+async def create_project(
+    db: AsyncSession, data: ProjectCreate, user: User, project_id: uuid.UUID | None = None
+) -> Project:
     # project_id lets seeds pin a deterministic id; otherwise the model default
     # (uuid4) assigns a random one.
     id_kwargs = {"id": project_id} if project_id is not None else {}
@@ -83,23 +85,18 @@ async def create_project(db: AsyncSession, data: ProjectCreate, user: User, proj
     await db.commit()
 
     # Reload with eager loading
-    return await project_repo.get_by_id(db, project.id)
+    return reloaded(await project_repo.get_by_id(db, project.id), "Project")
 
 
-async def list_projects(db: AsyncSession):
+async def list_projects(db: AsyncSession) -> list[Project]:
     return await project_repo.get_all(db)
 
 
-async def get_project(db: AsyncSession, project_id: uuid.UUID):
+async def get_project(db: AsyncSession, project_id: uuid.UUID) -> ProjectResponse:
     project = require(await project_repo.get_by_id(db, project_id), "Project")
-
-    # Populate in_use flag for each WBS code (single batch query)
     all_wbs = await wbs_code_repo.get_by_project(db, project_id)
     in_use_ids = await wbs_code_repo.get_in_use_ids(db, [wbs.id for wbs in all_wbs])
-    for wbs in all_wbs:
-        wbs.in_use = wbs.id in in_use_ids
-
-    return project
+    return ProjectResponse.from_project(project, in_use_ids)
 
 
 async def update_project(db: AsyncSession, project_id: uuid.UUID, data: ProjectUpdate, user: User) -> Project:

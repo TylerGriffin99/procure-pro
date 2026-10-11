@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from testcontainers.postgres import PostgresContainer
 
 import app.database as database_module
-import app.services.harness_service as harness_module
 from app.database import Base, get_db
 from app.main import app
 from app.models.claim_parse_flag import ClaimParseFlag  # noqa: F401
@@ -70,18 +69,14 @@ async def db_session(test_db_url: str) -> AsyncGenerator[AsyncSession, None]:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
-    # Patch async_session in both database module AND harness service
-    # (the service imports async_session at module load time)
+    # get_session_factory() reads database.async_session at call time, so the stream's engine session uses it too.
     orig_db = database_module.async_session
-    orig_harness = harness_module.async_session
     database_module.async_session = async_session_test
-    harness_module.async_session = async_session_test
 
     async with async_session_test() as session:
         yield session
 
     database_module.async_session = orig_db
-    harness_module.async_session = orig_harness
     await engine_test.dispose()
 
 

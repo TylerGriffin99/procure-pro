@@ -103,7 +103,7 @@ async def list_claims(db: AsyncSession, project_id: uuid.UUID) -> list[ClaimResp
         ClaimResponse.from_claim(
             c,
             assessment_id=latest[c.id].id if c.id in latest else None,
-            assessment_status=latest[c.id].status.value if c.id in latest else None,
+            assessment_status=latest[c.id].status if c.id in latest else None,
         )
         for c in claims
     ]

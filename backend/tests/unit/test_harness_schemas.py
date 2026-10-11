@@ -124,3 +124,9 @@ def test_item_decision_without_error_is_not_failed():
 def test_jev_answer_requires_choice_and_unit_confidence(answer):
     with pytest.raises(ValidationError):
         JevAnswer.model_validate(answer)
+
+
+@pytest.mark.parametrize("bad", [{"confidence": 1.5}, {"confidence": -0.1}, {"item_index": -1}])
+def test_item_decision_range_checks_confidence_and_index(bad):
+    with pytest.raises(ValidationError):
+        ItemDecision(**({"item_index": 0} | bad))

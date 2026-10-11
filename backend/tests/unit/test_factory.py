@@ -11,7 +11,7 @@ from app.config import Settings
 from app.constants import LlmProvider, MatcherName
 from app.harness.definitions import HARNESS_DEFINITIONS
 from app.harness.definitions.claim_parse import claim_parse_definition
-from app.harness.factory import build_engine, build_matchers
+from app.harness.factory import build_matchers, engine_builder
 from app.harness.matchers.jev import match_with_jev
 from app.harness.matchers.llm import match_with_llm
 from app.harness.models import HarnessType
@@ -50,9 +50,10 @@ def test_unset_jev_key_runs_jev_phases_on_the_llm_and_logs_once(caplog):
     assert len(warnings) == 1
 
 
-def test_build_engine_wires_default_matcher_and_shared_llm():
-    engine = build_engine(
-        settings=settings(open_router_api_key="or-key", matcher_default="jev"),
+def test_engine_builder_wires_default_matcher_and_shared_llm():
+    configured = settings(open_router_api_key="or-key", matcher_default="jev")
+    build = engine_builder(settings=configured, llm=LLM, matchers=build_matchers(configured, llm=LLM))
+    engine = build(
         definition=claim_parse_definition,
         session_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
@@ -60,6 +61,7 @@ def test_build_engine_wires_default_matcher_and_shared_llm():
         db=None,
     )
     assert engine.default_matcher is MatcherName.jev
+    assert engine.llm is LLM
     assert engine.matchers[MatcherName.jev].keywords["llm"] is engine.llm
     assert engine.matchers[MatcherName.llm].keywords["llm"] is engine.llm
 

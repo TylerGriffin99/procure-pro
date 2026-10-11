@@ -7,15 +7,13 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable
 
 import anyio
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.config import settings
 from app.constants.enums import HarnessSessionStatus
-from app.database import async_session
 from app.exceptions import BadRequestError, ConflictError, require
 from app.harness.definitions import HARNESS_DEFINITIONS
 from app.harness.engine import HarnessEngine, describe_error, mark_session_failed
-from app.harness.factory import build_engine
+from app.harness.factory import EngineBuilder
 from app.harness.models import HarnessDefinition, HarnessErrorEvent, HarnessEvent, HarnessType
 from app.models.harness_session import HarnessSession
 from app.models.user import User
@@ -87,19 +85,20 @@ async def record_stream_failure(step: Awaitable[None], session_id: uuid.UUID) ->
 
 
 async def stream_events(
-    *, definition: HarnessDefinition, session_id: uuid.UUID, user_id: uuid.UUID, project_id: uuid.UUID
+    *,
+    definition: HarnessDefinition,
+    session_id: uuid.UUID,
+    user_id: uuid.UUID,
+    project_id: uuid.UUID,
+    build: EngineBuilder,
+    sessions: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[str, None]:
     """Run the engine on a DB session that outlives the HTTP request and yield SSE frames."""
-    async with async_session() as engine_db:
+    async with sessions() as engine_db:
         engine: HarnessEngine | None = None
         try:
-            engine = build_engine(
-                settings=settings,
-                definition=definition,
-                session_id=session_id,
-                user_id=user_id,
-                project_id=project_id,
-                db=engine_db,
+            engine = build(
+                definition=definition, session_id=session_id, user_id=user_id, project_id=project_id, db=engine_db
             )
             async for event in engine.run():
                 yield sse(event)
@@ -149,9 +148,7 @@ async def rerun_session(db: AsyncSession, session_id: uuid.UUID, user: User) -> 
 async def list_workspace_files(db: AsyncSession, session_id: uuid.UUID, user: User) -> list[WorkspaceFileResponse]:
     await get_owned_session(db, session_id, user.id)
     files = await harness_repo.list_workspace_files(db, session_id)
-    return [
-        WorkspaceFileResponse(file_path=f.file_path, created_at=f.created_at, updated_at=f.updated_at) for f in files
-    ]
+    return [WorkspaceFileResponse.model_validate(f, from_attributes=True) for f in files]
 
 
 async def read_workspace_file(

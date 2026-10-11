@@ -1,5 +1,7 @@
 import uuid
+from collections.abc import Collection
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -52,6 +54,10 @@ class WBSCodeResponse(BaseModel):
     children: list["WBSCodeResponse"] = []
 
     model_config = {"from_attributes": True}
+
+    def with_in_use(self, in_use_ids: Collection[uuid.UUID]) -> "WBSCodeResponse":
+        children = [child.with_in_use(in_use_ids) for child in self.children]
+        return self.model_copy(update={"in_use": self.id in in_use_ids, "children": children})
 
 
 class ProjectCreate(BaseModel):
@@ -106,3 +112,8 @@ class ProjectResponse(BaseModel):
     wbs_codes: list[WBSCodeResponse] = []
 
     model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_project(cls, project: Any, in_use_ids: Collection[uuid.UUID]) -> "ProjectResponse":
+        dto = cls.model_validate(project, from_attributes=True)
+        return dto.model_copy(update={"wbs_codes": [code.with_in_use(in_use_ids) for code in dto.wbs_codes]})

@@ -5,13 +5,23 @@ import json
 
 import pytest
 
+from app.config import settings
+from app.database import get_session_factory
+from app.dependencies import get_llm_client, get_matchers
 from app.exceptions import BadRequestError
+from app.harness.factory import engine_builder
 from app.harness.models import HarnessDefinition, HarnessType, PhaseDefinition, PhaseType
 from app.harness.phase_context import build_phase_context
 from app.models.harness_session import HarnessSessionStatus
 from app.repos import document_repo, harness_repo
 from app.services import harness_service
 from tests.integration.characterisation_fixtures import seed_project, seed_user
+
+
+@pytest.fixture
+def stream_deps():
+    build = engine_builder(settings=settings, llm=get_llm_client(), matchers=get_matchers())
+    return {"build": build, "sessions": get_session_factory()}
 
 
 async def _boom(**_):
@@ -46,13 +56,17 @@ async def _pending_session(db):
     return user.id, project.id, session.id
 
 
-async def test_stream_events_emits_classified_error_frames_then_done(db_session, caplog):
+async def test_stream_events_emits_classified_error_frames_then_done(db_session, stream_deps, caplog):
     user_id, project_id, session_id = await _pending_session(db_session)
 
     frames = [
         frame
         async for frame in harness_service.stream_events(
-            definition=_failing_definition(), session_id=session_id, user_id=user_id, project_id=project_id
+            definition=_failing_definition(),
+            session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            **stream_deps,
         )
     ]
 
@@ -81,14 +95,18 @@ async def _claim_raises(db, session_id):
     raise RuntimeError("boom")
 
 
-async def test_stream_events_wraps_engine_level_error(db_session, monkeypatch):
+async def test_stream_events_wraps_engine_level_error(db_session, stream_deps, monkeypatch):
     user_id, project_id, session_id = await _pending_session(db_session)
     monkeypatch.setattr("app.harness.engine.harness_repo.try_claim_running", _claim_raises)
 
     frames = [
         frame
         async for frame in harness_service.stream_events(
-            definition=_failing_definition(), session_id=session_id, user_id=user_id, project_id=project_id
+            definition=_failing_definition(),
+            session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            **stream_deps,
         )
     ]
 
@@ -127,13 +145,17 @@ def _hanging_definition(started: asyncio.Event) -> HarnessDefinition:
     )
 
 
-async def test_cancelled_stream_marks_session_failed(db_session):
+async def test_cancelled_stream_marks_session_failed(db_session, stream_deps):
     user_id, project_id, session_id = await _pending_session(db_session)
     started = asyncio.Event()
 
     async def consume():
         async for _ in harness_service.stream_events(
-            definition=_hanging_definition(started), session_id=session_id, user_id=user_id, project_id=project_id
+            definition=_hanging_definition(started),
+            session_id=session_id,
+            user_id=user_id,
+            project_id=project_id,
+            **stream_deps,
         ):
             pass
 
@@ -184,13 +206,13 @@ async def test_phase_context_empty_file_is_fatal(db_session):
         await build_phase_context(db=db_session, session_id=session_id, project_id=project_id, phase_def=phase)
 
 
-async def test_losing_stream_closed_after_already_running_leaves_session_untouched(db_session):
+async def test_losing_stream_closed_after_already_running_leaves_session_untouched(db_session, stream_deps):
     user_id, project_id, session_id = await _pending_session(db_session)
     await harness_repo.set_status(db_session, session_id, HarnessSessionStatus.running)
     await db_session.commit()
 
     stream = harness_service.stream_events(
-        definition=_failing_definition(), session_id=session_id, user_id=user_id, project_id=project_id
+        definition=_failing_definition(), session_id=session_id, user_id=user_id, project_id=project_id, **stream_deps
     )
     first = json.loads((await anext(stream)).removeprefix("data: "))
     assert first["error"] == "Session already running"

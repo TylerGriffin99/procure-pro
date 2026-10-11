@@ -4,11 +4,13 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
+from app.constants.enums import FlagSeverity, FlagType
+
 
 class ClaimParseFlagResponse(BaseModel):
     id: uuid.UUID
-    flag_type: str
-    severity: str
+    flag_type: FlagType
+    severity: FlagSeverity
     line_item_ref: str | None
     description: str
     expected_value: Decimal | None

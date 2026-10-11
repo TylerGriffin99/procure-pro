@@ -245,9 +245,9 @@ class ItemDecision(StrictModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    item_index: int
+    item_index: ItemIndex
     choice: str | None = None
-    confidence: float = 0.0
+    confidence: Confidence = 0.0
     input_tokens: int = 0
     error: Exception | None = Field(default=None, exclude=True)
 
